@@ -1,0 +1,35 @@
+# Sensitive config (contains real credentials)
+cms-admin/config/database.php
+cms-admin/config/app.php
+.env
+.env.local
+.env.production
+*.env
+
+# AI/API credentials (module baru, kemungkinan nyimpen key)
+cms-admin/data/GrowthAgent_Architecture.docx
+cms-admin/data/GrowthAgent_Architecture.pdf
+
+# User-uploaded content (not source code, can get large)
+uploads/
+cms-admin/uploads/
+
+# Build/deploy artifacts
+*.zip
+*.bak
+sagacrypto-*.zip
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/
+
+# Logs
+*.log
+logs/
+
+# Dependency folders (kalau nanti ada composer/npm)
+vendor/
+node_modules/

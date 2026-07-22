@@ -1,0 +1,2571 @@
+/* ============================================================
+   WPM — Sagagoal front-end theme
+   Dark (default) / premium / glassmorphism, with a light theme
+   variant toggled via <html data-theme="light|dark">. Self-contained
+   (no dependency on cms-admin/assets/css/admin.css).
+   ============================================================ */
+
+:root {
+  --bg-void: #050310;
+  --bg-deep: #0a0618;
+  --bg-deep-2: #0d0a1f;
+  --surface-glass: rgba(255, 255, 255, 0.045);
+  --surface-glass-strong: rgba(255, 255, 255, 0.07);
+  --surface-glass-2: rgba(255, 255, 255, 0.05);
+  --surface-nav: rgba(6, 4, 16, 0.55);
+  --border-glass: rgba(255, 255, 255, 0.09);
+
+  /* Brand accent — orange, sampled from the Sagagoal logo mark.
+     --accent-rgb feeds every rgba(var(--accent-rgb), X) tint/glow below,
+     so the whole accent family (badges, active states, glows) re-tints
+     in one place per theme. Dark mode uses a lighter/more saturated
+     shade (orange-400) so buttons don't sink into the dark background;
+     light mode uses a deeper shade (orange-600) that reads better on
+     white. */
+  --accent-rgb: 251, 146, 60;
+  --accent: rgb(var(--accent-rgb));
+  --accent-2: #fdba74;
+  --accent-hover: #f97316;
+  --accent-light: rgba(var(--accent-rgb), 0.14);
+  --border-glow: rgba(var(--accent-rgb), 0.4);
+
+  --cyan: #22d3ee;
+  --gold: #fbbf24;
+  --green: #10b981;
+  --red: #f43f5e;
+
+  --text: #f5f3ff;
+  --text-muted: rgba(245, 243, 255, 0.64);
+  --text-faint: rgba(245, 243, 255, 0.42);
+
+  --grad-brand: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  --grad-gold: linear-gradient(135deg, var(--gold) 0%, #f59e0b 100%);
+  --grad-logo-text: linear-gradient(135deg, #ffffff 20%, var(--accent-2) 60%, var(--accent) 100%);
+
+  --radius-lg: 24px;
+  --radius-md: 16px;
+  --radius-sm: 10px;
+
+  --shadow-glow-accent: 0 8px 40px rgba(var(--accent-rgb), 0.3);
+  --shadow-glow-cyan: 0 8px 40px rgba(34, 211, 238, 0.18);
+
+  --font-display: 'Space Grotesk', 'Poppins', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Footer orange-accent intensities — dark mode stays subtle since the
+     background already reads warm at low alpha; light mode is tuned a
+     touch stronger so the tint doesn't wash out on a near-white surface. */
+  --footer-glow-1: 0.10;
+  --footer-glow-2: 0.05;
+  --footer-border-glow: 0.4;
+  --footer-heading-tint: 0.8;
+}
+
+/* Light theme — same brand hues, re-tuned for contrast on a light surface. */
+:root[data-theme="light"] {
+  --bg-void: #f9f6f2;
+  --bg-deep: #ffffff;
+  --bg-deep-2: #f2ede6;
+  --surface-glass: rgba(45, 25, 10, 0.035);
+  --surface-glass-strong: rgba(45, 25, 10, 0.06);
+  --surface-glass-2: rgba(45, 25, 10, 0.045);
+  --surface-nav: rgba(255, 255, 255, 0.75);
+  --border-glass: rgba(45, 25, 10, 0.10);
+
+  --accent-rgb: 234, 88, 12;
+  --accent-2: #fb923c;
+  --accent-hover: #c2410c;
+  --accent-light: rgba(var(--accent-rgb), 0.10);
+  --border-glow: rgba(var(--accent-rgb), 0.4);
+
+  --cyan: #0e7490;
+  --gold: #b45309;
+  --green: #059669;
+  --red: #e11d48;
+
+  --text: #241a12;
+  --text-muted: rgba(36, 26, 18, 0.66);
+  --text-faint: rgba(36, 26, 18, 0.46);
+
+  --shadow-glow-accent: 0 8px 30px rgba(var(--accent-rgb), 0.2);
+  --shadow-glow-cyan: 0 8px 30px rgba(14, 116, 144, 0.12);
+  --grad-logo-text: linear-gradient(135deg, var(--accent-hover) 0%, var(--accent) 55%, var(--accent-2) 100%);
+
+  --footer-glow-1: 0.14;
+  --footer-glow-2: 0.07;
+  --footer-border-glow: 0.5;
+  --footer-heading-tint: 0.9;
+}
+
+/* Smooth theme switch — no flash/snap on the elements that actually change. */
+body.crypto-theme,
+.crypto-nav,
+.glass-card,
+.news-hero__media,
+.news-row__media,
+.trending-item__media,
+.trending-panel,
+.fixture-league-group__list,
+.fixture-card,
+.crypto-table-wrap,
+.crypto-btn,
+.crypto-btn--ghost,
+.news-filter-pill,
+.theme-toggle__track {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
+}
+
+* , *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body.crypto-theme {
+  margin: 0;
+  font-family: var(--font-body);
+  background: var(--bg-void);
+  color: var(--text);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.crypto-theme img { max-width: 100%; display: block; }
+
+.crypto-theme a { color: inherit; text-decoration: none; }
+
+.crypto-theme ::selection { background: rgba(var(--accent-rgb), 0.35); color: #fff; }
+
+/* Background ambient glow layer, fixed behind everything */
+.crypto-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 45% at 15% 0%, rgba(var(--accent-rgb), 0.20) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 45% at 90% 15%, rgba(var(--accent-rgb), 0.13) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 50% 100%, rgba(var(--accent-rgb), 0.12) 0%, transparent 55%),
+    linear-gradient(180deg, var(--bg-void) 0%, var(--bg-deep) 40%, var(--bg-deep-2) 100%);
+}
+
+.crypto-container {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================================
+   NAVBAR
+   ============================================================ */
+.crypto-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--surface-nav);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.crypto-nav__inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.crypto-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+}
+
+.crypto-logo__mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--grad-brand);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent);
+  flex-shrink: 0;
+}
+
+/* Admin-uploaded logo image (Site Settings) replaces the SC+gem fallback
+   mark above — same box size/shape, but an actual <img> instead of text. */
+.crypto-logo__mark--img {
+  object-fit: contain;
+  background: var(--surface-glass);
+  padding: 4px;
+}
+
+
+.crypto-logo__text {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  background: var(--grad-logo-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.crypto-logo__tag {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-top: -2px;
+}
+
+.crypto-nav__menu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.crypto-nav__menu a {
+  display: inline-block;
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  position: relative;
+}
+
+.crypto-nav__menu a:hover,
+.crypto-nav__menu a.is-active {
+  color: var(--text);
+  background: rgba(var(--accent-rgb), 0.14);
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.30), 0 0 18px rgba(var(--accent-rgb), 0.25);
+}
+
+.crypto-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.crypto-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+  white-space: nowrap;
+}
+
+.crypto-btn--primary {
+  background: var(--grad-brand);
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent);
+}
+
+.crypto-btn--primary:hover { transform: translateY(-1px); box-shadow: 0 10px 30px rgba(var(--accent-rgb), 0.4); }
+
+.crypto-btn--ghost {
+  background: var(--surface-glass-2);
+  border-color: var(--border-glass);
+  color: var(--text);
+}
+
+.crypto-btn--ghost:hover { border-color: var(--border-glow); background: rgba(var(--accent-rgb), 0.10); }
+
+/* App Promotion section — Google Play / App Store "coming soon" badges */
+.app-store-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-store-badge__icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.app-store-badge__icon svg { width: 100%; height: 100%; }
+
+.crypto-nav__toggle {
+  display: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--surface-glass-2);
+  border: 1px solid var(--border-glass);
+  color: var(--text);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+.crypto-nav__toggle span,
+.crypto-nav__toggle span::before,
+.crypto-nav__toggle span::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  position: relative;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.crypto-nav__toggle span::before { position: absolute; top: -6px; }
+.crypto-nav__toggle span::after { position: absolute; top: 6px; }
+
+/* ============================================================
+   DARK MODE TOGGLE
+   ============================================================ */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--surface-glass-2);
+  border: 1px solid var(--border-glass);
+  cursor: pointer;
+}
+
+.theme-toggle__icon { display: flex; color: var(--text-muted); }
+.theme-toggle__icon svg { width: 15px; height: 15px; }
+
+.theme-toggle__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.theme-toggle__input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.theme-toggle__switch { position: relative; display: inline-flex; }
+
+.theme-toggle__track {
+  display: block;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--border-glass);
+  position: relative;
+}
+
+:root[data-theme="light"] .theme-toggle__track { background: rgba(20, 10, 45, 0.12); }
+
+.theme-toggle__thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease;
+}
+
+.theme-toggle__input:checked ~ .theme-toggle__track { background: var(--green); border-color: transparent; }
+.theme-toggle__input:checked ~ .theme-toggle__track .theme-toggle__thumb { transform: translateX(16px); }
+.theme-toggle__input:focus-visible ~ .theme-toggle__track { box-shadow: 0 0 0 2px var(--border-glow); }
+
+@media (max-width: 640px) {
+  .theme-toggle { padding: 7px 9px; }
+}
+
+/* ============================================================
+   GLASS / CARD PRIMITIVES
+   ============================================================ */
+.glass-card {
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-glow);
+  background: var(--surface-glass-strong);
+  box-shadow: var(--shadow-glow-accent);
+}
+
+.crypto-card {
+  padding: 28px;
+  border-radius: var(--radius-md);
+  position: relative;
+  overflow: hidden;
+}
+
+.crypto-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.5), rgba(var(--accent-rgb), 0.12), transparent 60%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.crypto-card__icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.22), rgba(var(--accent-rgb), 0.10));
+  border: 1px solid var(--border-glow);
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  color: var(--accent);
+}
+
+.crypto-card__icon svg { width: 22px; height: 22px; }
+
+.crypto-card__icon--img {
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface-glass-strong);
+}
+
+.crypto-card__icon--img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.crypto-card h3 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.crypto-card p {
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* "Aplikasi Sagagoal — Segera Hadir" promo card (wpm_app_promo_section()) —
+   layers a soft accent-tinted gradient over .glass-card/.crypto-card so it
+   reads as peach/cream in light mode and a warm dark tint in dark mode,
+   using the same --accent-rgb re-tint trick as .crypto-card__icon instead
+   of hardcoding per-theme colors. */
+.app-promo-card {
+  padding: 40px 28px;
+  text-align: center;
+  background: linear-gradient(160deg, rgba(var(--accent-rgb), 0.12), rgba(var(--accent-rgb), 0.02) 60%), var(--surface-glass);
+}
+
+.app-promo-card__icon { margin: 0 auto 16px; }
+.app-promo-card__title { font-size: 22px; }
+.app-promo-card__subtitle { max-width: 480px; margin: 0 auto 20px; }
+
+.app-promo-card__badges {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.app-store-badge--disabled { opacity: 0.6; cursor: not-allowed; pointer-events: none; }
+
+.market-card {
+  padding: 22px 20px;
+  border-radius: var(--radius-md);
+}
+
+.market-card__label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.market-card__value {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  margin-top: 10px;
+  color: var(--text);
+}
+
+.market-card__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.market-card__delta--up { color: var(--green); }
+.market-card__delta--down { color: var(--red); }
+
+/* ============================================================
+   SECTION LAYOUT HELPERS
+   ============================================================ */
+.crypto-section {
+  padding: 96px 0;
+  position: relative;
+  z-index: 1;
+}
+
+.crypto-section--tight { padding: 72px 0; }
+
+.section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.12);
+  border: 1px solid rgba(var(--accent-rgb), 0.30);
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+
+.section-kicker svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 14px;
+  color: var(--text);
+}
+
+.section-title span {
+  background: var(--grad-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.section-subtitle {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  max-width: 640px;
+  margin: 0 0 40px;
+}
+
+.section-header--center {
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.section-header--center .section-subtitle { margin-left: auto; margin-right: auto; }
+
+.crypto-grid {
+  display: grid;
+  gap: 22px;
+}
+
+.crypto-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.crypto-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.crypto-grid--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.crypto-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* ============================================================
+   ARTICLES
+   ============================================================ */
+.article-card {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.article-card__media {
+  height: 130px;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.35), rgba(var(--accent-rgb), 0.15));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.article-card__media svg { width: 34px; height: 34px; }
+
+.article-card__body { padding: 22px; flex: 1; display: flex; flex-direction: column; }
+
+.article-card__tag {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  background: rgba(34, 211, 238, 0.10);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+
+.article-card h3 { font-family: var(--font-display); font-size: 16.5px; margin: 0 0 8px; }
+.article-card p { font-size: 13.5px; color: var(--text-muted); line-height: 1.6; margin: 0 0 16px; flex: 1; }
+
+.article-card__cta {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-2);
+  margin-top: auto;
+}
+
+/* ============================================================
+   CONTACT
+   ============================================================ */
+.contact-grid {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 32px;
+  align-items: start;
+}
+
+.contact-info-card {
+  padding: 30px;
+  border-radius: var(--radius-lg);
+}
+
+.contact-info-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.contact-info-row:last-child { border-bottom: none; }
+
+.contact-info-row__icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(var(--accent-rgb), 0.14);
+  border: 1px solid var(--border-glow);
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.contact-info-row__icon svg { width: 17px; height: 17px; }
+
+.contact-info-row__label { font-size: 12px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.contact-info-row__value { font-size: 14.5px; color: var(--text); font-weight: 500; margin-top: 2px; }
+a.contact-info-row__value { display: inline-block; text-decoration: none; transition: color 0.16s ease; }
+a.contact-info-row__value:hover { color: var(--cyan); }
+
+.contact-form-card { padding: 32px; border-radius: var(--radius-lg); }
+
+.form-row { display: grid; gap: 8px; margin-bottom: 18px; }
+.form-row--2col { grid-template-columns: 1fr 1fr; gap: 18px; display: grid; margin-bottom: 0; }
+
+.form-label { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-glass-2);
+  border: 1px solid var(--border-glass);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.form-input:focus,
+.form-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.20);
+}
+
+.form-textarea { resize: vertical; min-height: 120px; }
+
+.form-alert {
+  padding: 13px 16px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  margin-bottom: 22px;
+}
+
+.form-alert--success { background: rgba(16, 185, 129, 0.10); border: 1px solid rgba(16, 185, 129, 0.30); color: #6ee7b7; }
+.form-alert--error { background: rgba(244, 63, 94, 0.10); border: 1px solid rgba(244, 63, 94, 0.30); color: #fda4af; }
+
+.hp-field { position: absolute; left: -9999px; top: -9999px; }
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.crypto-footer {
+  border-top: 1px solid transparent;
+  border-image: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), var(--footer-border-glow)), transparent) 1;
+  padding: 56px 0 28px;
+  position: relative;
+  z-index: 1;
+  background:
+    radial-gradient(ellipse 55% 60% at 100% 0%, rgba(var(--accent-rgb), var(--footer-glow-1)), transparent 65%),
+    linear-gradient(180deg, rgba(var(--accent-rgb), var(--footer-glow-2)) 0%, transparent 45%);
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 40px;
+  margin-bottom: 40px;
+}
+
+.footer-brand p {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.7;
+  margin: 14px 0 0;
+  max-width: 320px;
+}
+
+.footer-heading {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(var(--accent-rgb), var(--footer-heading-tint));
+  margin: 0 0 16px;
+}
+
+.footer-links { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.footer-links a { font-size: 14px; color: var(--text-muted); transition: color 0.16s ease; }
+.footer-links a:hover { color: var(--accent); }
+
+.footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 24px;
+  border-top: 1px solid transparent;
+  border-image: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), var(--footer-border-glow)), transparent) 1;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.footer-disclaimer {
+  font-size: 12px;
+  color: var(--text-faint);
+  max-width: 720px;
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 980px) {
+  .crypto-nav__menu { display: none; }
+  .crypto-nav__toggle { display: inline-flex; }
+  .crypto-hero__inner { grid-template-columns: 1fr; }
+  .crypto-hero__visual { height: 300px; margin-top: 20px; }
+  .crypto-grid--3, .crypto-grid--4, .crypto-grid--5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .contact-grid { grid-template-columns: 1fr; }
+  .footer-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 640px) {
+  .crypto-hero { padding: 60px 0 24px; }
+  .crypto-grid--3, .crypto-grid--4, .crypto-grid--5, .crypto-grid--2 { grid-template-columns: 1fr; }
+  .form-row--2col { grid-template-columns: 1fr; }
+  .footer-grid { grid-template-columns: 1fr; gap: 28px; }
+  .crypto-section { padding: 64px 0; }
+  .crypto-hero__visual { display: none; }
+  .footer-bottom { flex-direction: column; align-items: flex-start; }
+}
+
+/* ============================================================
+   NAV SEARCH BUTTON
+   ============================================================ */
+.crypto-nav__search-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: var(--surface-glass-2);
+  border: 1px solid var(--border-glass);
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+.crypto-nav__search-btn svg { width: 17px; height: 17px; }
+.crypto-nav__search-btn:hover { color: var(--accent); border-color: var(--border-glow); background: rgba(var(--accent-rgb), 0.10); }
+
+/* ============================================================
+   SITE TICKER ROW — single merged bar holding the Live Ticker
+   (left, fixed width) and Breaking News ticker (right, flexible),
+   side by side instead of two stacked full-width bars.
+   ============================================================ */
+.site-ticker-row {
+  position: relative;
+  z-index: 1;
+  background: rgba(var(--accent-rgb), 0.07);
+  border-bottom: 1px solid var(--border-glass);
+  overflow: hidden;
+}
+.site-ticker-row__inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+.site-ticker-row__divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 10px 18px;
+  background: var(--border-glass);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   BREAKING NEWS TICKER (right-hand segment of .site-ticker-row)
+   ============================================================ */
+.breaking-ticker {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+.breaking-ticker__label {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--red);
+}
+.breaking-ticker__label .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--red);
+  box-shadow: 0 0 8px var(--red);
+  animation: tickerPulse 1.6s ease-in-out infinite;
+}
+@keyframes tickerPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.breaking-ticker__track {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+}
+.breaking-ticker__scroll {
+  display: inline-flex;
+  gap: 40px;
+  padding: 10px 0;
+  animation: tickerScroll 32s linear infinite;
+}
+.breaking-ticker__scroll a { font-size: 13.5px; color: var(--text-muted); transition: color 0.16s ease; }
+.breaking-ticker__scroll a:hover { color: var(--text); }
+@keyframes tickerScroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) { .breaking-ticker__scroll { animation: none; } }
+
+/* ============================================================
+   LIVE TICKER (Binance WebSocket — assets/js/live-ticker.js)
+   Left-hand segment of .site-ticker-row.
+   ============================================================ */
+.live-ticker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  max-width: 52%;
+  overflow: hidden;
+}
+
+.live-ticker__label {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.live-ticker__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.live-ticker.is-connected .live-ticker__dot,
+#wpm-live-ticker.is-connected .live-ticker__dot {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: tickerPulse 1.6s ease-in-out infinite;
+}
+
+.live-ticker__track {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+}
+.live-ticker__scroll {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  animation: tickerScroll 20s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .live-ticker__scroll { animation: none; } }
+
+.live-ticker__chip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  font-size: 12.5px;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+.live-ticker__chip.is-loading { opacity: 0.55; }
+
+.live-ticker__symbol { font-weight: 700; color: var(--text); }
+.live-ticker__price { font-family: var(--font-display); color: var(--text-muted); }
+.live-ticker__change { font-weight: 600; }
+.live-ticker__change.up { color: var(--green); }
+.live-ticker__change.down { color: var(--red); }
+
+.live-ticker__chip.is-flash-up { background: rgba(16, 185, 129, 0.18); border-color: rgba(16, 185, 129, 0.4); }
+.live-ticker__chip.is-flash-down { background: rgba(244, 63, 94, 0.18); border-color: rgba(244, 63, 94, 0.4); }
+
+/* ============================================================
+   AD SLOTS
+   ============================================================ */
+.ad-slot-wrap { position: relative; z-index: 1; padding: 18px 0; }
+.ad-slot-wrap .crypto-container { display: flex; justify-content: center; }
+
+.ad-slot {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-glass);
+  background: var(--surface-glass);
+}
+.ad-slot img, .ad-slot video { display: block; max-width: 100%; height: auto; }
+.ad-slot__label {
+  position: absolute; top: 6px; left: 6px; z-index: 2;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 999px;
+  background: rgba(5, 3, 16, 0.65); color: var(--text-faint);
+}
+.ad-slot__cta-badge {
+  position: absolute; bottom: 10px; right: 10px; z-index: 2;
+  font-size: 12px; font-weight: 700; padding: 7px 14px; border-radius: 999px;
+  background: var(--grad-brand); color: #fff;
+}
+.ad-slot--html { padding: 12px; text-align: center; }
+.ad-slot--video { text-align: center; }
+.ad-slot--video video { width: 100%; }
+.ad-slot--external { padding: 12px; text-align: center; }
+.ad-slot__cta {
+  display: inline-block; margin-top: 10px; padding: 9px 18px; border-radius: 999px;
+  background: var(--grad-brand); color: #fff; font-size: 13px; font-weight: 600;
+}
+
+/* ------------------------------------------------------------
+   Text Ad (ad_type='text') — styled like a standard search-result
+   text ad ("Ad · domain / Headline / Description / CTA"), but kept
+   visually close to the site's dark glass theme rather than an exact
+   Google-ads clone. Whole block is a single <a> (see wpm_text_ad_markup())
+   so it needs its own layout, distinct from the image/video .ad-slot
+   rules above.
+   ------------------------------------------------------------ */
+.ad-slot--text {
+  padding: 14px 16px;
+  text-decoration: none;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+.ad-slot--text:hover {
+  border-color: var(--border-glow);
+  background: var(--surface-glass-strong);
+  transform: translateY(-1px);
+}
+.ad-slot--text:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.text-ad { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.text-ad__meta {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--text-faint);
+}
+.text-ad__badge {
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--cyan);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.text-ad__dot { opacity: 0.5; }
+.text-ad__domain { color: var(--text-faint); overflow-wrap: anywhere; }
+.text-ad__headline {
+  font-family: var(--font-display);
+  font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.text-ad__desc {
+  font-size: 13.5px; color: var(--text-muted); line-height: 1.5;
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.text-ad__cta {
+  margin-top: 2px; align-self: flex-start;
+  font-size: 12.5px; font-weight: 700; color: var(--accent-2);
+}
+
+/* Position-aware layout variants (section 4 of the brief) — same markup,
+   different arrangement/emphasis depending on where the slot is placed. */
+.ad-slot--pos-header, .ad-slot--pos-below-main-menu, .ad-slot--pos-footer {
+  max-width: 100%;
+}
+.ad-slot--pos-header .text-ad, .ad-slot--pos-below-main-menu .text-ad, .ad-slot--pos-footer .text-ad {
+  flex-direction: row; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.ad-slot--pos-header .text-ad__desc, .ad-slot--pos-below-main-menu .text-ad__desc, .ad-slot--pos-footer .text-ad__desc {
+  -webkit-line-clamp: 1;
+}
+
+.ad-slot--pos-sidebar-left, .ad-slot--pos-sidebar-right {
+  width: 100%;
+}
+.ad-slot--pos-sidebar-left .text-ad__desc, .ad-slot--pos-sidebar-right .text-ad__desc {
+  -webkit-line-clamp: 3;
+}
+
+.ad-slot--pos-article-before-title, .ad-slot--pos-article-after-title {
+  margin: 14px 0;
+}
+
+.ad-slot--pos-popup .text-ad__headline { font-size: 18px; }
+
+.ad-slot--pos-sticky-bottom-mobile .text-ad {
+  flex-direction: row; align-items: center; gap: 10px;
+}
+.ad-slot--pos-sticky-bottom-mobile .text-ad__desc { display: none; }
+
+/* ============================================================
+   PROMO BANNERS (cms-admin/pages/banners.php, placement="home")
+   ============================================================ */
+.banner-strip__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.banner-card {
+  position: relative;
+  display: block;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-glass);
+  background: var(--surface-glass);
+  aspect-ratio: 1920 / 900;
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+.banner-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-glow-accent);
+}
+.banner-card picture,
+.banner-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.banner-card__overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 20px;
+  background: linear-gradient(0deg, rgba(5, 3, 16, 0.88) 0%, rgba(5, 3, 16, 0.35) 60%, transparent 100%);
+}
+.banner-card__title {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.25;
+}
+.banner-card__subtitle {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  max-width: 46ch;
+}
+.banner-card__cta {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--grad-brand);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .banner-card { aspect-ratio: 900 / 1200; }
+}
+
+.wpm-popup-ad {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(5, 3, 16, 0.75); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.wpm-popup-ad.is-hidden { display: none; }
+.wpm-popup-ad__panel { position: relative; max-width: 420px; width: 100%; }
+.wpm-popup-ad__close {
+  position: absolute; top: -14px; right: -14px; z-index: 3;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--bg-deep); border: 1px solid var(--border-glass); color: var(--text);
+  cursor: pointer; font-size: 17px;
+}
+
+.wpm-sticky-ad {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 250;
+  background: var(--bg-deep); border-top: 1px solid var(--border-glass);
+  padding: 8px 40px 8px 12px; display: none;
+}
+.wpm-sticky-ad.is-hidden { display: none !important; }
+.wpm-sticky-ad__close {
+  position: absolute; top: 6px; right: 8px; z-index: 3;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--surface-glass-strong); border: 1px solid var(--border-glass); color: var(--text);
+  cursor: pointer; font-size: 14px;
+}
+@media (max-width: 640px) { .wpm-sticky-ad { display: block; } }
+
+/* ============================================================
+   ARTICLE CARD (grid tile used across homepage / category / related)
+   ============================================================ */
+.news-card {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.news-card__media {
+  height: 170px;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.35), rgba(var(--accent-rgb), 0.15));
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.news-card__media img { width: 100%; height: 100%; object-fit: cover; }
+.news-card__media svg { width: 34px; height: 34px; color: var(--text-muted); }
+.news-card__body { padding: 20px; flex: 1; display: flex; flex-direction: column; }
+.news-card h3 { font-family: var(--font-display); font-size: 16px; line-height: 1.35; margin: 0 0 10px; }
+.news-card h3 a { transition: color 0.16s ease; }
+.news-card h3 a:hover { color: var(--cyan); }
+.news-card p { font-size: 13.5px; color: var(--text-muted); line-height: 1.6; margin: 0 0 14px; flex: 1; }
+.news-card__meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-faint); margin-top: auto; }
+.news-card__meta svg { width: 13px; height: 13px; }
+.news-card__meta span { display: inline-flex; align-items: center; gap: 4px; }
+
+.news-card--row { flex-direction: row; }
+.news-card--row .news-card__media { height: auto; width: 130px; flex-shrink: 0; }
+.news-card--row .news-card__body { padding: 14px 18px; }
+.news-card--row h3 { font-size: 14.5px; margin-bottom: 6px; }
+
+/* ============================================================
+   PAGE HEADER (used by kategori/crypto/pencarian)
+   ============================================================ */
+.page-hero {
+  padding: 56px 0 36px;
+  position: relative;
+  z-index: 1;
+}
+.page-hero .section-kicker { margin-bottom: 14px; }
+.page-hero h1 { font-family: var(--font-display); font-size: clamp(26px, 4vw, 38px); font-weight: 700; margin: 0 0 10px; }
+.page-hero p { font-size: 15.5px; color: var(--text-muted); max-width: 620px; margin: 0; }
+
+.breadcrumb {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; color: var(--text-faint); margin-bottom: 18px;
+}
+.breadcrumb a { color: var(--text-muted); }
+.breadcrumb a:hover { color: var(--cyan); }
+
+/* ============================================================
+   PAGINATION
+   ============================================================ */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 44px; flex-wrap: wrap; }
+.pagination a, .pagination span {
+  min-width: 40px; height: 40px; padding: 0 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; font-size: 13.5px; font-weight: 600;
+  border: 1px solid var(--border-glass); color: var(--text-muted);
+}
+.pagination a:hover { border-color: var(--border-glow); color: var(--text); }
+.pagination .is-current { background: var(--grad-brand); color: #fff; border-color: transparent; }
+.pagination .is-disabled { opacity: 0.35; pointer-events: none; }
+
+/* ============================================================
+   ARTICLE DETAIL PAGE
+   ============================================================ */
+.article-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 200px;
+  gap: 28px;
+  align-items: start;
+}
+.article-layout__sidebar { position: sticky; top: 90px; display: flex; flex-direction: column; gap: 16px; }
+.article-layout__main { min-width: 0; }
+
+.article-head { margin-bottom: 24px; }
+.article-head__category {
+  display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--cyan); background: rgba(34, 211, 238, 0.10); border: 1px solid rgba(34, 211, 238, 0.25);
+  padding: 5px 12px; border-radius: 999px; margin-bottom: 16px;
+}
+.article-head h1 { font-family: var(--font-display); font-size: clamp(26px, 4vw, 40px); line-height: 1.2; font-weight: 700; margin: 0 0 18px; }
+.article-head__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; font-size: 13px; color: var(--text-faint); }
+.article-head__meta span { display: inline-flex; align-items: center; gap: 6px; }
+.article-head__meta svg { width: 14px; height: 14px; }
+
+.article-cover { border-radius: var(--radius-md); overflow: hidden; margin-bottom: 28px; border: 1px solid var(--border-glass); }
+.article-cover img { width: 100%; display: block; }
+
+.article-prose { font-size: 16px; line-height: 1.85; color: var(--text); }
+.article-prose p { margin: 0 0 20px; }
+.article-prose h2, .article-prose h3 { font-family: var(--font-display); color: var(--text); margin: 32px 0 14px; }
+.article-prose img { border-radius: var(--radius-md); margin: 20px 0; }
+.article-prose a { color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
+.article-prose ul, .article-prose ol { margin: 0 0 20px; padding-left: 22px; }
+.article-prose blockquote {
+  margin: 24px 0; padding: 16px 22px; border-left: 3px solid var(--accent);
+  background: var(--surface-glass); border-radius: 0 12px 12px 0; color: var(--text-muted);
+}
+
+.article-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 32px 0; }
+.article-tags a {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600;
+  padding: 7px 13px; border-radius: 999px; background: var(--surface-glass); border: 1px solid var(--border-glass); color: var(--text-muted);
+}
+.article-tags a:hover { color: var(--accent); border-color: var(--border-glow); }
+.article-tags svg { width: 12px; height: 12px; }
+
+.article-share { display: flex; align-items: center; gap: 10px; margin: 32px 0; padding: 18px 0; border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass); }
+.article-share__label { font-size: 13px; font-weight: 600; color: var(--text-faint); margin-right: 4px; }
+.article-share a, .article-share button {
+  width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface-glass); border: 1px solid var(--border-glass); color: var(--text-muted); cursor: pointer;
+}
+.article-share a:hover, .article-share button:hover { color: var(--accent); border-color: var(--border-glow); }
+.article-share svg { width: 16px; height: 16px; }
+
+.article-faq { margin: 32px 0; }
+.article-faq h2 { font-family: var(--font-display); font-size: 22px; margin: 0 0 20px; }
+.article-faq__item {
+  border: 1px solid var(--border-glass); border-radius: var(--radius-md); margin-bottom: 10px;
+  overflow: hidden; background: var(--surface-glass);
+}
+.article-faq__item summary {
+  cursor: pointer; padding: 16px 18px; font-weight: 600; color: var(--text); list-style: none;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+}
+.article-faq__item summary::-webkit-details-marker { display: none; }
+.article-faq__item summary::after { content: '+'; color: var(--cyan); font-size: 20px; line-height: 1; flex-shrink: 0; }
+.article-faq__item[open] summary::after { content: '\2212'; }
+.article-faq__answer { padding: 0 18px 16px; color: var(--text-muted); line-height: 1.7; font-size: 14.5px; }
+
+.related-articles { margin-top: 48px; }
+.related-articles h2 { font-family: var(--font-display); font-size: 22px; margin: 0 0 20px; }
+
+/* ============================================================
+   CRYPTO PAGE
+   ============================================================ */
+.crypto-table-wrap { overflow-x: auto; border-radius: var(--radius-md); border: 1px solid var(--border-glass); }
+.crypto-table { width: 100%; border-collapse: collapse; min-width: 620px; }
+.crypto-table th {
+  text-align: left; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-faint); padding: 14px 18px; border-bottom: 1px solid var(--border-glass); background: var(--surface-glass);
+}
+.crypto-table td { padding: 14px 18px; border-bottom: 1px solid var(--border-glass); font-size: 14px; }
+.crypto-table tr:last-child td { border-bottom: none; }
+.crypto-table__coin { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.crypto-table__coin img { width: 26px; height: 26px; border-radius: 50%; }
+.crypto-table__coin svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--text-faint); }
+.crypto-table__symbol { color: var(--text-faint); font-size: 12px; text-transform: uppercase; }
+.crypto-table__change--up { color: var(--green); font-weight: 600; }
+.crypto-table__change--down { color: var(--red); font-weight: 600; }
+
+.status-banner {
+  display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 12px;
+  font-size: 13.5px; margin-bottom: 24px; border: 1px solid var(--border-glass); background: var(--surface-glass);
+}
+/* Was missing an explicit size — the inline wpm_icon() SVG has only a
+   viewBox (no width/height attrs), so without this rule the browser fell
+   back to its default intrinsic SVG size (~300x150px), rendering what's
+   meant to be a small status icon as a giant box filling the banner. */
+.status-banner svg { width: 18px; height: 18px; flex-shrink: 0; }
+.status-banner--ok { border-color: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
+.status-banner--warn { border-color: rgba(251, 191, 36, 0.3); color: var(--gold); }
+.status-banner--off { color: var(--text-faint); }
+
+/* ============================================================
+   CRYPTO PAGE — Top 10 Market Cap bar chart (crypto.php)
+   Data-driven (real market_cap values from the live/cached API result),
+   plain CSS bars — no charting library dependency, consistent with the
+   rest of this project.
+   ============================================================ */
+.market-chart {
+  border: 1px solid var(--border-glass);
+  background: var(--surface-glass);
+  border-radius: 16px;
+  padding: 24px 22px 18px;
+  margin-bottom: 24px;
+}
+.market-chart__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 20px;
+}
+.market-chart__head h2 { font-size: 16px; font-weight: 700; margin: 0; color: var(--text); }
+.market-chart__hint { font-size: 12px; color: var(--text-faint); }
+
+.market-chart__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.market-chart__col {
+  flex: 1 1 0;
+  min-width: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.market-chart__value {
+  font-size: 10.5px;
+  font-family: var(--font-display);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.market-chart__track {
+  width: 100%;
+  height: 150px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.market-chart__bar {
+  width: 60%;
+  min-width: 18px;
+  border-radius: 6px 6px 2px 2px;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.market-chart__col:hover .market-chart__bar { opacity: 0.85; transform: scaleX(1.12); }
+.market-chart__bar.is-up { background: linear-gradient(180deg, var(--green), rgba(16, 185, 129, 0.35)); }
+.market-chart__bar.is-down { background: linear-gradient(180deg, var(--red), rgba(244, 63, 94, 0.35)); }
+.market-chart__label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+@media (max-width: 640px) {
+  .market-chart__col { min-width: 44px; }
+  .market-chart__track { height: 110px; }
+}
+
+/* ============================================================
+   SEARCH PAGE
+   ============================================================ */
+.search-form { display: flex; gap: 10px; max-width: 560px; margin: 0 0 40px; }
+.search-form input {
+  flex: 1; padding: 14px 18px; border-radius: 999px; background: var(--surface-glass-2);
+  border: 1px solid var(--border-glass); color: var(--text); font-size: 14.5px; outline: none;
+}
+.search-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2); }
+.search-form button {
+  padding: 0 26px; border-radius: 999px; border: none; background: var(--grad-brand); color: #fff;
+  font-weight: 600; cursor: pointer;
+}
+
+.empty-state { text-align: center; padding: 60px 20px; color: var(--text-faint); }
+.empty-state svg { width: 40px; height: 40px; margin-bottom: 14px; opacity: 0.5; }
+.empty-state__hint { font-size: 13px; max-width: 380px; margin: 8px auto 0; line-height: 1.5; }
+
+/* ============================================================
+   RESPONSIVE — Fase 9 additions
+   ============================================================ */
+@media (max-width: 980px) {
+  .article-layout { grid-template-columns: 1fr; }
+  .article-layout__sidebar { position: static; flex-direction: row; overflow-x: auto; }
+  .news-card--row { flex-direction: column; }
+  .news-card--row .news-card__media { width: 100%; height: 150px; }
+}
+
+@media (max-width: 640px) {
+  .article-share { flex-wrap: wrap; }
+  .crypto-nav__search-btn { display: none; }
+}
+
+@media (max-width: 780px) {
+  .site-ticker-row__inner { flex-wrap: wrap; padding-top: 4px; padding-bottom: 4px; }
+  .live-ticker { max-width: 100%; width: 100%; }
+  .breaking-ticker { flex-basis: 100%; }
+  .site-ticker-row__divider { display: none; }
+}
+
+/* ============================================================
+   DEVICE VISIBILITY UTILITIES (Featured/Pamungkas per-section toggle)
+   ============================================================ */
+@media (min-width: 981px) { .u-hide-desktop { display: none !important; } }
+@media (max-width: 980px) { .u-hide-mobile { display: none !important; } }
+
+/* Mobile nav drawer */
+.crypto-nav__mobile {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(5, 3, 16, 0.75);
+  backdrop-filter: blur(10px);
+}
+
+.crypto-nav__mobile.is-open { display: block; }
+
+.crypto-nav__mobile-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(320px, 84vw);
+  height: 100%;
+  background: var(--bg-deep);
+  border-left: 1px solid var(--border-glass);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.crypto-nav__mobile-close {
+  align-self: flex-end;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--surface-glass-2);
+  border: 1px solid var(--border-glass);
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.crypto-nav__mobile-panel a {
+  padding: 14px 12px;
+  border-radius: 12px;
+  font-size: 15.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.crypto-nav__mobile-panel a:hover,
+.crypto-nav__mobile-panel a.is-active {
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--text);
+}
+
+/* ============================================================
+   News homepage — tabs, league/live filter row, hero card,
+   article list rows, trending sidebar. Reuses existing tokens
+   (--purple/--cyan/--green/--red, --surface-glass, --radius-*,
+   --font-display) and .glass-card/.crypto-container conventions.
+   ============================================================ */
+
+.news-tabs {
+  display: flex;
+  gap: 28px;
+  border-bottom: 1px solid var(--border-glass);
+  margin: 28px 0 20px;
+}
+
+.news-tabs__item {
+  padding: 4px 2px 14px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-faint);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.16s ease, border-color 0.16s ease;
+}
+
+.news-tabs__item:hover { color: var(--text-muted); }
+
+.news-tabs__item.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.news-filter-row { margin-bottom: 24px; }
+
+.news-filter-row__scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+
+.news-filter-row__scroll::-webkit-scrollbar { display: none; }
+
+.news-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+a.news-filter-pill:hover { color: var(--text); border-color: var(--border-glow); }
+
+.news-filter-pill.is-active {
+  background: var(--grad-brand);
+  color: #fff;
+  border-color: transparent;
+}
+
+.news-filter-pill img { width: 18px; height: 18px; border-radius: 4px; object-fit: contain; }
+.news-filter-pill svg { width: 16px; height: 16px; }
+
+.news-filter-pill--live .news-filter-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.news-filter-pill--live.is-live {
+  color: var(--red);
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.news-filter-pill--live.is-live .news-filter-pill__dot {
+  background: var(--red);
+  box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.6);
+  animation: news-live-pulse 1.6s ease-out infinite;
+}
+
+/* Major international tournaments (World Cup, and any future one tagged
+   country="World") — bigger chip, accent border/tint always-on (not just
+   on hover/active), plus a small season-year badge. */
+.news-filter-pill--major {
+  padding: 10px 20px;
+  font-size: 14.5px;
+  font-weight: 700;
+  background: var(--accent-light);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  color: var(--text);
+}
+
+a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text); }
+
+.news-filter-pill--major.is-active {
+  background: var(--grad-brand);
+  border-color: transparent;
+}
+
+.news-filter-pill--major img { width: 22px; height: 22px; }
+
+.news-filter-pill__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 640px) {
+  .news-filter-pill--major { padding: 9px 16px; font-size: 13.5px; }
+  .news-filter-pill--major img { width: 19px; height: 19px; }
+}
+
+@keyframes news-live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.55); }
+  70% { box-shadow: 0 0 0 7px rgba(244, 63, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+}
+
+.news-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 32px;
+  align-items: start;
+  padding-bottom: 60px;
+}
+
+.news-byline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.news-byline--sm { font-size: 11.5px; }
+.news-byline__dot { opacity: 0.6; }
+
+/* Hero card — full-width image, bold title BELOW the image (not overlaid) */
+.news-hero { display: block; margin-bottom: 28px; }
+
+.news-hero__media {
+  display: block;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+}
+
+.news-hero__media img { width: 100%; height: 100%; object-fit: cover; }
+.news-hero__media svg { width: 42px; height: 42px; margin: auto; color: var(--text-faint); display: block; }
+
+.news-hero__title {
+  font-family: var(--font-display);
+  font-size: clamp(21px, 2.6vw, 28px);
+  line-height: 1.3;
+  font-weight: 700;
+  margin: 18px 0 8px;
+}
+
+.news-hero__title a:hover { color: var(--cyan); }
+
+.news-list { display: flex; flex-direction: column; gap: 4px; }
+
+.news-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.news-row__media {
+  flex-shrink: 0;
+  width: 108px;
+  height: 76px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  display: flex;
+}
+
+.news-row__media img { width: 100%; height: 100%; object-fit: cover; }
+.news-row__media svg { width: 24px; height: 24px; margin: auto; color: var(--text-faint); }
+
+.news-row__body { flex: 1; min-width: 0; }
+
+.news-row__title {
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  line-height: 1.4;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.news-row__title a:hover { color: var(--cyan); }
+
+/* Trending sidebar */
+.trending-panel {
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  position: sticky;
+  top: 20px;
+}
+
+.trending-panel__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+
+.trending-panel__title svg { width: 16px; height: 16px; color: var(--gold); }
+
+.trending-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border-glass);
+}
+
+.trending-item:first-of-type { border-top: none; padding-top: 0; }
+
+.trending-item__rank {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--green);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.trending-item__body { flex: 1; min-width: 0; }
+
+.trending-item__title {
+  font-size: 13.5px;
+  line-height: 1.4;
+  font-weight: 600;
+  margin: 0 0 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.trending-item__title a:hover { color: var(--cyan); }
+
+.trending-item__media {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-deep-2);
+  border: 1px solid var(--border-glass);
+  display: flex;
+}
+
+.trending-item__media img { width: 100%; height: 100%; object-fit: cover; }
+.trending-item__media svg { width: 18px; height: 18px; margin: auto; color: var(--text-faint); }
+
+@media (max-width: 980px) {
+  .news-layout { grid-template-columns: 1fr; }
+  .news-layout__sidebar { order: 3; }
+  .trending-panel { position: static; }
+}
+
+@media (max-width: 640px) {
+  .news-tabs { gap: 20px; }
+  .news-row__media { width: 84px; height: 60px; }
+  .news-hero__title { margin: 14px 0 6px; }
+}
+
+/* ============================================================
+   Livescore — search/live controls, date strip + calendar popup,
+   per-league fixture groups, fixture cards.
+   ============================================================ */
+
+.livescore-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 28px 0 14px;
+}
+
+.livescore-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  padding: 11px 16px;
+  transition: border-color 0.16s ease;
+}
+
+.livescore-search:focus-within { border-color: var(--border-glow); }
+.livescore-search svg { width: 17px; height: 17px; color: var(--text-faint); flex-shrink: 0; }
+
+.livescore-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font-body);
+}
+
+.livescore-search input:focus { outline: none; }
+.livescore-search input::placeholder { color: var(--text-faint); }
+
+.livescore-live-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 11px 18px;
+  border-radius: var(--radius-md);
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+.livescore-live-toggle:hover { color: var(--text); border-color: var(--border-glow); }
+
+.livescore-live-toggle__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.livescore-live-toggle__count {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-faint);
+}
+
+.livescore-live-toggle[aria-pressed="true"] {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.4);
+  color: var(--red);
+}
+
+.livescore-live-toggle[aria-pressed="true"] .livescore-live-toggle__count { color: var(--red); }
+
+.livescore-live-toggle[data-live-count="0"] .livescore-live-toggle__dot { opacity: 0.5; }
+
+.livescore-live-toggle:not([data-live-count="0"]) .livescore-live-toggle__dot {
+  background: var(--red);
+  box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.6);
+  animation: news-live-pulse 1.6s ease-out infinite;
+}
+
+.livescore-datebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 28px;
+}
+
+.livescore-datestrip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+
+.livescore-datestrip::-webkit-scrollbar { display: none; }
+
+.livescore-datestrip__day {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  color: var(--text-muted);
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+.livescore-datestrip__day:hover { color: var(--text); border-color: var(--border-glow); }
+
+/* Below this width, evenly-distributed flex:1 boxes get squeezed too
+   narrow to hold the label+number — revert to fixed-width scrollable
+   boxes (original mobile behavior) instead of forcing the even split. */
+@media (max-width: 640px) {
+  .livescore-datestrip__day { flex: 0 0 auto; min-width: 56px; }
+}
+
+.livescore-datestrip__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+}
+
+.livescore-datestrip__num {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.livescore-datestrip__day.is-today {
+  background: var(--accent-light);
+  border-color: rgba(var(--accent-rgb), 0.35);
+  color: var(--text);
+}
+
+.livescore-datestrip__day.is-selected {
+  background: var(--grad-brand);
+  border-color: transparent;
+  color: #fff;
+}
+
+.livescore-tz-note { font-size: 12px; color: var(--text-faint); margin: -18px 0 24px; }
+
+.livescore-calendar-wrap { position: relative; flex-shrink: 0; }
+
+.livescore-api-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.livescore-api-hint svg { width: 16px; height: 16px; }
+.livescore-api-hint:hover, .livescore-api-hint:focus-visible { color: var(--text-muted); }
+
+.livescore-calendar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  color: var(--text-muted);
+  transition: border-color 0.16s ease, color 0.16s ease;
+}
+
+.livescore-calendar-btn svg { width: 18px; height: 18px; }
+.livescore-calendar-btn:hover,
+.livescore-calendar-btn.is-active { color: var(--accent); border-color: var(--border-glow); }
+
+.livescore-calendar-popup {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 40;
+  width: 280px;
+  background: var(--bg-deep-2, var(--surface-glass));
+  background-color: var(--surface-nav);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+}
+
+.livescore-calendar-popup__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.livescore-calendar-popup__title {
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.livescore-calendar-popup__nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: var(--surface-glass-2);
+  border: 1px solid var(--border-glass);
+}
+
+.livescore-calendar-popup__nav:hover { color: var(--text); border-color: var(--border-glow); }
+.livescore-calendar-popup__nav svg { width: 14px; height: 14px; }
+
+.livescore-calendar-popup__weekdays,
+.livescore-calendar-popup__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  text-align: center;
+}
+
+.livescore-calendar-popup__weekdays {
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.livescore-calendar-popup__day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.livescore-calendar-popup__day:not(.is-empty):hover { background: var(--surface-glass-strong); color: var(--text); }
+.livescore-calendar-popup__day.is-empty { visibility: hidden; }
+
+.livescore-calendar-popup__day.is-today {
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.livescore-calendar-popup__day.is-selected {
+  background: var(--grad-brand);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .livescore-controls { flex-wrap: wrap; }
+  .livescore-live-toggle { padding: 11px 14px; }
+  .livescore-calendar-popup { right: -8px; width: 260px; }
+}
+
+.fixture-league-group { margin-bottom: 32px; }
+
+.fixture-league-group__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.fixture-league-group__header img { width: 28px; height: 28px; object-fit: contain; border-radius: 4px; }
+.fixture-league-group__header svg { width: 24px; height: 24px; color: var(--gold); }
+
+.fixture-league-group__title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fixture-league-group__title span {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.fixture-league-group__title small {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.fixture-round-group { margin-bottom: 16px; }
+.fixture-round-group:last-child { margin-bottom: 0; }
+
+.fixture-round-group__label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 8px 2px;
+}
+
+.fixture-league-group__list {
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.fixture-card {
+  display: grid;
+  grid-template-columns: 1fr 88px 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.fixture-card:last-child { border-bottom: none; }
+.fixture-card.is-live { background: rgba(244, 63, 94, 0.05); }
+
+.fixture-card__team {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Both team groups hug the center column (mirrored) — logos anchor the
+   outer end of each group, names sit closest to the score/vs in the
+   middle, matching typical livescore card conventions. */
+.fixture-card__team--home { justify-content: flex-end; }
+.fixture-card__team--away { justify-content: flex-end; text-align: right; flex-direction: row-reverse; }
+
+.fixture-card__team img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.fixture-card__team svg { width: 26px; height: 26px; color: var(--text-faint); flex-shrink: 0; }
+
+/* min-width: 0 on the span itself (not just its flex-container parent) is
+   what actually lets long names shrink/ellipsis instead of forcing the
+   whole team group — logo included — to overflow past its grid column
+   and get clipped by .fixture-league-group__list's overflow: hidden. */
+.fixture-card__team span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fixture-card__center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  text-align: center;
+}
+
+.fixture-card__score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.fixture-card__score-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border-glass);
+}
+
+.fixture-card__score--vs { color: var(--text-faint); font-size: 14px; font-weight: 500; }
+
+.fixture-status {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.fixture-status--muted { color: var(--text-faint); }
+
+.fixture-status--live {
+  color: var(--red);
+}
+
+.fixture-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.6);
+  animation: news-live-pulse 1.6s ease-out infinite;
+}
+
+@media (max-width: 640px) {
+  .fixture-card { grid-template-columns: 1fr 64px 1fr; gap: 8px; padding: 14px 12px; }
+  .fixture-card__team { gap: 6px; }
+  .fixture-card__team span { font-size: 12.5px; }
+  .fixture-card__team img { width: 22px; height: 22px; }
+  .fixture-card__team svg { width: 18px; height: 18px; }
+  .fixture-card__score { font-size: 15px; }
+}
+
+/* ============================================================
+   Olahraga — multi-sport selector (/olahraga). Reuses .page-hero /
+   .crypto-container from livescore.php; only the card grid is new.
+   ============================================================ */
+
+.sport-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  padding-bottom: 60px;
+}
+
+.sport-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+
+.sport-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--surface-glass-2);
+  color: var(--text-muted);
+}
+
+.sport-card__icon svg { width: 26px; height: 26px; }
+
+.sport-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sport-card__name {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.sport-card--active {
+  cursor: pointer;
+}
+
+.sport-card--active:hover {
+  border-color: var(--border-glow);
+  background: var(--surface-glass-strong);
+  transform: translateY(-2px);
+}
+
+.sport-card--active .sport-card__icon {
+  background: var(--grad-brand);
+  color: #fff;
+}
+
+.sport-card--soon {
+  opacity: 0.6;
+}
+
+.sport-card__badge {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface-glass-2);
+  border: 1px solid var(--border-glass);
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   Formula 1 (/f1) — season calendar cards + podium + standings
+   tables. Deliberately not built on .fixture-card (no two-team
+   score shape fits F1) — its own small component set instead.
+   ============================================================ */
+
+.f1-race-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 60px;
+}
+
+.f1-race-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  flex-wrap: wrap;
+}
+
+.f1-race-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.f1-race-card__gp {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.f1-race-card__circuit { font-size: 13px; color: var(--text-muted); }
+.f1-race-card__date { font-size: 12.5px; color: var(--text-faint); }
+
+.f1-race-card__status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 180px;
+}
+
+.f1-status-badge {
+  display: inline-flex;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--surface-glass-2);
+  border: 1px solid var(--border-glass);
+  color: var(--text-muted);
+}
+
+.f1-status-badge--scheduled { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.35); background: var(--accent-light); }
+.f1-status-badge--live { color: var(--red); border-color: rgba(244, 63, 94, 0.4); background: rgba(244, 63, 94, 0.12); }
+.f1-status-badge--completed { color: var(--text-muted); }
+.f1-status-badge--postponed, .f1-status-badge--cancelled { color: var(--text-faint); }
+
+.f1-podium {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: right;
+}
+
+.f1-podium__row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.f1-podium__pos {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--accent);
+  width: 24px;
+}
+
+.f1-podium__driver { font-weight: 600; }
+.f1-podium__team { color: var(--text-faint); }
+
+.f1-standings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  padding-bottom: 60px;
+}
+
+.f1-standings-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  margin: 24px 0 14px;
+}
+
+@media (max-width: 860px) {
+  .f1-standings-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .f1-race-card { flex-direction: column; }
+  .f1-race-card__status { align-items: flex-start; width: 100%; }
+  .f1-podium { text-align: left; }
+  .f1-podium__row { justify-content: flex-start; }
+}
+
+/* ============================================================
+   Live Sekarang — homepage widget (index.php), above the news tabs.
+   Reuses .fixture-card (livescore.php/nba.php) unchanged; only sizing
+   is scoped down here for a compact homepage strip.
+   ============================================================ */
+
+.live-now-widget {
+  margin-bottom: 24px;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.live-now-widget__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.live-now-widget__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.live-now-widget__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.6);
+  animation: news-live-pulse 1.6s ease-out infinite;
+}
+
+.live-now-widget__link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.live-now-widget__link:hover { color: var(--accent-hover); }
+
+.live-now-widget__list .fixture-card {
+  grid-template-columns: 1fr 64px 1fr;
+  gap: 10px;
+  padding: 10px 16px;
+}
+
+.live-now-widget__list .fixture-card__team img,
+.live-now-widget__list .fixture-card__team svg {
+  width: 22px;
+  height: 22px;
+}
+
+.live-now-widget__list .fixture-card__team span { font-size: 13px; }
+.live-now-widget__list .fixture-card__score { font-size: 15px; }
+.live-now-widget__list .fixture-status { font-size: 11px; }
+
+@media (max-width: 640px) {
+  .live-now-widget__head { padding: 12px 16px; flex-wrap: wrap; }
+  .live-now-widget__list .fixture-card { grid-template-columns: 1fr 48px 1fr; padding: 10px 12px; }
+}

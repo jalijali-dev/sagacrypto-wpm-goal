@@ -1,0 +1,68 @@
+# Sagagoal — clean URL rewrites (Fase 9 follow-up).
+#
+# Written to be portable between local dev (this app may sit in a
+# subfolder, e.g. http://localhost/wpm/) and production (app sits at the
+# domain root, e.g. https://sagagoal.com/) WITHOUT needing a different
+# RewriteBase per environment: every target below is a relative path
+# (no leading slash), so Apache resolves it relative to the directory this
+# .htaccess lives in — whatever that directory is mounted as.
+#
+# All existing *.php files keep working directly with their original
+# ?slug=/?tag=/?mode= query strings (nothing here breaks old links); this
+# just adds pretty aliases on top and is what all internal links now point
+# to (see includes/site-bootstrap.php, index.php, artikel.php, kategori.php,
+# pencarian.php).
+#
+# Requires mod_rewrite enabled and AllowOverride All (or at least
+# "AllowOverride FileInfo") on the directory — ask your hosting/Docker
+# Apache config if these rules don't seem to take effect.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Never rewrite requests that already point at a real file or directory
+    # (assets/, cms-admin/, uploads/, the *.php files themselves, etc.).
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Generic extension-less alias: /<name> -> <name>.php for any top-level
+    # page whose slug matches its filename exactly (livescore, olahraga,
+    # nba, f1, pencarian, kontak, etc.) — covers new top-level pages
+    # automatically without needing a one-off rule added here every time.
+    # Pages whose slug does NOT match their filename (berita -> kategori.php,
+    # tentang-kami -> tentang.php) still need their own specific rule below,
+    # since this generic rule only handles same-name matches.
+    RewriteCond %{REQUEST_FILENAME}\.php -f
+    RewriteRule ^([a-zA-Z0-9_-]+)/?$ $1.php [L,QSA]
+
+    # /artikel/<slug> -> artikel.php?slug=<slug>
+    RewriteRule ^artikel/([^/]+)/?$ artikel.php?slug=$1 [L,QSA]
+
+    # /berita/tag/<slug> -> kategori.php?tag=<slug>
+    RewriteRule ^berita/tag/([^/]+)/?$ kategori.php?tag=$1 [L,QSA]
+
+    # /berita/kategori/<slug> -> kategori.php?slug=<slug>  (category listing)
+    RewriteRule ^berita/kategori/([^/]+)/?$ kategori.php?slug=$1 [L,QSA]
+
+    # /berita -> kategori.php  (all articles)
+    RewriteRule ^berita/?$ kategori.php [L,QSA]
+
+    # Legacy aliases (Fase 9) — kept so any old /kategori.../tag links still resolve.
+    RewriteRule ^tag/([^/]+)/?$ kategori.php?tag=$1 [L,QSA]
+    RewriteRule ^kategori/([^/]+)/?$ kategori.php?slug=$1 [L,QSA]
+    RewriteRule ^kategori/?$ kategori.php [L,QSA]
+
+    # /tentang-kami -> tentang.php  (slug doesn't match filename, needs its own rule)
+    RewriteRule ^tentang-kami/?$ tentang.php [L,QSA]
+
+    # Sitemaps module (14 Jul 2026) — /sitemap.xml and /sitemap-index.xml
+    # both serve the same sitemap index; the four per-type files are the
+    # sub-sitemaps it points search engines at. See sitemap.php.
+    RewriteRule ^sitemap\.xml$ sitemap.php?type=index [L,QSA]
+    RewriteRule ^sitemap-index\.xml$ sitemap.php?type=index [L,QSA]
+    RewriteRule ^sitemap-pages\.xml$ sitemap.php?type=pages [L,QSA]
+    RewriteRule ^sitemap-articles\.xml$ sitemap.php?type=articles [L,QSA]
+    RewriteRule ^sitemap-categories\.xml$ sitemap.php?type=categories [L,QSA]
+    RewriteRule ^sitemap-custom\.xml$ sitemap.php?type=custom [L,QSA]
+</IfModule>
