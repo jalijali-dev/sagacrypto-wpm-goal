@@ -21,6 +21,23 @@ declare(strict_types=1);
 require_once __DIR__ . '/BasketballSettings.php';
 require_once __DIR__ . '/ApiBasketballClient.php';
 
+/** Same API-Sports family quota error as football's wpm_is_quota_error() in LivescoreSync.php — duplicated, not shared, since each sport's sync file is self-contained (never co-required with another sport's). */
+function wpm_is_quota_error(string $error): bool
+{
+    return stripos($error, 'request limit') !== false;
+}
+
+/** Same as football's wpm_log_api_error() in LivescoreSync.php — duplicated for the same self-containment reason. */
+function wpm_log_api_error(PDO $pdo, string $source, string $message): void
+{
+    try {
+        $pdo->prepare('INSERT INTO api_error_log (source, message) VALUES (:source, :message)')
+            ->execute(['source' => $source, 'message' => $message]);
+    } catch (Throwable $e) {
+        // Logging itself must never break a sync run.
+    }
+}
+
 /** Self-migrating schema for the two NBA tables — new tables, no legacy migration to account for. */
 function wpm_ensure_nba_tables(PDO $pdo): void
 {
@@ -68,9 +85,16 @@ function wpm_ensure_nba_tables(PDO $pdo): void
  * a throttled (1x/24h) probe learning the free-plan's currently allowed
  * /games?date= window (same account family/quirk as API-Football).
  *
+ * "Today" is fetched every run (unthrottled) — it's the one date that can
+ * contain live-in-progress games, and API-Basketball has no separate
+ * live-only endpoint to isolate that from the rest of today's schedule.
+ * "Tomorrow" — pure non-live schedule — is throttled via
+ * BasketballSettings::primarySyncDue() (quota-exhaustion fix, 24 Jul
+ * 2026). $force=true (admin "Sync Sekarang") bypasses that throttle.
+ *
  * @return array{ok: bool, skipped_reason: ?string, games_synced: int, teams_upserted: int, messages: list<string>}
  */
-function wpm_sync_nba_games(PDO $pdo): array
+function wpm_sync_nba_games(PDO $pdo, bool $force = false): array
 {
     $messages = [];
     wpm_ensure_nba_tables($pdo);
@@ -161,20 +185,40 @@ function wpm_sync_nba_games(PDO $pdo): array
         }
     };
 
-    foreach ([date('Y-m-d'), date('Y-m-d', strtotime('+1 day'))] as $date) {
+    $quotaFailureThisRun = false;
+
+    $fetchDate = static function (string $date) use ($client, $upsertGames, &$gamesSynced, $pdo, &$messages, &$quotaFailureThisRun): void {
         $result = $client->games(['date' => $date]);
         if (!$result['ok']) {
             $messages[] = "Date {$date}: FAILED ({$result['error']})";
+            wpm_log_api_error($pdo, 'basketball_games', "Date {$date}: {$result['error']}");
+            if (wpm_is_quota_error($result['error'])) {
+                BasketballSettings::recordSyncFailure($pdo, $result['error']);
+                $quotaFailureThisRun = true;
+            }
             $parsedWindow = ApiBasketballClient::parseDateWindowError($result['error']);
             if ($parsedWindow !== null) {
                 BasketballSettings::saveGameDateWindow($pdo, $parsedWindow['start'], $parsedWindow['end']);
                 $messages[] = "Date window updated from failure: {$parsedWindow['start']} to {$parsedWindow['end']}";
             }
-            continue;
+            return;
         }
         $before = $gamesSynced;
         $upsertGames($result['data']['response'] ?? []);
         $messages[] = "Date {$date}: " . ($gamesSynced - $before) . ' games synced';
+    };
+
+    // "Today" always runs (can contain live games). "Tomorrow" — pure
+    // non-live schedule — is throttled (see wpm_sync_nba_games() docblock).
+    $fetchDate(date('Y-m-d'));
+
+    if (BasketballSettings::primarySyncDue($pdo, $force)) {
+        $fetchDate(date('Y-m-d', strtotime('+1 day')));
+        BasketballSettings::markPrimarySynced($pdo);
+    } else {
+        $settings = BasketballSettings::load($pdo);
+        $intervalMinutes = (int) round($settings['sync_games_interval'] / 60);
+        $messages[] = "Tomorrow's games throttled — terakhir sync {$settings['last_primary_sync_at']}, interval {$intervalMinutes} menit belum lewat.";
     }
 
     if ($teamsUpserted > 0) {
@@ -199,6 +243,12 @@ function wpm_sync_nba_games(PDO $pdo): array
         } else {
             $messages[] = "Date window probe: inconclusive ({$probeResult['error']}), will retry next run.";
         }
+    }
+
+    // Clears a stale "quota habis" badge left over from an earlier failed
+    // run (25 Jul 2026 fix) — see LivescoreSync.php's equivalent.
+    if (!$quotaFailureThisRun) {
+        BasketballSettings::recordSyncSuccess($pdo, "Sync otomatis berhasil — {$gamesSynced} game disinkronkan.");
     }
 
     return ['ok' => true, 'skipped_reason' => null, 'games_synced' => $gamesSynced, 'teams_upserted' => $teamsUpserted, 'messages' => $messages];

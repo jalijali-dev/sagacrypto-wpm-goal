@@ -18,6 +18,23 @@ declare(strict_types=1);
 require_once __DIR__ . '/FormulaOneSettings.php';
 require_once __DIR__ . '/ApiFormula1Client.php';
 
+/** Same API-Sports family quota error as football's wpm_is_quota_error() in LivescoreSync.php — duplicated, not shared, since each sport's sync file is self-contained (never co-required with another sport's). */
+function wpm_is_quota_error(string $error): bool
+{
+    return stripos($error, 'request limit') !== false;
+}
+
+/** Same as football's wpm_log_api_error() in LivescoreSync.php — duplicated for the same self-containment reason. */
+function wpm_log_api_error(PDO $pdo, string $source, string $message): void
+{
+    try {
+        $pdo->prepare('INSERT INTO api_error_log (source, message) VALUES (:source, :message)')
+            ->execute(['source' => $source, 'message' => $message]);
+    } catch (Throwable $e) {
+        // Logging itself must never break a sync run.
+    }
+}
+
 /** Self-migrating schema for the four F1 tables — all new, no legacy migration to account for. */
 function wpm_ensure_f1_tables(PDO $pdo): void
 {
@@ -86,9 +103,14 @@ function wpm_ensure_f1_tables(PDO $pdo): void
  * have podium data yet (one extra call per newly-completed race, not
  * per run — already-backfilled races are skipped).
  *
+ * Throttled via FormulaOneSettings::primarySyncDue() (quota-exhaustion
+ * fix, 24 Jul 2026) — the whole thing counts as "non-live" (see that
+ * method's docblock), so this is gated as one unit rather than split.
+ * $force=true (admin "Sync Sekarang") bypasses the throttle.
+ *
  * @return array{ok: bool, skipped_reason: ?string, races_synced: int, podium_backfilled: int, messages: list<string>}
  */
-function wpm_sync_f1_races(PDO $pdo): array
+function wpm_sync_f1_races(PDO $pdo, bool $force = false): array
 {
     $messages = [];
     wpm_ensure_f1_tables($pdo);
@@ -97,14 +119,26 @@ function wpm_sync_f1_races(PDO $pdo): array
         return ['ok' => false, 'skipped_reason' => 'Fitur Formula 1 sedang nonaktif.', 'races_synced' => 0, 'podium_backfilled' => 0, 'messages' => $messages];
     }
 
+    if (!FormulaOneSettings::primarySyncDue($pdo, $force)) {
+        $settings = FormulaOneSettings::load($pdo);
+        $intervalMinutes = (int) round($settings['sync_interval'] / 60);
+        return ['ok' => false, 'skipped_reason' => "Throttled — terakhir sync {$settings['last_primary_sync_at']}, interval {$intervalMinutes} menit belum lewat.", 'races_synced' => 0, 'podium_backfilled' => 0, 'messages' => $messages];
+    }
+
     $settings = FormulaOneSettings::load($pdo);
     $client = ApiFormula1Client::fromSettings($settings);
     $season = (int) date('Y');
 
     $result = $client->races(['season' => $season]);
     if (!$result['ok']) {
+        wpm_log_api_error($pdo, 'f1_races', $result['error']);
+        if (wpm_is_quota_error($result['error'])) {
+            FormulaOneSettings::recordSyncFailure($pdo, $result['error']);
+        }
         return ['ok' => false, 'skipped_reason' => "Gagal ambil kalender race musim {$season}: {$result['error']}", 'races_synced' => 0, 'podium_backfilled' => 0, 'messages' => $messages];
     }
+    FormulaOneSettings::markPrimarySynced($pdo);
+    $quotaFailureThisRun = false;
 
     $raceUpsert = $pdo->prepare(
         'INSERT INTO f1_races (id, season, competition_name, competition_location, circuit_name, type, status, race_date)
@@ -157,6 +191,12 @@ function wpm_sync_f1_races(PDO $pdo): array
         $rankResult = $client->raceRankings((int) $raceId);
         if (!$rankResult['ok']) {
             $messages[] = "Podium race #{$raceId}: FAILED ({$rankResult['error']})";
+            wpm_log_api_error($pdo, 'f1_podium', "Race #{$raceId}: {$rankResult['error']}");
+            if (wpm_is_quota_error($rankResult['error'])) {
+                FormulaOneSettings::recordSyncFailure($pdo, $rankResult['error']);
+                $quotaFailureThisRun = true;
+                break; // quota's gone — no point burning more calls on the rest of the loop.
+            }
             continue;
         }
 
@@ -186,6 +226,12 @@ function wpm_sync_f1_races(PDO $pdo): array
         }
     }
 
+    // Clears a stale "quota habis" badge left over from an earlier failed
+    // run (25 Jul 2026 fix) — see LivescoreSync.php's equivalent.
+    if (!$quotaFailureThisRun) {
+        FormulaOneSettings::recordSyncSuccess($pdo, "Sync otomatis berhasil — {$racesSynced} sesi, podium {$podiumBackfilled} race baru diisi.");
+    }
+
     return ['ok' => true, 'skipped_reason' => null, 'races_synced' => $racesSynced, 'podium_backfilled' => $podiumBackfilled, 'messages' => $messages];
 }
 
@@ -194,9 +240,12 @@ function wpm_sync_f1_races(PDO $pdo): array
  * season (2 calls). Independent of wpm_sync_f1_races() so it can run on
  * its own schedule (standings only meaningfully change after a race).
  *
+ * Throttled via FormulaOneSettings::secondarySyncDue() (quota-exhaustion
+ * fix, 24 Jul 2026). $force=true (admin "Sync Sekarang") bypasses it.
+ *
  * @return array{ok: bool, skipped_reason: ?string, drivers_synced: int, constructors_synced: int, messages: list<string>}
  */
-function wpm_sync_f1_standings(PDO $pdo): array
+function wpm_sync_f1_standings(PDO $pdo, bool $force = false): array
 {
     $messages = [];
     wpm_ensure_f1_tables($pdo);
@@ -205,9 +254,17 @@ function wpm_sync_f1_standings(PDO $pdo): array
         return ['ok' => false, 'skipped_reason' => 'Fitur Formula 1 sedang nonaktif.', 'drivers_synced' => 0, 'constructors_synced' => 0, 'messages' => $messages];
     }
 
+    if (!FormulaOneSettings::secondarySyncDue($pdo, $force)) {
+        $settings = FormulaOneSettings::load($pdo);
+        $intervalSeconds = $settings['sync_secondary_interval'] ?? $settings['sync_interval'];
+        $intervalMinutes = (int) round($intervalSeconds / 60);
+        return ['ok' => false, 'skipped_reason' => "Throttled — terakhir sync {$settings['last_secondary_sync_at']}, interval {$intervalMinutes} menit belum lewat.", 'drivers_synced' => 0, 'constructors_synced' => 0, 'messages' => $messages];
+    }
+
     $settings = FormulaOneSettings::load($pdo);
     $client = ApiFormula1Client::fromSettings($settings);
     $season = (int) date('Y');
+    $quotaFailureThisRun = false;
 
     $driverUpsert = $pdo->prepare(
         'INSERT INTO f1_driver_standings (season, position, driver_name, team_name, nationality, points, wins)
@@ -238,6 +295,11 @@ function wpm_sync_f1_standings(PDO $pdo): array
         $messages[] = "Klasemen pembalap musim {$season}: {$driversSynced} baris.";
     } else {
         $messages[] = "Klasemen pembalap: FAILED ({$driverResult['error']})";
+        wpm_log_api_error($pdo, 'f1_standings_drivers', $driverResult['error']);
+        if (wpm_is_quota_error($driverResult['error'])) {
+            FormulaOneSettings::recordSyncFailure($pdo, $driverResult['error']);
+            $quotaFailureThisRun = true;
+        }
     }
 
     $constructorUpsert = $pdo->prepare(
@@ -266,6 +328,19 @@ function wpm_sync_f1_standings(PDO $pdo): array
         $messages[] = "Klasemen konstruktor musim {$season}: {$constructorsSynced} baris.";
     } else {
         $messages[] = "Klasemen konstruktor: FAILED ({$constructorResult['error']})";
+        wpm_log_api_error($pdo, 'f1_standings_constructors', $constructorResult['error']);
+        if (wpm_is_quota_error($constructorResult['error'])) {
+            FormulaOneSettings::recordSyncFailure($pdo, $constructorResult['error']);
+            $quotaFailureThisRun = true;
+        }
+    }
+
+    FormulaOneSettings::markSecondarySynced($pdo);
+
+    // Clears a stale "quota habis" badge left over from an earlier failed
+    // run (25 Jul 2026 fix) — see LivescoreSync.php's equivalent.
+    if (!$quotaFailureThisRun) {
+        FormulaOneSettings::recordSyncSuccess($pdo, "Sync otomatis berhasil — {$driversSynced} pembalap, {$constructorsSynced} konstruktor.");
     }
 
     return ['ok' => true, 'skipped_reason' => null, 'drivers_synced' => $driversSynced, 'constructors_synced' => $constructorsSynced, 'messages' => $messages];

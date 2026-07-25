@@ -63,6 +63,14 @@ final class ApiFootballClient
         return $this->get('/fixtures', ['live' => implode('-', $leagueIds)]);
     }
 
+    // Note (25 Jul 2026, stale-fixture investigation): tried adding a
+    // fixturesByIds() using /fixtures?ids= to re-verify fixtures stuck on
+    // "NS" long after kickoff, but confirmed live against this account
+    // that free plans reject the Ids parameter entirely ("Free plans do
+    // not have access to the Ids parameter"). Removed — see
+    // LivescoreSync.php's stale-NS re-verify pass, which groups by ?date=
+    // instead (the same call type Pass 1 already relies on).
+
     /**
      * Free API-Football plans reject /fixtures?date= outside a rolling
      * few-day window with a 200-status body like:

@@ -2,51 +2,58 @@
 declare(strict_types=1);
 
 /**
- * Single-row config loader for the NBA/API-Basketball integration
- * (table: basketball_api_settings, id=1) — same "singleton settings row"
- * pattern as LivescoreSettings.php (football). Deliberately simpler:
- * no tracked_league_ids checklist, since NBA v2 is a single competition
- * (no leagues to pick from) — everything else (encrypted key, sync
- * toggles, learned date-window) mirrors the football settings shape.
+ * Config loader for the NBA/API-Basketball integration — backed by the
+ * unified `sports_api_settings` table (sport_key = 'basketball'), same
+ * pattern as LivescoreSettings.php (football). Deliberately simpler: no
+ * tracked_league_ids checklist, since NBA v2 is a single competition (no
+ * leagues to pick from) — everything else (encrypted key, sync toggles,
+ * learned date-window) mirrors the football settings shape.
  */
 
 require_once __DIR__ . '/../cms-admin/config/app.php';
 require_once __DIR__ . '/../cms-admin/includes/schema-guard.php';
 require_once __DIR__ . '/../cms-admin/includes/ai-helpers.php';
+require_once __DIR__ . '/SportsApiSettings.php';
 require_once __DIR__ . '/SportsRegistry.php'; // for syncSportVisibility()
 
 final class BasketballSettings
 {
+    private const SPORT_KEY = 'basketball';
+
     /**
      * @return array{
      *   id: int, provider: string, base_url: string, api_key: string,
      *   api_key_header: string, sync_games_interval: int, cache_duration_live: int,
      *   is_active: bool, auto_sync_enabled: bool,
+     *   nav_placement: string, sort_order: int,
      *   last_test_status: ?string, last_test_message: ?string, last_test_at: ?string
      * }
      */
     public static function load(PDO $pdo): array
     {
-        self::ensureSchema($pdo);
+        wpm_ensure_sports_api_settings_table($pdo);
 
-        $row = $pdo->query('SELECT * FROM basketball_api_settings WHERE id = 1 LIMIT 1')->fetch();
-        if ($row === false) {
-            $pdo->exec('INSERT IGNORE INTO basketball_api_settings (id) VALUES (1)');
-            $row = $pdo->query('SELECT * FROM basketball_api_settings WHERE id = 1 LIMIT 1')->fetch();
-        }
+        $stmt = $pdo->prepare('SELECT * FROM sports_api_settings WHERE sport_key = :key LIMIT 1');
+        $stmt->execute(['key' => self::SPORT_KEY]);
+        $row = $stmt->fetch();
 
         $apiKeyEnc = (string) ($row['api_key_enc'] ?? '');
 
         return [
-            'id' => (int) $row['id'],
+            'id' => (int) $row['sport_id'],
             'provider' => (string) $row['provider'],
             'base_url' => rtrim((string) $row['base_url'], '/'),
             'api_key' => $apiKeyEnc !== '' ? cms_ai_decrypt($apiKeyEnc) : '',
             'api_key_header' => (string) $row['api_key_header'],
-            'sync_games_interval' => (int) $row['sync_games_interval'],
+            'sync_games_interval' => (int) $row['sync_primary_interval'],
             'cache_duration_live' => (int) $row['cache_duration_live'],
             'is_active' => (int) $row['is_active'] === 1,
             'auto_sync_enabled' => (int) $row['auto_sync_enabled'] === 1,
+            'nav_placement' => (string) $row['nav_placement'],
+            'page_title' => $row['page_title'] !== null ? (string) $row['page_title'] : null,
+            'page_subtitle' => $row['page_subtitle'] !== null ? (string) $row['page_subtitle'] : null,
+            'sort_order' => (int) $row['sort_order'],
+            'last_primary_sync_at' => $row['last_primary_sync_at'] !== null ? (string) $row['last_primary_sync_at'] : null,
             'last_test_status' => $row['last_test_status'] !== null ? (string) $row['last_test_status'] : null,
             'last_test_message' => $row['last_test_message'] !== null ? (string) $row['last_test_message'] : null,
             'last_test_at' => $row['last_test_at'] !== null ? (string) $row['last_test_at'] : null,
@@ -68,47 +75,48 @@ final class BasketballSettings
 
     /**
      * Same free-plan date-window learning as LivescoreSettings::getApiDateWindow()
-     * (football) — same account family, same quirk, so nba.php can classify
-     * an empty date the same way livescore.php does: "genuinely no games"
+     * (football) — same account family, same quirk, so basket.php can classify
+     * an empty date the same way football.php does: "genuinely no games"
      * vs "provider can't fetch this date yet".
      *
      * @return array{start: ?string, end: ?string, checked_at: ?string}
      */
     public static function getGameDateWindow(PDO $pdo): array
     {
-        self::ensureSchema($pdo);
+        wpm_ensure_sports_api_settings_table($pdo);
 
-        $row = $pdo->query(
-            'SELECT game_date_window_start, game_date_window_end, game_date_window_checked_at
-             FROM basketball_api_settings WHERE id = 1 LIMIT 1'
-        )->fetch();
+        $stmt = $pdo->prepare(
+            'SELECT date_window_start, date_window_end, date_window_checked_at
+             FROM sports_api_settings WHERE sport_key = :key LIMIT 1'
+        );
+        $stmt->execute(['key' => self::SPORT_KEY]);
+        $row = $stmt->fetch();
 
         return [
-            'start' => $row['game_date_window_start'] !== null ? (string) $row['game_date_window_start'] : null,
-            'end' => $row['game_date_window_end'] !== null ? (string) $row['game_date_window_end'] : null,
-            'checked_at' => $row['game_date_window_checked_at'] !== null ? (string) $row['game_date_window_checked_at'] : null,
+            'start' => $row['date_window_start'] !== null ? (string) $row['date_window_start'] : null,
+            'end' => $row['date_window_end'] !== null ? (string) $row['date_window_end'] : null,
+            'checked_at' => $row['date_window_checked_at'] !== null ? (string) $row['date_window_checked_at'] : null,
         ];
     }
 
     /** Persists a freshly-learned (or newly-cleared, when null/null) date window. Always stamps checked_at = now. */
     public static function saveGameDateWindow(PDO $pdo, ?string $start, ?string $end): void
     {
-        self::ensureSchema($pdo);
+        wpm_ensure_sports_api_settings_table($pdo);
 
         $stmt = $pdo->prepare(
-            'UPDATE basketball_api_settings
-             SET game_date_window_start = :start, game_date_window_end = :end, game_date_window_checked_at = NOW()
-             WHERE id = 1'
+            'UPDATE sports_api_settings
+             SET date_window_start = :start, date_window_end = :end, date_window_checked_at = NOW()
+             WHERE sport_key = :key'
         );
-        $stmt->execute(['start' => $start, 'end' => $end]);
+        $stmt->execute(['start' => $start, 'end' => $end, 'key' => self::SPORT_KEY]);
     }
 
     /**
-     * Keeps the /olahraga selector's "basketball" row in sync with this
+     * Keeps the `sports` table's "basketball" row in sync with this
      * feature's on/off switch — one checkbox (here) controls both whether
-     * sync runs AND whether the selector shows an active "NBA" card
-     * instead of "Segera Hadir", so there's no separate admin toggle to
-     * forget about.
+     * sync runs AND whether the admin accordion/homepage filter chip show
+     * this as active, so there's no separate admin toggle to forget about.
      */
     public static function syncSportVisibility(PDO $pdo, bool $isActive): void
     {
@@ -117,28 +125,50 @@ final class BasketballSettings
             ->execute(['is_active' => $isActive ? 1 : 0]);
     }
 
-    private static function ensureSchema(PDO $pdo): void
+    /**
+     * Throttle gate for NBA's "tomorrow" games fetch (quota-exhaustion
+     * fix, 24 Jul 2026) — reads sync_games_interval (sync_primary_interval)
+     * from the DB. Unlike football, API-Basketball has no dedicated
+     * live-only endpoint (see ApiBasketballClient — just games?date=), so
+     * "today" stays unthrottled (it's the one date that can contain live
+     * games) while "tomorrow" — pure non-live schedule — is gated by this.
+     */
+    public static function primarySyncDue(PDO $pdo, bool $force = false): bool
     {
-        cms_ensure_table(
-            $pdo,
-            'basketball_api_settings',
-            'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-             provider VARCHAR(100) NOT NULL DEFAULT \'API-Basketball (NBA)\',
-             base_url VARCHAR(255) NOT NULL DEFAULT \'https://v2.nba.api-sports.io\',
-             api_key_enc VARCHAR(255) DEFAULT NULL,
-             api_key_header VARCHAR(100) NOT NULL DEFAULT \'x-apisports-key\',
-             sync_games_interval INT UNSIGNED NOT NULL DEFAULT 300,
-             cache_duration_live INT UNSIGNED NOT NULL DEFAULT 60,
-             is_active TINYINT(1) NOT NULL DEFAULT 0,
-             auto_sync_enabled TINYINT(1) NOT NULL DEFAULT 0,
-             last_test_status VARCHAR(20) DEFAULT NULL,
-             last_test_message VARCHAR(255) DEFAULT NULL,
-             last_test_at TIMESTAMP NULL DEFAULT NULL,
-             game_date_window_start DATE DEFAULT NULL,
-             game_date_window_end DATE DEFAULT NULL,
-             game_date_window_checked_at DATETIME DEFAULT NULL,
-             updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        );
-        $pdo->exec('INSERT IGNORE INTO basketball_api_settings (id) VALUES (1)');
+        if ($force) {
+            return true;
+        }
+        $settings = self::load($pdo);
+        $lastSyncAt = $settings['last_primary_sync_at'] ?? null;
+        if ($lastSyncAt === null) {
+            return true;
+        }
+        return (time() - strtotime($lastSyncAt)) >= $settings['sync_games_interval'];
+    }
+
+    /** Stamps last_primary_sync_at = now — call after a successful throttled "tomorrow" games pass (see primarySyncDue()). */
+    public static function markPrimarySynced(PDO $pdo): void
+    {
+        wpm_ensure_sports_api_settings_table($pdo);
+        $pdo->prepare('UPDATE sports_api_settings SET last_primary_sync_at = NOW() WHERE sport_key = :key')
+            ->execute(['key' => self::SPORT_KEY]);
+    }
+
+    /** Records a cron sync failure into last_test_* — see LivescoreSettings::recordSyncFailure() for the full rationale. */
+    public static function recordSyncFailure(PDO $pdo, string $message): void
+    {
+        wpm_ensure_sports_api_settings_table($pdo);
+        $pdo->prepare(
+            "UPDATE sports_api_settings SET last_test_status = 'failed', last_test_message = :message, last_test_at = NOW() WHERE sport_key = :key"
+        )->execute(['message' => $message, 'key' => self::SPORT_KEY]);
+    }
+
+    /** Counterpart to recordSyncFailure() — see LivescoreSettings::recordSyncSuccess() for the full rationale (25 Jul 2026 fix). */
+    public static function recordSyncSuccess(PDO $pdo, string $message): void
+    {
+        wpm_ensure_sports_api_settings_table($pdo);
+        $pdo->prepare(
+            "UPDATE sports_api_settings SET last_test_status = 'success', last_test_message = :message, last_test_at = NOW() WHERE sport_key = :key"
+        )->execute(['message' => $message, 'key' => self::SPORT_KEY]);
     }
 }
