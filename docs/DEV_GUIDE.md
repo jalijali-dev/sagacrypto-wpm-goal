@@ -157,7 +157,7 @@ commit git sama sekali di project ini sejauh ini):
   repo apa adanya** — folder `cms-admin/` **tetap dengan prefix-nya, TIDAK
   di-flatten**. Di server, `cms-admin/` memang subfolder nyata di dalam
   `public_html/` (`public_html/cms-admin/`) yang jadi document root
-  subdomain admin (`wpm.sagacrypto.com`) lewat konfigurasi Document Root
+  subdomain admin (`wpm.sagagoal.com`) lewat konfigurasi Document Root
   di cPanel — bukan hasil pemindahan/rename fisik saat deploy. Lihat
   `docs/DEPLOY_WORKFLOW.md` untuk struktur server & alur deploy lengkap.
 - Sertakan `BACA-DULU.txt` di root zip: petunjuk upload + checklist

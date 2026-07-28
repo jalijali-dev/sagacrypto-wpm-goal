@@ -66,7 +66,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'approve' || $action === 'reject') {
         $jobId = (int) ($_POST['job_id'] ?? 0);
         if ($jobId <= 0) {
-            $redirect('Invalid job.', 'error');
+            $redirect('Job tidak valid.', 'error');
         }
 
         // Content Agent Adapter (ROADMAP.md gap #1, closed 27 Jul 2026):
@@ -103,7 +103,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $upd = $pdo->prepare('UPDATE growth_agent_jobs SET status = :status, page_id = :page_id, updated_at = NOW() WHERE id = :id');
             $upd->execute(['status' => 'succeeded', 'page_id' => $draftResult['page_id'], 'id' => $jobId]);
 
-            $redirect('Draft artikel berhasil dibuat — klik "Edit draft" di Recent jobs untuk melengkapi & publish.');
+            $redirect('Draft artikel berhasil dibuat — klik "Edit draft" di Job Terbaru untuk melengkapi & publish.');
         }
 
         $feedbackAction = $action === 'approve' ? 'approved_as_is' : 'rejected';
@@ -118,7 +118,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $upd = $pdo->prepare('UPDATE growth_agent_jobs SET status = :status, updated_at = NOW() WHERE id = :id');
         $upd->execute(['status' => $newStatus, 'id' => $jobId]);
 
-        $redirect($action === 'approve' ? 'Job approved — it may now be used as a future example.' : 'Job rejected.');
+        $redirect($action === 'approve' ? 'Job di-approve — sekarang bisa dipakai sebagai contoh di masa depan.' : 'Job ditolak.');
     }
 
     // ── "Close as Legacy" — a third review outcome distinct from
@@ -132,7 +132,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'close_as_legacy') {
         $jobId = (int) ($_POST['job_id'] ?? 0);
         if ($jobId <= 0) {
-            $redirect('Invalid job.', 'error');
+            $redirect('Job tidak valid.', 'error');
         }
 
         cms_growth_agent_ensure_legacy_status($pdo);
@@ -152,33 +152,33 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'style_rule_create') {
         $ruleText = trim((string) ($_POST['rule_text'] ?? ''));
         if ($ruleText === '') {
-            $redirect('Style rule text is required.', 'error');
+            $redirect('Teks style rule wajib diisi.', 'error');
         }
         $ins = $pdo->prepare(
             'INSERT INTO growth_agent_style_rules (rule_text, source, is_active, created_by, created_at)
              VALUES (:rule_text, :source, 1, :created_by, NOW())'
         );
         $ins->execute(['rule_text' => $ruleText, 'source' => 'manual', 'created_by' => $currentAdminId]);
-        $redirect('Style rule added.');
+        $redirect('Style rule berhasil ditambahkan.');
     }
 
     if ($action === 'style_rule_toggle') {
         $ruleId = (int) ($_POST['id'] ?? 0);
         if ($ruleId <= 0) {
-            $redirect('Invalid rule.', 'error');
+            $redirect('Rule tidak valid.', 'error');
         }
         $pdo->prepare('UPDATE growth_agent_style_rules SET is_active = 1 - is_active WHERE id = :id')
             ->execute(['id' => $ruleId]);
-        $redirect('Style rule updated.');
+        $redirect('Style rule berhasil diperbarui.');
     }
 
     if ($action === 'style_rule_delete') {
         $ruleId = (int) ($_POST['id'] ?? 0);
         if ($ruleId <= 0) {
-            $redirect('Invalid rule.', 'error');
+            $redirect('Rule tidak valid.', 'error');
         }
         $pdo->prepare('DELETE FROM growth_agent_style_rules WHERE id = :id')->execute(['id' => $ruleId]);
-        $redirect('Style rule removed.');
+        $redirect('Style rule berhasil dihapus.');
     }
 
     // ── "Apply SEO Recommendation" — manual scan trigger ─────────────────
@@ -191,7 +191,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'scan_seo') {
         $scanStats = cms_growth_agent_scan_seo_recommendations($pdo, 5);
         if ($scanStats['created'] > 0) {
-            $redirect($scanStats['created'] . ' rekomendasi SEO baru dibuat dari ' . $scanStats['scanned'] . ' artikel yang di-scan. Cek di tabel "Recent jobs" di bawah.');
+            $redirect($scanStats['created'] . ' rekomendasi SEO baru dibuat dari ' . $scanStats['scanned'] . ' artikel yang di-scan. Cek di tabel "Job Terbaru" di bawah.');
         }
         if ($scanStats['scanned'] === 0) {
             $redirect('Tidak ada artikel baru untuk di-scan — semua artikel published sudah pernah di-scan.', 'error');
@@ -321,7 +321,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
 
         $redirect($ok
-            ? 'Rekomendasi berhasil digenerate — cek tabel "Recent jobs" di bawah untuk review.'
+            ? 'Rekomendasi berhasil digenerate — cek tabel "Job Terbaru" di bawah untuk review.'
             : 'Generate gagal: ' . $genError, $ok ? 'success' : 'error');
     }
 
@@ -355,7 +355,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
         if (cms_growth_agent_indexing_issue_needs_review($inspectResult['data'])) {
             cms_growth_agent_log_indexing_issue($pdo, $inspectPageId, $inspectUrl, $inspectResult['data']);
-            $redirect('Inspect selesai — verdict: ' . $inspectResult['data']['verdict'] . '. Job "review_indexing_issue" dibuat, cek Recent jobs.', 'error');
+            $redirect('Inspect selesai — verdict: ' . $inspectResult['data']['verdict'] . '. Job "review_indexing_issue" dibuat, cek Job Terbaru.', 'error');
         }
 
         $redirect('Inspect selesai — verdict: ' . $inspectResult['data']['verdict'] . ', tidak ada masalah terdeteksi.');
@@ -389,7 +389,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $redirect($marked ? 'Pattern ditandai stale.' : 'Pattern tidak ditemukan.', $marked ? 'success' : 'error');
     }
 
-    $redirect('Unknown action.', 'error');
+    $redirect('Aksi tidak dikenal.', 'error');
 }
 
 $alerts = [];
@@ -414,11 +414,11 @@ $safeCount = static function (PDO $pdo, string $sql): int {
 };
 
 $statsCards = [
-    ['label' => 'Approved / Ready', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'ready'"), 'hint' => 'Awaiting execute'],
-    ['label' => 'Running', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'running'"), 'hint' => 'In progress'],
-    ['label' => 'Succeeded', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'succeeded'"), 'hint' => 'Draft created'],
-    ['label' => 'Failed', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'failed'"), 'hint' => 'Retryable'],
-    ['label' => 'Manual Actions', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'manual_action'"), 'hint' => 'Operator execution required'],
+    ['label' => 'Disetujui / Siap', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'ready'"), 'hint' => 'Menunggu eksekusi'],
+    ['label' => 'Berjalan', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'running'"), 'hint' => 'Sedang berjalan'],
+    ['label' => 'Berhasil', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'succeeded'"), 'hint' => 'Draft berhasil dibuat'],
+    ['label' => 'Gagal', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'failed'"), 'hint' => 'Bisa dicoba lagi'],
+    ['label' => 'Aksi Manual', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'manual_action'"), 'hint' => 'Perlu eksekusi manual operator'],
 ];
 
 // ── "Need Review" / "Ready to Run" / "Completed" — same 3-way split used
@@ -444,9 +444,9 @@ $completedCount = max(0, $totalJobsCount - $needReviewCount - $readyToRunCount);
 $lastAnalysisAt = (string) ($pdo->query('SELECT MAX(created_at) AS m FROM growth_agent_jobs')->fetch()['m'] ?? '');
 
 $summaryCards = [
-    ['label' => 'Pending', 'value' => $needReviewCount, 'hint' => 'Menunggu di-review'],
-    ['label' => 'Completed', 'value' => $completedCount, 'hint' => 'Sudah di-approve/reject/legacy'],
-    ['label' => 'Last Analysis', 'value' => $lastAnalysisAt !== '' ? $lastAnalysisAt : '—', 'hint' => 'Job terakhir dibuat'],
+    ['label' => 'Tertunda', 'value' => $needReviewCount, 'hint' => 'Menunggu di-review'],
+    ['label' => 'Selesai', 'value' => $completedCount, 'hint' => 'Sudah di-approve/reject/legacy'],
+    ['label' => 'Analisis Terakhir', 'value' => $lastAnalysisAt !== '' ? $lastAnalysisAt : '—', 'hint' => 'Job terakhir dibuat'],
 ];
 
 // ── Recent jobs — with page title (if linked) and whether feedback already exists ──
@@ -579,7 +579,7 @@ try {
     $memoryPatterns = [];
 }
 $memoryStatusPill = ['active' => 'ok', 'pending_review' => 'info', 'stale' => 'muted'];
-$memoryPatternLabel = ['winning_pattern' => 'Winning Pattern', 'content_gap' => 'Content Gap'];
+$memoryPatternLabel = ['winning_pattern' => 'Pola Sukses', 'content_gap' => 'Kesenjangan Konten'];
 
 // ── Feedback Loop / Before-After (ROADMAP.md gap #4) ──
 // Read-only reporting — no approve/execute here (see
@@ -593,7 +593,7 @@ if ($gscConnected) {
         $feedbackReport = [];
     }
 }
-$feedbackActionLabel = ['seo_recommendation' => 'SEO Recommendation (Apply)', 'gsc_article_idea' => 'Article Idea (Published)'];
+$feedbackActionLabel = ['seo_recommendation' => 'Rekomendasi SEO (Diterapkan)', 'gsc_article_idea' => 'Ide Artikel (Terbit)'];
 
 // Summary cards first (higher-level "how are things going" numbers), then
 // the existing granular per-status breakdown — same .admin-grid--stats
@@ -630,44 +630,44 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <h2 class="section-title">
                 Growth Agent
                 <?php if ($healthNeedsAttention) : ?>
-                    <span class="pill pill--warn" style="vertical-align:middle;margin-left:8px;" title="<?= $healthGscFailed ? 'GSC fetch terakhir gagal' : $healthNotifCount . ' job butuh review (failed/manual action)' ?>">🔴 Needs Attention</span>
+                    <span class="pill pill--warn" style="vertical-align:middle;margin-left:8px;" title="<?= $healthGscFailed ? 'GSC fetch terakhir gagal' : $healthNotifCount . ' job butuh review (failed/manual action)' ?>">🔴 Perlu Perhatian</span>
                 <?php else : ?>
-                    <span class="pill pill--ok" style="vertical-align:middle;margin-left:8px;">🟢 Healthy</span>
+                    <span class="pill pill--ok" style="vertical-align:middle;margin-left:8px;">🟢 Sehat</span>
                 <?php endif; ?>
             </h2>
-            <p class="section-lead">SEO &amp; content pipeline — drafts, runs, and hands work back for approval.</p>
+            <p class="section-lead">Pipeline SEO &amp; konten — bikin draft, jalanin proses, lalu kembalikan ke operator buat di-approve.</p>
         </div>
         <div class="toolbar__right">
             <form method="post" action="<?= cms_esc($selfUrl) ?>">
                 <?= cms_csrf_field() ?>
                 <input type="hidden" name="action" value="scan_seo">
-                <button type="submit" class="admin-btn admin-btn--primary">Scan for SEO improvements</button>
+                <button type="submit" class="admin-btn admin-btn--primary">Scan untuk perbaikan SEO</button>
             </form>
         </div>
     </div>
-    <p class="section-lead" style="margin-top:-8px;">Scan checks published articles that haven't been scanned yet (up to 5 per click) and proposes an improved meta title/description for each — nothing is changed until you review and apply it.</p>
+    <p class="section-lead" style="margin-top:-8px;">Scan mengecek artikel published yang belum pernah di-scan (maks. 5 per klik) dan mengusulkan meta title/description yang lebih baik untuk masing-masing — tidak ada yang berubah sampai Anda review dan apply.</p>
 
     <div class="panel">
         <div class="panel__head">
             <h3 class="panel__title">Google Search Console</h3>
-            <span class="pill pill--<?= $gscConnected ? 'ok' : 'muted' ?>"><?= $gscConnected ? 'Connected' : 'Not connected' ?></span>
+            <span class="pill pill--<?= $gscConnected ? 'ok' : 'muted' ?>"><?= $gscConnected ? 'Terhubung' : 'Tidak terhubung' ?></span>
         </div>
         <div class="toolbar" style="padding:16px 20px 20px;">
             <div class="toolbar__left">
                 <?php if ($gscConnected) : ?>
                     <p class="muted" style="margin:0;font-size:13px;">
-                        Property: <code><?= cms_esc((string) $gscSettings['site_url']) ?></code><br>
-                        Last fetch:
+                        Properti: <code><?= cms_esc((string) $gscSettings['site_url']) ?></code><br>
+                        Fetch terakhir:
                         <?php if (!empty($gscSettings['last_fetch_at'])) : ?>
                             <span class="pill pill--<?= $gscSettings['last_fetch_status'] === 'success' ? 'ok' : 'warn' ?>" style="margin-left:4px;"><?= cms_esc((string) $gscSettings['last_fetch_status']) ?></span>
-                            <?= (int) $gscSettings['last_fetch_rows'] ?> rows — <?= cms_esc((string) $gscSettings['last_fetch_at']) ?>
+                            <?= (int) $gscSettings['last_fetch_rows'] ?> baris — <?= cms_esc((string) $gscSettings['last_fetch_at']) ?>
                         <?php else : ?>
-                            <span class="muted">belum pernah — akan otomatis jalan begitu halaman ini dibuka (atau klik Refresh Data).</span>
+                            <span class="muted">belum pernah — akan otomatis jalan begitu halaman ini dibuka (atau klik Fetch GSC Data).</span>
                         <?php endif; ?>
                     </p>
                 <?php else : ?>
                     <p class="muted" style="margin:0;font-size:13px;">
-                        Belum tersambung ke Google Search Console — rekomendasi berbasis data GSC (tabel "Prioritized Opportunities" di bawah) belum bisa jalan.
+                        Belum tersambung ke Google Search Console — rekomendasi berbasis data GSC (tabel "Peluang Terprioritas" di bawah) belum bisa jalan.
                         <a class="panel__link" href="<?= cms_esc(cms_nav_href('gsc-settings.php')) ?>">Hubungkan sekarang &rarr;</a>
                     </p>
                 <?php endif; ?>
@@ -676,12 +676,12 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <?php if ($gscConnected) : ?>
                     <form method="post" action="<?= cms_esc(cms_action_href('gsc-refresh.php')) ?>">
                         <?= cms_csrf_field() ?>
-                        <button type="submit" class="admin-btn admin-btn--secondary">Refresh Data</button>
+                        <button type="submit" class="admin-btn admin-btn--secondary">🔄 Fetch GSC Data</button>
                     </form>
                     <form method="post" action="<?= cms_esc($selfUrl) ?>">
                         <?= cms_csrf_field() ?>
                         <input type="hidden" name="action" value="recompute_opportunities">
-                        <button type="submit" class="admin-btn admin-btn--ghost">Recompute Opportunities</button>
+                        <button type="submit" class="admin-btn admin-btn--ghost">Hitung Ulang Opportunities</button>
                     </form>
                 <?php endif; ?>
                 <a class="admin-btn admin-btn--ghost" href="<?= cms_esc(cms_nav_href('gsc-settings.php')) ?>">GSC Settings</a>
@@ -698,11 +698,11 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </div>
             <div class="admin-grid admin-grid--stats" style="padding:0 20px 20px;">
                 <article class="stat-card">
-                    <div class="stat-card__label">Clicks</div>
+                    <div class="stat-card__label">Klik</div>
                     <div class="stat-card__value"><?= number_format($gscAggregate['clicks']) ?></div>
                 </article>
                 <article class="stat-card">
-                    <div class="stat-card__label">Impressions</div>
+                    <div class="stat-card__label">Impresi</div>
                     <div class="stat-card__value"><?= number_format($gscAggregate['impressions']) ?></div>
                 </article>
                 <article class="stat-card">
@@ -710,7 +710,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <div class="stat-card__value"><?= cms_esc((string) $gscAggregate['ctr']) ?>%</div>
                 </article>
                 <article class="stat-card">
-                    <div class="stat-card__label">Avg. Position</div>
+                    <div class="stat-card__label">Rata-rata Posisi</div>
                     <div class="stat-card__value"><?= cms_esc((string) $gscAggregate['avg_position']) ?></div>
                 </article>
             </div>
@@ -718,7 +718,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead>
-                        <tr><th>Query</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr>
+                        <tr><th>Query</th><th>Klik</th><th>Impresi</th><th>CTR</th><th>Posisi</th></tr>
                     </thead>
                     <tbody>
                         <?php if ($gscTopQueries === []) : ?>
@@ -743,26 +743,26 @@ require dirname(__DIR__) . '/includes/alerts.php';
     <?php if ($gscConnected) : ?>
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Prioritized Opportunities</h3>
-            <span class="panel__meta"><?= count($opportunities) ?> open</span>
+            <h3 class="panel__title">Peluang Terprioritas</h3>
+            <span class="panel__meta"><?= count($opportunities) ?> terbuka</span>
         </div>
         <div class="table-wrap">
             <table class="admin-table">
                 <thead>
                     <tr>
-                        <th>Priority</th>
+                        <th>Prioritas</th>
                         <th>Item</th>
-                        <th>Matched Categories</th>
-                        <th>Impact</th>
-                        <th>Effort</th>
-                        <th>Recommended Agent</th>
-                        <th>Reason</th>
+                        <th>Kategori Cocok</th>
+                        <th>Dampak</th>
+                        <th>Upaya</th>
+                        <th>Agent Rekomendasi</th>
+                        <th>Alasan</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if ($opportunities === []) : ?>
-                        <tr><td colspan="8" class="muted">Belum ada opportunity — akan muncul otomatis setelah data GSC di-fetch (atau klik "Recompute Opportunities" di atas).</td></tr>
+                        <tr><td colspan="8" class="muted">Belum ada opportunity — akan muncul otomatis setelah data GSC di-fetch (atau klik "Hitung Ulang Opportunities" di atas).</td></tr>
                     <?php endif; ?>
                     <?php foreach ($opportunities as $opp) : ?>
                         <tr>
@@ -770,7 +770,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                             <td>
                                 <?php if ($opp['item_type'] === 'page') : ?>
                                     <?= $opp['page_title'] ? cms_esc((string) $opp['page_title']) : '<span class="muted">Artikel #' . (int) $opp['matched_page_id'] . '</span>' ?>
-                                    <span class="muted" style="font-size:11px;">(page)</span>
+                                    <span class="muted" style="font-size:11px;">(artikel)</span>
                                 <?php else : ?>
                                     <?= cms_esc((string) $opp['query_text']) ?>
                                     <span class="muted" style="font-size:11px;">(query)</span>
@@ -791,7 +791,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                                     <input type="hidden" name="action" value="generate_from_opportunity">
                                     <input type="hidden" name="opportunity_id" value="<?= (int) $opp['id'] ?>">
                                     <?php if ($opp['recommended_action'] === 'cannibalization_review') : ?>
-                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary" title="Tidak ada AI di sini — cuma surface data query + halaman yang bentrok buat ditinjau manual">Review</button>
+                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary" title="Tidak ada AI di sini — cuma menampilkan data query + halaman yang bentrok buat ditinjau manual">Review</button>
                                     <?php else : ?>
                                         <button type="submit" class="admin-btn admin-btn--sm admin-btn--primary">Generate</button>
                                     <?php endif; ?>
@@ -806,14 +806,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
 
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Index Status</h3>
+            <h3 class="panel__title">Status Index</h3>
             <span class="panel__meta"><?= count($indexInspections) ?> artikel published ditampilkan</span>
         </div>
         <div class="toolbar" style="padding:0 20px 16px;">
             <div class="toolbar__left">
                 <p class="muted" style="margin:0;font-size:13px;">
                     Baca status index via Search Console URL Inspection API — read-only, tidak pernah menulis/mengubah artikel.
-                    Kalau verdict bermasalah, job "review_indexing_issue" otomatis dibuat di Recent Jobs (checklist deterministik, bukan AI).
+                    Kalau verdict bermasalah, job "review_indexing_issue" otomatis dibuat di Job Terbaru (checklist deterministik, bukan AI).
                 </p>
             </div>
             <div class="toolbar__right">
@@ -831,7 +831,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <tr>
                         <th>Artikel</th>
                         <th>Verdict</th>
-                        <th>Last Crawl</th>
+                        <th>Crawl Terakhir</th>
                         <th>Terakhir Diinspeksi</th>
                         <th></th>
                     </tr>
@@ -871,7 +871,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
 
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Agent Memory</h3>
+            <h3 class="panel__title">Memori Agent</h3>
             <span class="panel__meta"><?= count($memoryPatterns) ?> pattern</span>
         </div>
         <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
@@ -885,7 +885,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         <th>Tipe</th>
                         <th>Target</th>
                         <th>Status</th>
-                        <th>Evidence</th>
+                        <th>Bukti</th>
                         <th>Minggu Terdeteksi</th>
                         <th>Terakhir Dikonfirmasi</th>
                         <th></th>
@@ -938,7 +938,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
 
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Feedback / Before-After</h3>
+            <h3 class="panel__title">Feedback / Sebelum-Sesudah</h3>
             <span class="panel__meta"><?= count($feedbackReport) ?> artikel</span>
         </div>
         <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
@@ -954,8 +954,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         <th>Artikel</th>
                         <th>Aksi</th>
                         <th>Tanggal Perubahan</th>
-                        <th>Clicks</th>
-                        <th>Impressions</th>
+                        <th>Klik</th>
+                        <th>Impresi</th>
                         <th>CTR</th>
                         <th>Posisi</th>
                     </tr>
@@ -1113,7 +1113,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         <?= cms_csrf_field() ?>
                         <input type="hidden" name="action" value="close_as_legacy">
                         <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
-                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost" title="Sudah tidak relevan lagi — beda dari Reject (yang berarti 'ditolak karena tidak bagus')">Close as Legacy</button>
+                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost" title="Sudah tidak relevan lagi — beda dari Reject (yang berarti 'ditolak karena tidak bagus')">Tutup sebagai Legacy</button>
                     </form>
                 <?php endif; ?>
             </td>
@@ -1122,15 +1122,15 @@ require dirname(__DIR__) . '/includes/alerts.php';
     };
 
     $tabDefs = [
-        ['key' => 'need-review', 'label' => 'Need Review', 'pillTone' => 'warn'],
-        ['key' => 'ready-to-run', 'label' => 'Ready to Run', 'pillTone' => 'muted'],
-        ['key' => 'completed', 'label' => 'Completed', 'pillTone' => 'ok'],
+        ['key' => 'need-review', 'label' => 'Perlu Direview', 'pillTone' => 'warn'],
+        ['key' => 'ready-to-run', 'label' => 'Siap Dijalankan', 'pillTone' => 'muted'],
+        ['key' => 'completed', 'label' => 'Selesai', 'pillTone' => 'ok'],
     ];
     ?>
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Recent jobs</h3>
-            <span class="panel__meta"><?= count($jobs) ?> shown</span>
+            <h3 class="panel__title">Job Terbaru</h3>
+            <span class="panel__meta"><?= count($jobs) ?> ditampilkan</span>
         </div>
         <div class="js-ga-tabs" style="display:flex;gap:8px;padding:0 20px 16px;flex-wrap:wrap;">
             <?php foreach ($tabDefs as $i => $tab) : ?>
@@ -1147,11 +1147,11 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <thead>
                         <tr>
                             <th>Job</th>
-                            <th>Article</th>
+                            <th>Artikel</th>
                             <th>Status</th>
                             <th>Model</th>
-                            <th>Latency</th>
-                            <th>When</th>
+                            <th>Latensi</th>
+                            <th>Waktu</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -1196,16 +1196,16 @@ require dirname(__DIR__) . '/includes/alerts.php';
 
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Style rules</h3>
-            <span class="panel__meta"><?= count($styleRules) ?> item(s)</span>
+            <h3 class="panel__title">Aturan Gaya</h3>
+            <span class="panel__meta"><?= count($styleRules) ?> item</span>
         </div>
-        <p class="section-lead">Active rules are folded into every generate call — see Fase 3 in the GrowthAgent architecture doc.</p>
+        <p class="section-lead">Rule yang aktif otomatis dimasukkan ke setiap pemanggilan generate — lihat Fase 3 di dokumen arsitektur GrowthAgent.</p>
 
         <form method="post" action="<?= cms_esc($selfUrl) ?>" style="display:flex;gap:8px;align-items:flex-start;margin-bottom:16px;">
             <?= cms_csrf_field() ?>
             <input type="hidden" name="action" value="style_rule_create">
-            <textarea name="rule_text" rows="2" placeholder="e.g. Always write meta_title in Bahasa Indonesia, never use clickbait phrasing." style="flex:1;" required></textarea>
-            <button type="submit" class="admin-btn admin-btn--primary">Add rule</button>
+            <textarea name="rule_text" rows="2" placeholder="misal: Selalu tulis meta_title dalam Bahasa Indonesia, jangan pakai judul clickbait." style="flex:1;" required></textarea>
+            <button type="submit" class="admin-btn admin-btn--primary">Tambah rule</button>
         </form>
 
         <div class="table-wrap">
@@ -1213,14 +1213,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <thead>
                     <tr>
                         <th>Rule</th>
-                        <th>Source</th>
+                        <th>Sumber</th>
                         <th>Status</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if ($styleRules === []) : ?>
-                        <tr><td colspan="4" class="muted">No style rules yet.</td></tr>
+                        <tr><td colspan="4" class="muted">Belum ada style rule.</td></tr>
                     <?php endif; ?>
                     <?php foreach ($styleRules as $rule) : ?>
                         <tr>
@@ -1228,9 +1228,9 @@ require dirname(__DIR__) . '/includes/alerts.php';
                             <td><span class="muted"><?= cms_esc((string) $rule['source']) ?></span></td>
                             <td>
                                 <?php if ((int) $rule['is_active'] === 1) : ?>
-                                    <span class="pill pill--ok">Active</span>
+                                    <span class="pill pill--ok">Aktif</span>
                                 <?php else : ?>
-                                    <span class="pill pill--muted">Inactive</span>
+                                    <span class="pill pill--muted">Nonaktif</span>
                                 <?php endif; ?>
                             </td>
                             <td class="table-actions">
@@ -1238,13 +1238,13 @@ require dirname(__DIR__) . '/includes/alerts.php';
                                     <?= cms_csrf_field() ?>
                                     <input type="hidden" name="action" value="style_rule_toggle">
                                     <input type="hidden" name="id" value="<?= (int) $rule['id'] ?>">
-                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary"><?= (int) $rule['is_active'] === 1 ? 'Deactivate' : 'Activate' ?></button>
+                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary"><?= (int) $rule['is_active'] === 1 ? 'Nonaktifkan' : 'Aktifkan' ?></button>
                                 </form>
-                                <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Remove this style rule?');">
+                                <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Hapus style rule ini?');">
                                     <?= cms_csrf_field() ?>
                                     <input type="hidden" name="action" value="style_rule_delete">
                                     <input type="hidden" name="id" value="<?= (int) $rule['id'] ?>">
-                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Delete</button>
+                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Hapus</button>
                                 </form>
                             </td>
                         </tr>
@@ -1256,11 +1256,11 @@ require dirname(__DIR__) . '/includes/alerts.php';
 
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Maintenance</h3>
+            <h3 class="panel__title">Pemeliharaan</h3>
         </div>
         <p class="section-lead">
             Job lama otomatis dibersihkan setiap halaman ini dibuka (job yang sudah selesai &amp; berumur
-            &gt; 90 hari). Job berstatus <strong>Manual Actions</strong> (belum di-review) dan job yang sudah
+            &gt; 90 hari). Job berstatus <strong>Aksi Manual</strong> (belum di-review) dan job yang sudah
             di-Approve sebagai contoh (few-shot) tidak pernah dihapus otomatis maupun manual.
         </p>
         <form method="post" action="<?= cms_esc($selfUrl) ?>" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;" onsubmit="return confirm('Hapus job selesai/gagal yang lebih tua dari jumlah hari ini? Job yang masih menunggu review tidak akan terhapus.');">

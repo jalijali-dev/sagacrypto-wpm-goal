@@ -156,7 +156,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
 
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Source action</h3>
+            <h3 class="panel__title">Sumber Aksi</h3>
         </div>
         <table class="admin-table">
             <tbody>
@@ -169,15 +169,15 @@ require dirname(__DIR__) . '/includes/alerts.php';
 
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Current vs Recommended</h3>
+            <h3 class="panel__title">Saat Ini vs Rekomendasi</h3>
         </div>
         <div class="table-wrap">
             <table class="admin-table">
                 <thead>
                     <tr>
                         <th style="width:140px;"></th>
-                        <th>Current</th>
-                        <th>Recommended</th>
+                        <th>Saat Ini</th>
+                        <th>Rekomendasi</th>
                     </tr>
                 </thead>
                 <tbody>

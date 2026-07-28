@@ -42,7 +42,7 @@ $redirectBack = static function (string $message, string $type = 'success') use 
 };
 
 if ($jobId <= 0) {
-    $redirectBack('Job cannibalization tidak valid.', 'error');
+    $redirectBack('Job kanibalisasi tidak valid.', 'error');
 }
 
 $jobStmt = $pdo->prepare(
@@ -55,7 +55,7 @@ $jobStmt->execute(['id' => $jobId]);
 $job = $jobStmt->fetch();
 
 if (!$job) {
-    $redirectBack('Job cannibalization tidak ditemukan.', 'error');
+    $redirectBack('Job kanibalisasi tidak ditemukan.', 'error');
 }
 
 if ($job['status'] !== 'manual_action') {
@@ -86,7 +86,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $pdo->prepare("UPDATE growth_agent_jobs SET status = 'succeeded', updated_at = NOW() WHERE id = :id")
             ->execute(['id' => $jobId]);
 
-        $redirectBack('Cannibalization ditandai sudah ditinjau.');
+        $redirectBack('Kanibalisasi ditandai sudah ditinjau.');
     }
 
     if ($action === 'close_as_legacy') {
@@ -107,13 +107,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $redirectBack('Aksi tidak dikenal.', 'error');
 }
 
-$pageTitle = 'Review Cannibalization';
+$pageTitle = 'Review Kanibalisasi';
 $currentNav = 'growth-agent';
 $breadcrumbs = [
     ['label' => 'Dashboard', 'href' => cms_dashboard_href()],
     ['label' => 'AI Management', 'href' => ''],
     ['label' => 'Growth Agent', 'href' => cms_nav_href('growth-agent.php')],
-    ['label' => 'Review Cannibalization', 'href' => ''],
+    ['label' => 'Review Kanibalisasi', 'href' => ''],
 ];
 
 require dirname(__DIR__) . '/includes/header.php';
@@ -125,7 +125,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
 <section class="admin-stack">
     <div class="toolbar">
         <div class="toolbar__left">
-            <h2 class="section-title">Review Cannibalization</h2>
+            <h2 class="section-title">Review Kanibalisasi</h2>
             <p class="section-lead">Satu query yang klik/impression-nya terbagi ke beberapa artikel — deteksi murni SQL, bukan AI, dan tidak ada yang otomatis ditulis ke artikel.</p>
         </div>
         <div class="toolbar__right">
@@ -135,14 +135,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
 
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Source query</h3>
+            <h3 class="panel__title">Sumber Query</h3>
         </div>
         <table class="admin-table">
             <tbody>
-                <tr><td class="muted" style="width:180px;">Job</td><td>Review Cannibalization — job #<?= (int) $job['id'] ?></td></tr>
+                <tr><td class="muted" style="width:180px;">Job</td><td>Review Kanibalisasi — job #<?= (int) $job['id'] ?></td></tr>
                 <tr><td class="muted">Query</td><td><strong><?= cms_esc($queryText) ?></strong></td></tr>
-                <tr><td class="muted">Total Clicks</td><td><?= (int) $totalClicks ?></td></tr>
-                <tr><td class="muted">Total Impressions</td><td><?= (int) $totalImpressions ?></td></tr>
+                <tr><td class="muted">Total Klik</td><td><?= (int) $totalClicks ?></td></tr>
+                <tr><td class="muted">Total Impresi</td><td><?= (int) $totalImpressions ?></td></tr>
                 <tr><td class="muted">Dibuat</td><td class="muted"><?= cms_esc((string) $job['created_at']) ?></td></tr>
             </tbody>
         </table>
@@ -157,8 +157,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <thead>
                     <tr>
                         <th>Artikel</th>
-                        <th>Clicks</th>
-                        <th>Impressions</th>
+                        <th>Klik</th>
+                        <th>Impresi</th>
                         <th>Share</th>
                     </tr>
                 </thead>

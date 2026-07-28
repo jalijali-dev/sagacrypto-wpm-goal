@@ -55,8 +55,8 @@ admin panel balik ke frontend publik (mis. preview gambar) adalah
 `cms_public_base_prefix()` (`cms-admin/includes/functions.php`). `BASE_URL`
 mentah **tidak boleh** dipakai untuk ini.
 
-**Alasan:** Topologi deploy adalah split-subdomain (`sagacrypto.com` untuk
-frontend, `wpm.sagacrypto.com` untuk admin — dua host berbeda secara HTTP
+**Alasan:** Topologi deploy adalah split-subdomain (`sagagoal.com` untuk
+frontend, `wpm.sagagoal.com` untuk admin — dua host berbeda secara HTTP
 meski satu hosting/cPanel & satu MySQL server). `BASE_URL` di dalam admin
 selalu merujuk ke domain admin itu sendiri, yang tidak punya file fisik
 `/uploads/...` — dipakai untuk build URL ke frontend, hasilnya 404. Ini

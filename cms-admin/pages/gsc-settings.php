@@ -46,17 +46,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'connect') {
         $rawJson = trim((string) ($_POST['service_account_json'] ?? ''));
         if ($rawJson === '') {
-            $gsc_redirect('Paste the service account JSON first.', 'error');
+            $gsc_redirect('Paste dulu JSON service account-nya.', 'error');
         }
 
         $decoded = json_decode($rawJson, true);
         if (!is_array($decoded) || !isset($decoded['client_email'], $decoded['private_key'])) {
-            $gsc_redirect('That doesn\'t look like a valid service account JSON — missing client_email/private_key.', 'error');
+            $gsc_redirect('Itu bukan JSON service account yang valid — client_email/private_key tidak ditemukan.', 'error');
         }
 
         $test = cms_gsc_test_service_account($decoded);
         if (!$test['ok']) {
-            $gsc_redirect('Connection test failed: ' . $test['message'], 'error');
+            $gsc_redirect('Test koneksi gagal: ' . $test['message'], 'error');
         }
 
         $pdo->prepare(
@@ -68,20 +68,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             'json_enc' => cms_ai_encrypt($rawJson),
         ]);
 
-        $gsc_redirect('Service account connected as ' . $test['email'] . '. Now pick a property below.');
+        $gsc_redirect('Service account terhubung sebagai ' . $test['email'] . '. Sekarang pilih property di bawah.');
     }
 
     if ($action === 'select_property') {
         $siteUrl = trim((string) ($_POST['site_url'] ?? ''));
         if ($siteUrl === '') {
-            $gsc_redirect('Choose a property from the list.', 'error');
+            $gsc_redirect('Pilih salah satu property dari daftar.', 'error');
         }
 
         $pdo->prepare(
             'UPDATE gsc_settings SET site_url = :site_url, is_active = 1, updated_at = NOW() ORDER BY id ASC LIMIT 1'
         )->execute(['site_url' => $siteUrl]);
 
-        $gsc_redirect('Connected to ' . $siteUrl . '. Growth Agent will start pulling data next time it checks (every 24h, or click "Refresh Data" on the Growth Agent page).');
+        $gsc_redirect('Terhubung ke ' . $siteUrl . '. Growth Agent akan mulai menarik data saat pengecekan berikutnya (tiap 24 jam, atau klik "🔄 Fetch GSC Data" di halaman Growth Agent).');
     }
 
     if ($action === 'disconnect') {
@@ -90,10 +90,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 SET service_account_email = NULL, service_account_json_enc = NULL,
                     site_url = NULL, is_active = 0, updated_at = NOW()'
         );
-        $gsc_redirect('Disconnected. Existing cached data in gsc_query_data is kept until you reconnect and refresh.');
+        $gsc_redirect('Terputus. Data cache yang sudah ada di gsc_query_data tetap disimpan sampai Anda connect ulang dan refresh.');
     }
 
-    $gsc_redirect('Unknown action.', 'error');
+    $gsc_redirect('Aksi tidak dikenal.', 'error');
 }
 
 $alerts = [];
@@ -102,7 +102,7 @@ if (isset($_SESSION['cms_flash']) && is_array($_SESSION['cms_flash'])) {
     unset($_SESSION['cms_flash']);
 }
 if ($gsc_schemaError !== null) {
-    $alerts[] = ['type' => 'error', 'message' => 'GSC setup could not run automatically: ' . $gsc_schemaError];
+    $alerts[] = ['type' => 'error', 'message' => 'Setup GSC tidak bisa jalan otomatis: ' . $gsc_schemaError];
 }
 
 $settings = cms_gsc_get_settings($pdo);
@@ -162,7 +162,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
     <div class="toolbar">
         <div class="toolbar__left">
             <h2 class="section-title">GSC Settings</h2>
-            <p class="section-lead">Connect a Google Search Console property via a service account so Growth Agent can pull real search performance data.</p>
+            <p class="section-lead">Hubungkan property Google Search Console lewat service account, supaya Growth Agent bisa menarik data performa pencarian yang sungguhan.</p>
         </div>
         <div class="toolbar__right">
             <a class="admin-btn admin-btn--secondary" href="<?= cms_esc(cms_nav_href('growth-agent.php')) ?>">&larr; Growth Agent</a>
@@ -172,7 +172,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
     <?php if (!$hasCredential) : ?>
         <div class="panel">
             <div class="panel__head">
-                <h3 class="panel__title">Step 1 — Connect a service account</h3>
+                <h3 class="panel__title">Langkah 1 — Hubungkan service account</h3>
             </div>
             <form class="form-stack" method="post" action="<?= cms_esc($selfUrl) ?>">
                 <?= cms_csrf_field() ?>
@@ -192,12 +192,12 @@ require dirname(__DIR__) . '/includes/alerts.php';
     <?php elseif (!$hasProperty) : ?>
         <div class="panel">
             <div class="panel__head">
-                <h3 class="panel__title">Step 2 — Pick a property</h3>
-                <span class="panel__meta">Connected as <?= cms_esc((string) $settings['service_account_email']) ?></span>
+                <h3 class="panel__title">Langkah 2 — Pilih property</h3>
+                <span class="panel__meta">Terhubung sebagai <?= cms_esc((string) $settings['service_account_email']) ?></span>
             </div>
             <?php if ($sitesError !== null) : ?>
                 <div class="admin-alert admin-alert--error" style="margin:0 0 16px;">
-                    Could not list properties: <?= cms_esc($sitesError) ?>
+                    Tidak bisa memuat daftar property: <?= cms_esc($sitesError) ?>
                     — pastikan service account sudah ditambahkan sebagai User di property Search Console yang dimaksud.
                 </div>
             <?php elseif ($availableSites === []) : ?>
@@ -240,25 +240,25 @@ require dirname(__DIR__) . '/includes/alerts.php';
     <?php else : ?>
         <div class="panel">
             <div class="panel__head">
-                <h3 class="panel__title">Connected</h3>
-                <span class="pill pill--ok">Active</span>
+                <h3 class="panel__title">Terhubung</h3>
+                <span class="pill pill--ok">Aktif</span>
             </div>
             <table class="admin-table">
                 <tbody>
                     <tr><td class="muted" style="width:180px;">Service account</td><td><?= cms_esc((string) $settings['service_account_email']) ?></td></tr>
                     <tr><td class="muted">Property</td><td><code><?= cms_esc((string) $settings['site_url']) ?></code></td></tr>
-                    <tr><td class="muted">Last fetch</td>
+                    <tr><td class="muted">Fetch Terakhir</td>
                         <td>
                             <?php if (!empty($settings['last_fetch_at'])) : ?>
                                 <span class="pill pill--<?= $settings['last_fetch_status'] === 'success' ? 'ok' : 'warn' ?>"><?= cms_esc((string) $settings['last_fetch_status']) ?></span>
                                 <?= cms_esc((string) $settings['last_fetch_message']) ?>
-                                (<?= (int) $settings['last_fetch_rows'] ?> rows, <?= cms_esc((string) $settings['last_fetch_at']) ?>)
+                                (<?= (int) $settings['last_fetch_rows'] ?> baris, <?= cms_esc((string) $settings['last_fetch_at']) ?>)
                             <?php else : ?>
                                 <span class="muted">Belum pernah fetch — akan otomatis jalan saat halaman Growth Agent dibuka.</span>
                             <?php endif; ?>
                         </td>
                     </tr>
-                    <tr><td class="muted">Lookback window</td><td><?= (int) $settings['fetch_lookback_days'] ?> hari per fetch</td></tr>
+                    <tr><td class="muted">Rentang Lookback</td><td><?= (int) $settings['fetch_lookback_days'] ?> hari per fetch</td></tr>
                 </tbody>
             </table>
             <form method="post" action="<?= cms_esc($selfUrl) ?>" style="margin-top:16px;" onsubmit="return confirm('Putuskan koneksi GSC? Data cache yang sudah ada tetap disimpan, tapi tidak akan ada fetch baru sampai disambungkan lagi.');">
@@ -272,8 +272,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
     <?php if ($hasCredential) : ?>
         <div class="panel">
             <div class="panel__head">
-                <h3 class="panel__title">Recent Diagnostics</h3>
-                <span class="panel__meta"><?= count($recentDiagnostics) ?> logged</span>
+                <h3 class="panel__title">Diagnostik Terbaru</h3>
+                <span class="panel__meta"><?= count($recentDiagnostics) ?> tercatat</span>
             </div>
             <p class="section-lead" style="padding:0 20px;">
                 Termasuk permintaan yang benar-benar gagal DAN kasus "fetch sukses tapi 0 rows" (bukan error, tapi tetap
@@ -281,7 +281,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </p>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Message</th><th style="width:160px;">When</th></tr></thead>
+                    <thead><tr><th>Pesan</th><th style="width:160px;">Waktu</th></tr></thead>
                     <tbody>
                         <?php if ($recentDiagnostics === []) : ?>
                             <tr><td colspan="2" class="muted">Belum ada diagnostik tercatat.</td></tr>

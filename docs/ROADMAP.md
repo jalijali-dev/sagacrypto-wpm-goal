@@ -30,16 +30,22 @@ Prioritas berjalan / yang paling butuh perhatian saat ini.
   live oleh user. File migrasinya sendiri sudah tidak ada di working
   directory (terhapus di salah satu commit lama "cleanup modul lama") —
   ini sesuai ekspektasi, bukan kehilangan yang tidak disengaja.
-- 🟡 **In Progress** — Git commit & push: repo ini **sebenarnya sudah punya
-  history panjang** di `origin/main` (bukan "belum pernah commit" seperti
-  yang tercatat sebelumnya di sini — itu asumsi keliru, sudah dikoreksi).
-  `main` lokal = `origin/main` + 2 commit lokal di atasnya, linear dan
-  sehat, tidak ada divergensi. Yang masih jadi PR: sejumlah besar
-  perubahan kerja Growth Agent (gap #1–#5, lihat "Done" di bawah) masih
-  ada sebagai working-directory changes yang belum di-commit sama sekali.
-  Commit & push dilakukan langsung oleh user dari Terminal-nya sendiri
-  (git dari sandbox kerja ini tidak reliable — index lock di `.git` selalu
-  nyangkut karena keterbatasan mount sandbox, bukan masalah di sisi user).
+- ✅ **Selesai (28 Jul 2026)** — Git commit, push, dan deploy ke production
+  lengkap. Ternyata `origin/main` sebelumnya punya history 22 commit yang
+  sudah tidak nyambung sama sekali sama `main` lokal (unrelated histories,
+  bukan cuma "ketinggalan beberapa commit") — dikonfirmasi user, diselesaikan
+  dengan force-push (`git push origin main --force`) supaya versi Growth
+  Agent yang sudah ditest end-to-end sepanjang sesi ini (commit `a03057c`)
+  yang jadi source of truth di GitHub. Repo di cPanel
+  (`/home/sagagoal/repositories/sagacrypto-wpm-goal`) sempat kehilangan
+  referensi branch valid akibat force-push ("No checked-out branch is
+  available") — diperbaiki dengan remove + clone ulang. Ke-44 file yang
+  berubah sudah di-`cp` selective ke `public_html` dan diverifikasi identik
+  lewat `diff -rq` per folder — nol perbedaan di luar file yang memang
+  gak seharusnya ikut (`cgi-bin`, `data`, `.htaccess` khusus `cms-admin`).
+  Detail lengkap troubleshooting (git lock, force-push, branch cPanel
+  nyangkut, isi `.cpanel.yml`) sudah didokumentasikan di
+  `docs/DEPLOY_WORKFLOW.md` buat referensi deploy berikutnya.
 
 ## Next
 

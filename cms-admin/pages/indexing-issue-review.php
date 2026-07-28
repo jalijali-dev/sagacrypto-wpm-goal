@@ -42,7 +42,7 @@ $redirectBack = static function (string $message, string $type = 'success') use 
 };
 
 if ($jobId <= 0) {
-    $redirectBack('Job indexing issue tidak valid.', 'error');
+    $redirectBack('Job masalah index tidak valid.', 'error');
 }
 
 $jobStmt = $pdo->prepare(
@@ -57,7 +57,7 @@ $jobStmt->execute(['id' => $jobId]);
 $job = $jobStmt->fetch();
 
 if (!$job) {
-    $redirectBack('Job indexing issue tidak ditemukan.', 'error');
+    $redirectBack('Job masalah index tidak ditemukan.', 'error');
 }
 
 if ($job['status'] !== 'manual_action') {
@@ -107,13 +107,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $redirectBack('Aksi tidak dikenal.', 'error');
 }
 
-$pageTitle = 'Review Indexing Issue';
+$pageTitle = 'Review Masalah Index';
 $currentNav = 'growth-agent';
 $breadcrumbs = [
     ['label' => 'Dashboard', 'href' => cms_dashboard_href()],
     ['label' => 'AI Management', 'href' => ''],
     ['label' => 'Growth Agent', 'href' => cms_nav_href('growth-agent.php')],
-    ['label' => 'Review Indexing Issue', 'href' => ''],
+    ['label' => 'Review Masalah Index', 'href' => ''],
 ];
 
 require dirname(__DIR__) . '/includes/header.php';
@@ -125,7 +125,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
 <section class="admin-stack">
     <div class="toolbar">
         <div class="toolbar__left">
-            <h2 class="section-title">Review Indexing Issue</h2>
+            <h2 class="section-title">Review Masalah Index</h2>
             <p class="section-lead">Checklist deterministik + data verdict mentah dari Search Console URL Inspection — bukan rekomendasi AI, dan tidak ada yang otomatis ditulis ke artikel.</p>
         </div>
         <div class="toolbar__right">
@@ -135,11 +135,11 @@ require dirname(__DIR__) . '/includes/alerts.php';
 
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Source inspection</h3>
+            <h3 class="panel__title">Sumber Inspeksi</h3>
         </div>
         <table class="admin-table">
             <tbody>
-                <tr><td class="muted" style="width:180px;">Job</td><td>Review Indexing Issue — job #<?= (int) $job['id'] ?></td></tr>
+                <tr><td class="muted" style="width:180px;">Job</td><td>Review Masalah Index — job #<?= (int) $job['id'] ?></td></tr>
                 <tr><td class="muted">Artikel</td><td><?= $job['page_title'] ? cms_esc((string) $job['page_title']) : '<span class="muted">Artikel tidak ditemukan</span>' ?></td></tr>
                 <tr><td class="muted">URL</td><td><?php if ($inspectedUrl !== '') : ?><a href="<?= cms_esc($inspectedUrl) ?>" target="_blank" rel="noopener"><?= cms_esc($inspectedUrl) ?></a><?php else : ?><span class="muted">—</span><?php endif; ?></td></tr>
                 <tr><td class="muted">Dibuat</td><td class="muted"><?= cms_esc((string) $job['created_at']) ?></td></tr>
@@ -176,7 +176,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <tr><td class="muted">Robots.txt State</td><td><?= cms_esc((string) ($inspection['robots_txt_state'] ?? '—')) ?></td></tr>
                     <tr><td class="muted">Indexing State</td><td><?= cms_esc((string) ($inspection['indexing_state'] ?? '—')) ?></td></tr>
                     <tr><td class="muted">Page Fetch State</td><td><?= cms_esc((string) ($inspection['page_fetch_state'] ?? '—')) ?></td></tr>
-                    <tr><td class="muted">Last Crawl Time</td><td><?= cms_esc((string) ($inspection['last_crawl_time'] ?? '—')) ?></td></tr>
+                    <tr><td class="muted">Waktu Crawl Terakhir</td><td><?= cms_esc((string) ($inspection['last_crawl_time'] ?? '—')) ?></td></tr>
                     <tr><td class="muted">Google Canonical</td><td><?= cms_esc((string) ($inspection['google_canonical'] ?? '—')) ?></td></tr>
                     <tr><td class="muted">User Canonical</td><td><?= cms_esc((string) ($inspection['user_canonical'] ?? '—')) ?></td></tr>
                     <tr><td class="muted">Sitemap</td><td><?= cms_esc((string) ($inspection['sitemap'] ?? '—')) ?></td></tr>
