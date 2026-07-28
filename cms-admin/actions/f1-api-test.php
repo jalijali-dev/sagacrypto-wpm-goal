@@ -47,9 +47,9 @@ if ($result['ok']) {
 }
 
 $update = $pdo->prepare(
-    'UPDATE f1_api_settings
+    'UPDATE sports_api_settings
      SET last_test_status = :status, last_test_message = :message, last_test_at = NOW()
-     WHERE id = 1'
+     WHERE sport_key = \'motorsport\''
 );
 $update->execute(['status' => $status, 'message' => $message]);
 

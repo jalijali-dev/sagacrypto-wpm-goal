@@ -2,11 +2,13 @@
 declare(strict_types=1);
 
 /**
- * Sagagoal — Livescore page. Jadwal & skor pertandingan, dikelompokkan per
- * liga. Sumber data: tabel fixtures/teams/leagues (diisi oleh cron sync
- * API-Football). Controls: search (client-side), toggle "Live (N)"
- * (client-side, filters whatever date is currently loaded), 7-day date
- * strip + full calendar popup (both navigate via ?date=). Auto-refresh via
+ * Sagagoal — Football livescore page (/football, renamed from /livescore
+ * 24 Jul 2026 — "livescore" is a feature every sport has, not a page
+ * name). Jadwal & skor pertandingan, dikelompokkan per liga. Sumber
+ * data: tabel fixtures/teams/leagues (diisi oleh cron sync API-Football).
+ * Controls: search (client-side), toggle "Live (N)" (client-side,
+ * filters whatever date is currently loaded), 7-day date strip + full
+ * calendar popup (both navigate via ?date=). Auto-refresh via
  * livescore-poll.php only runs when viewing today (the only day live
  * matches can exist on) — query lokal ke tabel fixtures, TIDAK pernah hit
  * API-Football langsung dari browser.
@@ -45,7 +47,7 @@ $liveCount = wpm_count_live_fixtures($pdo);
 // Distinguishes "genuinely no matches for our tracked leagues" from "our
 // API plan can't even fetch this date yet" (free-plan /fixtures?date=
 // only allows a rolling few-day window). Purely a cached-value read —
-// livescore.php never calls API-Football live itself; the window is
+// football.php never calls API-Football live itself; the window is
 // learned by cron/sync_fixtures.php's throttled probe.
 $apiWindow = LivescoreSettings::getApiDateWindow($pdo);
 if ($apiWindow['checked_at'] === null) {
@@ -83,25 +85,35 @@ $buildDateStrip = static function (string $today, string $selected): array {
 $dateStrip = $buildDateStrip($today, $targetDate);
 
 $dateUrl = static function (string $date): string {
-    return 'livescore.php?date=' . $date;
+    return 'football/' . $date;
 };
 
-$pageTitle = 'Livescore — Sagagoal';
+$pageTitle = 'Livescore Sepak Bola — Sagagoal';
 $pageDescription = 'Jadwal dan skor live pertandingan sepak bola hari ini, besok, dan yang sedang berlangsung.';
-$activeNav = 'livescore';
-$canonicalUrl = wpm_site_url(wpm_url_livescore());
+$activeNav = 'football';
+$canonicalUrl = wpm_site_url(wpm_url_football());
 $livescoreJsVer = @filemtime(__DIR__ . '/assets/js/livescore.js') ?: 1;
 $extraHead = '<script src="assets/js/livescore.js?v=' . $livescoreJsVer . '" defer></script>';
+
+/* ── Promo banners (cms-admin/pages/banners.php), placement="football" ── */
+$footballBanners = wpm_banners_active($pdo, 'football');
+
+// Page title/subtitle editable from Livescore API Settings (24 Jul 2026) —
+// sports_api_settings.page_title/page_subtitle, fall back to the original
+// hardcoded text if the admin hasn't set them (fresh row, empty field).
+$footballSettings = LivescoreSettings::load($pdo);
+$footballPageTitle = trim((string) ($footballSettings['page_title'] ?? '')) !== '' ? $footballSettings['page_title'] : 'Jadwal & Skor Pertandingan';
+$footballPageSubtitle = trim((string) ($footballSettings['page_subtitle'] ?? '')) !== '' ? $footballSettings['page_subtitle'] : 'Live score, jadwal hari ini dan besok, dikelompokkan per liga.';
 
 require __DIR__ . '/includes/site-header.php';
 ?>
 
     <section class="page-hero">
         <div class="crypto-container">
-            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> Livescore</nav>
+            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> Sepak Bola</nav>
             <span class="section-kicker"><?= wpm_icon('football') ?> Sepak Bola</span>
-            <h1>Jadwal &amp; Skor Pertandingan</h1>
-            <p>Live score, jadwal hari ini dan besok, dikelompokkan per liga.</p>
+            <h1><?= htmlspecialchars($footballPageTitle) ?></h1>
+            <p><?= htmlspecialchars($footballPageSubtitle) ?></p>
         </div>
     </section>
 
@@ -139,6 +151,16 @@ require __DIR__ . '/includes/site-header.php';
             </span>
         </div>
         <p class="livescore-tz-note">Semua jam ditampilkan dalam WIB (UTC+7).</p>
+
+        <?php if ($footballBanners !== []) : ?>
+        <div class="banner-strip" style="margin-bottom:24px;">
+            <div class="banner-strip__grid">
+                <?php foreach ($footballBanners as $banner) : ?>
+                    <?= wpm_banner_markup($banner) ?>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <div id="livescore-list"<?= $isToday ? ' data-poll="1"' : '' ?>>
             <?php if ($leagueGroups === []) : ?>

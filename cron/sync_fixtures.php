@@ -18,6 +18,15 @@ declare(strict_types=1);
 require_once __DIR__ . '/../cms-admin/config/database.php';
 require_once __DIR__ . '/../cms-admin/includes/schema-guard.php';
 require_once __DIR__ . '/../includes/LivescoreSync.php';
+require_once __DIR__ . '/../includes/SportsApiSettings.php';
+
+// Sports Modules kill-switch (Fase 2, 24 Jul 2026) — checked first, cheaper
+// than the per-sport settings gate below, so an admin's "stop everything"
+// toggle on the Sports Settings page always wins immediately.
+if (!wpm_sport_module_active($pdo, 'football')) {
+    echo "[sync_fixtures] Skipped — sports_api_settings.is_active off for 'football'.\n";
+    exit(0);
+}
 
 if (!LivescoreSettings::autoSyncAllowed($pdo)) {
     echo "[sync_fixtures] Skipped — is_active atau auto_sync_enabled sedang off.\n";

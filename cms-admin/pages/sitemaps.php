@@ -393,9 +393,22 @@ require dirname(__DIR__) . '/includes/alerts.php';
         <p class="field__hint" style="margin-top:10px;">/sitemap.xml and /sitemap-index.xml both serve the same sitemap index, which points search engines at the 4 per-type files above.</p>
     </div>
 
+    <div class="panel" style="border-color: rgba(234, 179, 8, 0.35);">
+        <div class="panel__head"><h3 class="panel__title">⚠️ Generate Sitemap Statis (Darurat)</h3></div>
+        <p class="section-lead">
+            Hanya untuk kondisi darurat — kalau sitemap dinamis di atas sedang bermasalah (error database, dsb)
+            dan Googlebot butuh /sitemap.xml yang tetap bisa diakses selagi masalahnya diperbaiki. Tool ini
+            menulis snapshot <strong>beku</strong> ke file <code>sitemap.xml</code> di server; selama file itu ada,
+            /sitemap.xml berhenti mengikuti perubahan konten terbaru sampai file itu dihapus lagi (ada tombolnya
+            di halaman tersebut). <strong>Jangan dipakai untuk kondisi normal sehari-hari</strong> — "Regenerate
+            Sitemap" di atas sudah cukup dan selalu live.
+        </p>
+        <a class="admin-btn admin-btn--secondary" href="<?= cms_esc(cms_public_base_prefix() . 'generate-sitemap-static.php') ?>" target="_blank" rel="noopener">Buka Generator Darurat</a>
+    </div>
+
     <div class="panel" id="sitemap-settings">
         <div class="panel__head"><h3 class="panel__title">Sitemap Settings — auto-rules per content type</h3></div>
-        <p class="section-lead" style="padding:0 20px;">Defaults used whenever a URL's priority/changefreq hasn't been manually pinned via the table below. "Author" pages aren't listed — this site has no public author archive route yet, so there's nothing to include.</p>
+        <p class="section-lead">Defaults used whenever a URL's priority/changefreq hasn't been manually pinned via the table below. "Author" pages aren't listed — this site has no public author archive route yet, so there's nothing to include.</p>
         <form method="post" action="<?= cms_esc($selfUrl) ?>" style="padding: 12px 20px 20px;">
             <?= cms_csrf_field() ?>
             <input type="hidden" name="action" value="save_settings">

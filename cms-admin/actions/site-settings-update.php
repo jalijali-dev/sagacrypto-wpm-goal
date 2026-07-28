@@ -4,9 +4,17 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/upload.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
+require_once dirname(__DIR__) . '/includes/schema-guard.php';
 
 // Same tier as pages/site-settings.php — admin-tier.
 cms_require_role(['superadmin', 'admin']);
+
+// See pages/site-settings.php for why these 3 columns/fields exist and why
+// telegram_username is VARCHAR(255) (stores a full URL, not a bare username).
+cms_ensure_column($pdo, 'site_settings', 'telegram_username', 'VARCHAR(255) NULL AFTER whatsapp_number');
+cms_widen_column($pdo, 'site_settings', 'telegram_username', 'VARCHAR(255) NULL AFTER whatsapp_number');
+cms_ensure_column($pdo, 'site_settings', 'show_whatsapp_button', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER telegram_username');
+cms_ensure_column($pdo, 'site_settings', 'show_telegram_button', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER show_whatsapp_button');
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Location: ../pages/site-settings.php', true, 302);
@@ -32,6 +40,20 @@ try {
     exit;
 }
 
+// telegram_username stores a full URL now (see pages/site-settings.php) —
+// accept the link with or without a leading "https://" and auto-prefix it
+// here so the stored value is always an absolute, clickable URL by the
+// time wpm_floating_contact_buttons() renders it verbatim (no more
+// "https://t.me/" + username assembly on the consuming side).
+$telegramUrl = ltrim(trim((string) ($_POST['telegram_username'] ?? '')), '@');
+if ($telegramUrl !== '' && !preg_match('#^https?://#i', $telegramUrl)) {
+    $telegramUrl = 'https://' . $telegramUrl;
+}
+// Soft, non-blocking format check: no strict regex, just flag anything
+// that doesn't even resemble a t.me/telegram.me link (e.g. a typo) so the
+// admin notices — save proceeds either way (see the flash message below).
+$telegramLooksValid = $telegramUrl === '' || (bool) preg_match('#^https?://([^/]*\.)?(t\.me|telegram\.me)/#i', $telegramUrl);
+
 $payload = [
     'site_name' => trim((string) ($_POST['site_name'] ?? '')),
     'site_tagline' => trim((string) ($_POST['site_tagline'] ?? '')),
@@ -39,6 +61,9 @@ $payload = [
     'favicon_path' => trim((string) ($existingSettings['favicon_path'] ?? '')),
     'og_image' => trim((string) ($existingSettings['og_image'] ?? '')),
     'whatsapp_number' => trim((string) ($_POST['whatsapp_number'] ?? '')),
+    'telegram_username' => $telegramUrl,
+    'show_whatsapp_button' => !empty($_POST['show_whatsapp_button']) ? 1 : 0,
+    'show_telegram_button' => !empty($_POST['show_telegram_button']) ? 1 : 0,
     'instagram_url' => trim((string) ($_POST['instagram_url'] ?? '')),
     'email' => trim((string) ($_POST['email'] ?? '')),
     'address' => trim((string) ($_POST['address'] ?? '')),
@@ -122,6 +147,9 @@ try {
                  favicon_path = :favicon_path,
                  og_image = :og_image,
                  whatsapp_number = :whatsapp_number,
+                 telegram_username = :telegram_username,
+                 show_whatsapp_button = :show_whatsapp_button,
+                 show_telegram_button = :show_telegram_button,
                  instagram_url = :instagram_url,
                  email = :email,
                  address = :address,
@@ -136,11 +164,13 @@ try {
     } else {
         $insert = $pdo->prepare(
             'INSERT INTO site_settings (
-                site_name, site_tagline, logo_path, favicon_path, og_image, whatsapp_number, instagram_url,
+                site_name, site_tagline, logo_path, favicon_path, og_image, whatsapp_number,
+                telegram_username, show_whatsapp_button, show_telegram_button, instagram_url,
                 email, address, meta_title, meta_description, meta_keywords, google_analytics_id,
                 created_at, updated_at
             ) VALUES (
-                :site_name, :site_tagline, :logo_path, :favicon_path, :og_image, :whatsapp_number, :instagram_url,
+                :site_name, :site_tagline, :logo_path, :favicon_path, :og_image, :whatsapp_number,
+                :telegram_username, :show_whatsapp_button, :show_telegram_button, :instagram_url,
                 :email, :address, :meta_title, :meta_description, :meta_keywords, :google_analytics_id,
                 NOW(), NOW()
             )'
@@ -154,7 +184,12 @@ try {
         }
     }
 
-    $_SESSION['cms_flash'] = ['type' => 'success', 'message' => 'Site settings saved successfully.'];
+    $_SESSION['cms_flash'] = $telegramLooksValid
+        ? ['type' => 'success', 'message' => 'Site settings saved successfully.']
+        : [
+            'type' => 'info',
+            'message' => 'Site settings saved. Catatan: link Telegram ("' . $telegramUrl . '") tidak terlihat seperti format t.me/telegram.me — dicek lagi kalau ini bukan yang dimaksud.',
+        ];
 } catch (PDOException) {
     foreach ($newlyUploadedDiskPaths as $uploadedPath) {
         if (is_file($uploadedPath)) {

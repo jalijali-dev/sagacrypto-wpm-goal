@@ -48,6 +48,10 @@ declare(strict_types=1);
     <label class="field">Interval sync fixtures (menit)
         <input type="number" name="sync_fixtures_interval_minutes" min="1" value="<?= (int) round($settings['sync_fixtures_interval'] / 60) ?>">
     </label>
+    <label class="field">Interval sync liga &amp; tim (jam)
+        <input type="number" name="sync_leagues_teams_interval_hours" min="1" value="<?= (int) round(($settings['sync_secondary_interval'] ?? $settings['sync_fixtures_interval']) / 3600) ?>">
+        <span class="field__hint">Throttle untuk <code>sync_leagues_teams.php</code> (18 request/run untuk 9 liga) — data liga &amp; roster tim jarang berubah, tidak perlu sesering fixtures.</span>
+    </label>
     <label class="field">Cache duration — live (detik)
         <input type="number" name="cache_duration_live" min="10" value="<?= (int) $settings['cache_duration_live'] ?>">
     </label>
@@ -112,6 +116,25 @@ declare(strict_types=1);
             <?php endif; ?>
         </div>
     </div>
+
+    <label class="field">Penempatan menu
+        <select name="nav_placement">
+            <option value="menu" <?= $settings['nav_placement'] === 'menu' ? 'selected' : '' ?>>Menu header</option>
+            <option value="footer" <?= $settings['nav_placement'] === 'footer' ? 'selected' : '' ?>>Footer saja</option>
+            <option value="hidden" <?= $settings['nav_placement'] === 'hidden' ? 'selected' : '' ?>>Sembunyikan</option>
+        </select>
+    </label>
+    <label class="field">Urutan tampil
+        <input type="number" name="sort_order" value="<?= (int) $settings['sort_order'] ?>">
+    </label>
+    <label class="field">Judul Halaman
+        <input type="text" name="page_title" placeholder="Jadwal &amp; Skor Pertandingan" value="<?= cms_esc((string) ($settings['page_title'] ?? '')) ?>">
+        <span class="field__hint">Kosongkan untuk pakai judul default.</span>
+    </label>
+    <label class="field">Subtitle Halaman
+        <input type="text" name="page_subtitle" placeholder="Live score, jadwal hari ini dan besok, dikelompokkan per liga." value="<?= cms_esc((string) ($settings['page_subtitle'] ?? '')) ?>">
+        <span class="field__hint">Kosongkan untuk pakai subtitle default.</span>
+    </label>
 
     <div class="form-grid__actions">
         <button type="submit" class="admin-btn admin-btn--primary">Save settings</button>

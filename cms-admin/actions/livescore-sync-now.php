@@ -37,7 +37,10 @@ if (!$settings['is_active']) {
 
 $stages = [];
 
-$leaguesResult = wpm_sync_leagues_teams($pdo);
+// force=true — an admin clicking "Sync Sekarang" wants a fresh pull now,
+// not to be told to wait for the throttle interval (see
+// LivescoreSettings::secondarySyncDue()).
+$leaguesResult = wpm_sync_leagues_teams($pdo, true);
 $stages[] = [
     'name' => 'leagues_teams',
     'label' => 'Sync leagues & teams',
@@ -49,7 +52,8 @@ $stages[] = [
     'messages' => $leaguesResult['messages'],
 ];
 
-$fixturesResult = wpm_sync_fixtures($pdo);
+// force=true — same reasoning as wpm_sync_leagues_teams() above.
+$fixturesResult = wpm_sync_fixtures($pdo, true);
 $stages[] = [
     'name' => 'fixtures',
     'label' => 'Sync fixtures',

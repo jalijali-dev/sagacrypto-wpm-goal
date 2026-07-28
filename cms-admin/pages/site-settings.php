@@ -3,10 +3,32 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
+require_once dirname(__DIR__) . '/includes/schema-guard.php';
 
 // Site-wide configuration is admin-tier — see cms_require_role() in
 // functions.php for the full tier breakdown.
 cms_require_role(['superadmin', 'admin']);
+
+// Floating contact buttons (24 Jul 2026, link format revised 27 Jul 2026)
+// — telegram_username stores a full t.me link (public username OR private
+// invite link, e.g. "https://t.me/sagagoal" or "https://t.me/+uUBp0t7Zt6JmNWM1"),
+// not a bare username: private groups/channels only have an invite-link
+// form (t.me/+xxxxx), which has no equivalent "@username" to deep-link by,
+// so this column now stores whatever the admin pastes and renders it
+// as-is (see wpm_floating_contact_buttons() in site-bootstrap.php for the
+// consuming side — it must NOT prefix this value with "https://t.me/"
+// anymore, since the stored value is already a full URL). Column name
+// kept as telegram_username for backward compatibility (avoids another
+// migration) even though it no longer holds a bare username. Widened to
+// VARCHAR(255) (was VARCHAR(50), sized for a bare username) since a full
+// URL needs more room; cms_widen_column() upgrades any pre-existing
+// installs still on the old width.
+// show_*_button lets an admin turn a button off entirely (not rendered at
+// all, not just CSS-hidden) even if the link field still has a value saved.
+cms_ensure_column($pdo, 'site_settings', 'telegram_username', 'VARCHAR(255) NULL AFTER whatsapp_number');
+cms_widen_column($pdo, 'site_settings', 'telegram_username', 'VARCHAR(255) NULL AFTER whatsapp_number');
+cms_ensure_column($pdo, 'site_settings', 'show_whatsapp_button', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER telegram_username');
+cms_ensure_column($pdo, 'site_settings', 'show_telegram_button', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER show_whatsapp_button');
 
 $pageTitle = 'Site Settings';
 $currentNav = 'site-settings';
@@ -132,6 +154,25 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     ); ?>
                     <label class="field">WhatsApp number
                         <input type="text" name="whatsapp_number" value="<?= cms_esc($val('whatsapp_number')) ?>">
+                        <span class="field__hint">Format: kode negara tanpa "+" atau "0" di depan, contoh <code>62857xxxxxxx</code>.</span>
+                    </label>
+                    <label class="field--checkbox">
+                        <input type="checkbox" name="show_whatsapp_button" value="1" <?= ($settings === [] || (int) ($settings['show_whatsapp_button'] ?? 1) === 1) ? 'checked' : '' ?>>
+                        <span class="field--checkbox__text">
+                            <span class="field--checkbox__title">Tampilkan tombol floating WhatsApp</span>
+                            <span class="field--checkbox__desc">Kalau dimatikan, tombolnya tidak dirender sama sekali di frontend.</span>
+                        </span>
+                    </label>
+                    <label class="field">Link Telegram (grup/channel/akun)
+                        <input type="text" name="telegram_username" placeholder="https://t.me/+uUBp0t7Zt6JmNWM1" value="<?= cms_esc($val('telegram_username')) ?>">
+                        <span class="field__hint">Tempel link Telegram lengkap — bisa link invite grup/channel privat (<code>t.me/+xxxxxxx</code>) atau link username publik (<code>t.me/namaAkun</code>). Kalau cuma menempel <code>t.me/...</code> tanpa <code>https://</code>, akan otomatis dilengkapi jadi <code>https://t.me/...</code>.</span>
+                    </label>
+                    <label class="field--checkbox">
+                        <input type="checkbox" name="show_telegram_button" value="1" <?= (int) ($settings['show_telegram_button'] ?? 0) === 1 ? 'checked' : '' ?>>
+                        <span class="field--checkbox__text">
+                            <span class="field--checkbox__title">Tampilkan tombol floating Telegram</span>
+                            <span class="field--checkbox__desc">Kalau dimatikan, tombolnya tidak dirender sama sekali di frontend.</span>
+                        </span>
                     </label>
                     <label class="field">Instagram URL
                         <input type="text" name="instagram_url" value="<?= cms_esc($val('instagram_url')) ?>">

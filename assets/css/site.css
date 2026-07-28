@@ -500,7 +500,16 @@ body.crypto-theme {
 
 .app-promo-card__icon { margin: 0 auto 16px; }
 .app-promo-card__title { font-size: 22px; }
-.app-promo-card__subtitle { max-width: 480px; margin: 0 auto 20px; }
+
+/* Selector qualified with .app-promo-card (not just .app-promo-card__subtitle)
+   so its specificity beats .crypto-card p's `margin: 0` above — otherwise
+   that rule wins (equal-ish specificity, but element+class > single class)
+   and silently zeroes out the auto left/right margins here, leaving the
+   480px-wide box flush against the card's left edge instead of centered
+   (text-align: center then only centers each line WITHIN that off-center
+   box, producing the "first line further left, second line more centered"
+   asymmetry seen in the two wrapped lines). */
+.app-promo-card .app-promo-card__subtitle { max-width: 480px; margin: 0 auto 20px; text-align: center; }
 
 .app-promo-card__badges {
   display: flex;
@@ -770,6 +779,13 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   gap: 40px;
   margin-bottom: 40px;
 }
+
+/* Footer logo (25 Jul 2026) — same .crypto-logo/.crypto-logo__mark markup
+   as the header, just a slightly smaller mark so it doesn't overpower the
+   footer's own 24px wordmark (bigger than the header's 20px one, so this
+   isn't a straight scale-down — sized by eye against the footer text). */
+.footer-brand__logo { margin-bottom: 0; }
+.footer-brand__logo-mark { width: 34px; height: 34px; border-radius: 10px; }
 
 .footer-brand p {
   font-size: 14px;
@@ -1221,6 +1237,52 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 @media (max-width: 640px) { .wpm-sticky-ad { display: block; } }
 
 /* ============================================================
+   FLOATING CONTACT BUTTONS (WhatsApp/Telegram — Site Settings) —
+   bottom-right on every public page, see wpm_floating_contact_buttons()
+   in site-bootstrap.php. Sits at the same z-index tier as the sticky
+   mobile ad bar; bumped up on mobile so it clears that bar instead of
+   overlapping it (.wpm-sticky-ad is full-width along the bottom edge).
+   ============================================================ */
+.floating-contact {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 240;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.floating-contact__btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.floating-contact__btn svg { width: 30px; height: 30px; }
+
+.floating-contact__btn:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  color: #fff;
+}
+
+.floating-contact__btn--whatsapp { background: #25d366; }
+.floating-contact__btn--telegram { background: #29a9eb; }
+
+@media (max-width: 640px) {
+  .floating-contact { right: 14px; bottom: 84px; gap: 10px; }
+  .floating-contact__btn { width: 48px; height: 48px; }
+  .floating-contact__btn svg { width: 26px; height: 26px; }
+}
+
+/* ============================================================
    ARTICLE CARD (grid tile used across homepage / category / related)
    ============================================================ */
 .news-card {
@@ -1261,6 +1323,13 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 .page-hero .section-kicker { margin-bottom: 14px; }
 .page-hero h1 { font-family: var(--font-display); font-size: clamp(26px, 4vw, 38px); font-weight: 700; margin: 0 0 10px; }
 .page-hero p { font-size: 15.5px; color: var(--text-muted); max-width: 620px; margin: 0; }
+/* Rich-text intro (Special Pages content field — About/Kontak, page.php) —
+   sits directly under h1 like .page-hero p above, but wraps admin-authored
+   HTML that may contain its own <p> tags, so those need their own margin
+   reset instead of relying on the plain-text p rule. */
+.page-hero-lead { font-size: 15.5px; color: var(--text-muted); max-width: 620px; }
+.page-hero-lead p { margin: 0 0 8px; }
+.page-hero-lead p:last-child { margin-bottom: 0; }
 
 .breadcrumb {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -1286,12 +1355,26 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 /* ============================================================
    ARTICLE DETAIL PAGE
    ============================================================ */
+/* Column count/widths depend on which ad sidebars are actually active for
+   this article (see artikel.php's $hasLeftAd/$hasRightAd) — an empty slot
+   means its <aside> isn't rendered at all, not just hidden, so these
+   variant classes must match the DOM exactly or the remaining column(s)
+   won't get the leftover space. */
 .article-layout {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 200px;
   gap: 28px;
   align-items: start;
+  grid-template-columns: minmax(0, 1fr);
 }
+.article-layout--right-only { grid-template-columns: minmax(0, 1fr) 260px; }
+.article-layout--left-only { grid-template-columns: 260px minmax(0, 1fr); }
+.article-layout--both { grid-template-columns: 220px minmax(0, 1fr) 220px; }
+
+/* No ads anywhere — content stays left-aligned (the grid column already
+   starts at the container's left edge) but capped so it doesn't stretch
+   into an uncomfortably wide reading line on large screens. */
+.article-layout--no-ads .article-layout__main { max-width: 760px; }
+
 .article-layout__sidebar { position: sticky; top: 90px; display: flex; flex-direction: column; gap: 16px; }
 .article-layout__main { min-width: 0; }
 
@@ -2504,7 +2587,7 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
    ============================================================ */
 
 .live-now-widget {
-  margin-bottom: 24px;
+  margin: 24px 0;
   background: var(--surface-glass);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-lg);
@@ -2516,7 +2599,7 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 20px;
+  padding: 20px 24px;
   border-bottom: 1px solid var(--border-glass);
 }
 
@@ -2552,7 +2635,7 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
 .live-now-widget__list .fixture-card {
   grid-template-columns: 1fr 64px 1fr;
   gap: 10px;
-  padding: 10px 16px;
+  padding: 18px 24px;
 }
 
 .live-now-widget__list .fixture-card__team img,
@@ -2566,6 +2649,6 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
 .live-now-widget__list .fixture-status { font-size: 11px; }
 
 @media (max-width: 640px) {
-  .live-now-widget__head { padding: 12px 16px; flex-wrap: wrap; }
-  .live-now-widget__list .fixture-card { grid-template-columns: 1fr 48px 1fr; padding: 10px 12px; }
+  .live-now-widget__head { padding: 16px 18px; flex-wrap: wrap; }
+  .live-now-widget__list .fixture-card { grid-template-columns: 1fr 48px 1fr; padding: 14px 16px; }
 }

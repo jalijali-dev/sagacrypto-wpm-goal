@@ -55,7 +55,11 @@ function wpm_icon(string $name): string
         'arrow-right' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12h14M13 6l6 6-6 6'/></svg>",
         'flame' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2c1.5 3 0 4.5-1 6-1.4 2-2 3.5-2 5.5A5 5 0 0 0 14 18a4 4 0 0 0 2-7.5c1.7 1 2 3 2 4.5A7 7 0 0 1 7 15.5C6.5 11 9 9 9 6.5 9 5 10.5 3 12 2Z'/></svg>",
         'apple' => "<svg viewBox='0 0 24 24' fill='currentColor'><path d='M17.4 12.4c0-2.2 1.8-3.3 1.9-3.3-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.4.8-.7 0-1.8-.8-2.9-.8-1.5 0-2.9.9-3.7 2.2-1.6 2.7-.4 6.7 1.1 8.9.8 1.1 1.6 2.3 2.8 2.2 1.1 0 1.6-.7 2.9-.7s1.7.7 2.9.7c1.2 0 2-1.1 2.7-2.2.9-1.2 1.2-2.4 1.2-2.5-.1 0-2.3-.9-2.3-3.6Z'/><path d='M14.9 5.9c.6-.7 1-1.8.9-2.8-.9.1-2 .6-2.6 1.3-.6.7-1.1 1.7-.9 2.7 1 .1 2-.5 2.6-1.2Z'/></svg>",
-        'google-play' => "<svg viewBox='0 0 24 24' fill='currentColor'><path d='M6 4.5v15c0 .8.9 1.3 1.6.9l12-7.5c.6-.4.6-1.4 0-1.8l-12-7.5C6.9 3.2 6 3.7 6 4.5Z'/></svg>",
+        // Official 4-color Google Play triangle mark (25 Jul 2026 — was a
+        // plain monochrome play-triangle placeholder before). Apple's own
+        // brand guideline keeps their logo strictly monochrome, so 'apple'
+        // above is intentionally left as-is rather than forced into color.
+        'google-play' => "<svg viewBox='0 0 512 512'><path fill='#00d2ff' d='M99.617 8.057a50.191 50.191 0 0 0-38.815-6.713l230.163 230.163 74.826-74.826L99.617 8.057z'/><path fill='#00f076' d='M32.139 20.116c-6.441 6.581-10.148 15.831-10.148 27.375v417.019c0 11.543 3.708 20.793 10.148 27.375l4.905 4.383 230.163-230.163v-4.63L37.044 15.733l-4.905 4.383z'/><path fill='#ffbc00' d='M295.895 158.87l-74.826-74.826L37.044 15.733v453.923L221.069 285.98l74.826-74.826z'/><path fill='#ff3141' d='M60.802 502.657a50.191 50.191 0 0 0 38.815-6.713L410.906 219.86l-74.826-74.826L60.802 502.657z'/></svg>",
         'moon' => "<svg viewBox='0 0 24 24' fill='currentColor'><path d='M20.4 14.7A8.5 8.5 0 0 1 9.3 3.6a.8.8 0 0 0-1-1A10 10 0 1 0 21.4 15.7a.8.8 0 0 0-1-1Z'/></svg>",
     ];
 
@@ -208,24 +212,19 @@ function wpm_url_pencarian(?string $query = null): string
     return ($query !== null && $query !== '') ? 'pencarian?q=' . rawurlencode($query) : 'pencarian';
 }
 
-function wpm_url_livescore(): string
+/** Football livescore & jadwal — /football (renamed from /livescore 24 Jul 2026: "livescore" is a generic term every sport needs its own version of, not a page name). */
+function wpm_url_football(): string
 {
-    return 'livescore';
+    return 'football';
 }
 
-/** Sport selector — /olahraga (Sepak Bola links to livescore(); Basket/F1 show "Segera Hadir"). */
-function wpm_url_olahraga(): string
+/** Basketball (NBA) livescore & jadwal — /basket (renamed from /nba 24 Jul 2026, same reasoning as wpm_url_football()). */
+function wpm_url_basket(): string
 {
-    return 'olahraga';
+    return 'basket';
 }
 
-/** NBA livescore & jadwal — /nba, reached via the /olahraga selector's "Basket" card. */
-function wpm_url_nba(): string
-{
-    return 'nba';
-}
-
-/** Formula 1 calendar & standings — /f1, reached via the /olahraga selector's "Formula 1" card. */
+/** Formula 1 calendar & standings — /f1. Footer-only placement (not in main nav) — see wpm_nav_menu(). */
 function wpm_url_f1(): string
 {
     return 'f1';
@@ -259,16 +258,33 @@ function wpm_site_settings(PDO $pdo): array
     return $cached;
 }
 
-/** Shared site nav — used by both the desktop bar and mobile drawer. */
+/**
+ * Shared site nav — used by both the desktop bar and mobile drawer.
+ *
+ * Restructured 24 Jul 2026 (Special Pages / Sports Modules spec).
+ * Fixed items are just Beranda and Berita now — sport items come from
+ * `sports_api_settings WHERE nav_placement='menu'` (Fase 2) so admins can
+ * reorder/hide them without a code change (Formula 1 defaults to
+ * footer-only there, not omitted here), and Tentang Kami/Kontak (and any
+ * future special page with show_in_menu=1) come from `special_pages` —
+ * About was migrated INTO Special Pages (24 Jul 2026, v2 of the spec) so
+ * it no longer gets its own hardcoded line here, avoiding a duplicate
+ * entry once its row exists. The old /olahraga hub this used to route
+ * through was deleted in Fase 1.
+ */
 function wpm_nav_menu(PDO $pdo): array
 {
-    return [
+    $items = [
         ['id' => 'beranda', 'label' => 'Beranda', 'href' => 'index.php'],
-        ['id' => 'berita', 'label' => 'Berita', 'href' => wpm_url_kategori()],
-        ['id' => 'livescore', 'label' => 'Livescore', 'href' => wpm_url_livescore()],
-        ['id' => 'olahraga', 'label' => 'Sport', 'href' => wpm_url_olahraga()],
-        ['id' => 'tentang', 'label' => 'Tentang Kami', 'href' => wpm_url_tentang()],
     ];
+    foreach (wpm_sports_modules_by_placement($pdo, 'menu') as $module) {
+        $items[] = ['id' => (string) $module['sport_key'], 'label' => (string) $module['label'], 'href' => (string) $module['route_slug']];
+    }
+    $items[] = ['id' => 'berita', 'label' => 'Berita', 'href' => wpm_url_kategori()];
+    foreach (wpm_special_pages_for_menu($pdo) as $specialPage) {
+        $items[] = ['id' => 'special-' . (string) $specialPage['page_key'], 'label' => (string) $specialPage['title'], 'href' => (string) $specialPage['slug']];
+    }
+    return $items;
 }
 
 /** True when at least one fixture is currently in-play (first half, half-time, or second half). */
@@ -277,7 +293,7 @@ function wpm_has_live_fixtures(PDO $pdo): bool
     return wpm_count_live_fixtures($pdo) > 0;
 }
 
-/** Count of fixtures currently in play — powers the "Live (N)" toggle on livescore.php. */
+/** Count of fixtures currently in play — powers the "Live (N)" toggle on football.php. */
 function wpm_count_live_fixtures(PDO $pdo): int
 {
     try {
@@ -303,6 +319,15 @@ function wpm_active_leagues(PDO $pdo): array
 // out to includes/SportsRegistry.php so backend-only settings classes
 // (BasketballSettings, etc.) can use it without loading this whole file.
 require_once __DIR__ . '/SportsRegistry.php';
+
+// Sports API Settings (wpm_nav_menu()'s dynamic menu/footer sport items,
+// cron gating) — see includes/SportsApiSettings.php's docblock.
+require_once __DIR__ . '/SportsApiSettings.php';
+
+// Special Pages (wpm_nav_menu()'s dynamic Kontak/FAQ/etc. menu items,
+// footer items, and page.php's router) — see includes/SpecialPages.php's
+// docblock.
+require_once __DIR__ . '/SpecialPages.php';
 
 /**
  * Site-wide breaking-news ticker fragment — latest published headlines,
@@ -664,6 +689,62 @@ function wpm_banner_markup(array $banner): string
     return '<' . $tag . ' class="banner-card"' . $hrefAttr . '>' . $picture . $overlay . '</' . $tag . '>';
 }
 
+/**
+ * Floating WhatsApp/Telegram chat buttons, bottom-right on every public
+ * page (rendered from site-footer.php). Each button only renders if BOTH
+ * its own show_*_button toggle is on AND the corresponding field is
+ * actually filled in — an admin turning a toggle on with an empty field
+ * would otherwise produce a dead button, and a filled-in field with the
+ * toggle off must not render at all (not just CSS-hidden), per Site
+ * Settings.
+ *
+ * telegram_username (column name kept for backward compat) stores a full
+ * t.me/telegram.me URL now — public username link OR private invite link
+ * (link format revised 27 Jul 2026, since a private invite link has no
+ * "@username" equivalent to reassemble a link from) — so this renders the
+ * stored value directly as the href, it must NOT re-prefix it with
+ * "https://t.me/" the way a bare username would have needed. The only
+ * normalization done here is adding a missing "https://" scheme, covering
+ * two cases: an admin pasting "t.me/+xxxx" without the scheme (Site
+ * Settings auto-prefixes this too, but a page may still be rendering a
+ * value saved before that existed), and any pre-migration row that still
+ * holds a bare username from the old design (e.g. "sagagoal") — the
+ * fallback below assumes those become a public t.me/username link, same
+ * as the old behavior, so already-configured buttons don't silently break.
+ */
+function wpm_floating_contact_buttons(array $siteSettings): string
+{
+    $showWhatsapp = (int) ($siteSettings['show_whatsapp_button'] ?? 0) === 1;
+    $whatsappNumber = preg_replace('/\D+/', '', (string) ($siteSettings['whatsapp_number'] ?? ''));
+    $showTelegram = (int) ($siteSettings['show_telegram_button'] ?? 0) === 1;
+    $telegramUrl = trim((string) ($siteSettings['telegram_username'] ?? ''));
+    if ($telegramUrl !== '' && !preg_match('#^https?://#i', $telegramUrl)) {
+        $telegramUrl = str_contains($telegramUrl, '/')
+            ? 'https://' . $telegramUrl
+            : 'https://t.me/' . ltrim($telegramUrl, '@');
+    }
+
+    $html = '';
+
+    if ($showWhatsapp && $whatsappNumber !== '') {
+        $html .= '<a class="floating-contact__btn floating-contact__btn--whatsapp" href="https://wa.me/' . wpm_esc($whatsappNumber) . '" target="_blank" rel="noopener" aria-label="Chat WhatsApp">'
+            . '<svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M16.001 3C9.1 3 3.5 8.6 3.5 15.5c0 2.36.65 4.57 1.78 6.46L3 29l7.24-2.24a12.4 12.4 0 0 0 5.76 1.42h.01c6.9 0 12.5-5.6 12.5-12.5S22.9 3 16.001 3Zm0 22.83h-.01a10.3 10.3 0 0 1-5.25-1.44l-.38-.22-3.9 1.21 1.24-3.8-.25-.39a10.3 10.3 0 0 1-1.58-5.5c0-5.7 4.63-10.33 10.34-10.33 2.76 0 5.35 1.08 7.3 3.03a10.26 10.26 0 0 1 3.03 7.3c0 5.7-4.64 10.14-10.44 10.14Zm5.66-7.73c-.31-.16-1.83-.9-2.11-1-.28-.1-.49-.16-.7.16-.2.31-.8 1-.98 1.2-.18.21-.36.23-.67.08-.31-.16-1.3-.48-2.47-1.53-.91-.81-1.53-1.82-1.71-2.13-.18-.31-.02-.48.13-.63.14-.14.31-.36.47-.55.16-.18.2-.31.31-.52.1-.21.05-.39-.02-.55-.08-.16-.7-1.69-.96-2.31-.25-.6-.51-.52-.7-.53h-.6c-.2 0-.55.08-.83.39-.28.31-1.09 1.06-1.09 2.6 0 1.53 1.12 3 1.28 3.21.16.21 2.2 3.36 5.34 4.71.75.32 1.33.51 1.78.66.75.24 1.43.2 1.97.13.6-.09 1.83-.75 2.09-1.47.26-.73.26-1.35.18-1.48-.08-.13-.28-.21-.59-.36Z"/></svg>'
+            . '</a>';
+    }
+
+    if ($showTelegram && $telegramUrl !== '') {
+        $html .= '<a class="floating-contact__btn floating-contact__btn--telegram" href="' . wpm_esc($telegramUrl) . '" target="_blank" rel="noopener" aria-label="Chat Telegram">'
+            . '<svg viewBox="0 0 240 240" fill="currentColor" aria-hidden="true"><path d="M120 0a120 120 0 1 0 0 240 120 120 0 0 0 0-240Zm54.6 82-18.2 85.8c-1.4 6.1-5 7.6-10.1 4.7l-28-20.6-13.5 13c-1.5 1.5-2.8 2.8-5.6 2.8l2-28.4 51.7-46.7c2.3-2 -0.5-3.2-3.5-1.2l-63.9 40.2-27.5-8.6c-6-1.9-6.1-6 1.2-8.9l107.5-41.4c5-1.9 9.4 1.2 7.9 8.3Z"/></svg>'
+            . '</a>';
+    }
+
+    if ($html === '') {
+        return '';
+    }
+
+    return '<div class="floating-contact">' . $html . '</div>';
+}
+
 /* ── Article helpers ─────────────────────────────────────────────────── */
 
 /** Renders one <article> card used across homepage/category/related/featured grids. */
@@ -770,7 +851,7 @@ function wpm_trending_item(array $article, int $rank): string
  * "Live Sekarang" homepage widget — up to 3 mini fixture cards pulled
  * from whichever sports are currently ACTIVE (sports.is_active = 1),
  * mixed together and sorted by kickoff/game time. Reuses the exact same
- * card renderers as livescore.php (wpm_fixture_card()) and nba.php
+ * card renderers as football.php (wpm_fixture_card()) and basket.php
  * (wpm_nba_game_card()) — just visually compacted via the
  * .live-now-widget CSS scope, not a separate component. Formula 1 is
  * deliberately excluded: it has no two-team "vs" score shape to fit this
@@ -869,7 +950,7 @@ function wpm_live_now_widget(PDO $pdo): string
     $html = '<div class="live-now-widget">';
     $html .= '<div class="live-now-widget__head">';
     $html .= '<h2 class="live-now-widget__title"><span class="live-now-widget__dot" aria-hidden="true"></span>Live Sekarang</h2>';
-    $html .= '<a class="live-now-widget__link" href="' . wpm_esc(wpm_url_livescore()) . '">Lihat Semua Livescore →</a>';
+    $html .= '<a class="live-now-widget__link" href="' . wpm_esc(wpm_url_football()) . '">Lihat Semua Livescore →</a>';
     $html .= '</div>';
     $html .= '<div class="live-now-widget__list">';
     foreach ($items as $item) {
@@ -885,7 +966,7 @@ function wpm_live_now_widget(PDO $pdo): string
  * chip per ACTIVE sport (sports.is_active = 1). Replaces the old
  * per-league filter row (world cup/premier league/etc.) — that was a
  * leftover from the football-only design; leagues are a livescore/
- * fixtures concern now (grouped inside livescore.php itself), not a
+ * fixtures concern now (grouped inside football.php itself), not a
  * homepage news-browsing one. Clicking a chip filters the article feed
  * by pages.sport_key (see cms-admin/pages/pages.php's "Cabang Olahraga"
  * field). Returns '' if there are no active sports at all (shouldn't
@@ -895,7 +976,29 @@ function wpm_sport_filter_row(PDO $pdo, string $tab, ?string $activeSportKey): s
 {
     $sports = [];
     try {
-        $sports = $pdo->query("SELECT `key`, name, icon FROM sports WHERE is_active = 1 ORDER BY sort_order ASC, name ASC")->fetchAll();
+        // Read icon from sports table (legacy), but is_active from sports_api_settings
+        // (single source of truth for active/inactive status as of 24 Jul 2026). Join
+        // by matching sports.key with sports_api_settings.sport_key.
+        // article_count via correlated subquery (not a LEFT JOIN + GROUP BY)
+        // to keep it independent of the sports_api_settings join above —
+        // same published-only rule as the category chip count on kategori.php
+        // (COUNT(*) ... WHERE p.status = 'published').
+        //
+        // `COLLATE utf8mb4_unicode_ci` on the s.`key` side is required, not
+        // decorative: sports.key is utf8mb4_general_ci but pages.sport_key
+        // is utf8mb4_unicode_ci (columns added at different times), so a
+        // direct s.`key` = p.sport_key comparison throws "Illegal mix of
+        // collations" — this was never hit before because the only other
+        // place these two get compared (index.php's chip-click filter)
+        // binds sport_key against a PHP string parameter, not a column.
+        $sports = $pdo->query(
+            "SELECT s.`key`, s.name, s.icon, a.sort_order,
+                    (SELECT COUNT(*) FROM pages p WHERE p.sport_key = s.`key` COLLATE utf8mb4_unicode_ci AND p.status = 'published') AS article_count
+             FROM sports s
+             INNER JOIN sports_api_settings a ON s.`key` = a.sport_key
+             WHERE a.is_active = 1
+             ORDER BY a.sort_order ASC, s.name ASC"
+        )->fetchAll();
     } catch (Throwable $e) {
         return '';
     }
@@ -920,7 +1023,7 @@ function wpm_sport_filter_row(PDO $pdo, string $tab, ?string $activeSportKey): s
         $classes = 'news-filter-pill' . ($isActive ? ' is-active' : '');
         $html .= '<a class="' . $classes . '" href="' . wpm_esc($chipUrl((string) $sport['key'])) . '">';
         $html .= wpm_icon((string) ($sport['icon'] ?? 'trophy'));
-        $html .= '<span>' . wpm_esc((string) $sport['name']) . '</span>';
+        $html .= '<span>' . wpm_esc((string) $sport['name']) . ' (' . (int) $sport['article_count'] . ')</span>';
         $html .= '</a>';
     }
 
@@ -957,7 +1060,7 @@ function wpm_fixture_status_badge(array $fixture): string
     return '<span class="fixture-status fixture-status--muted">' . wpm_esc($status) . '</span>';
 }
 
-/** One fixture row — home/away team logo+name, score or "vs", status badge. Used on livescore.php and league detail's Jadwal tab. */
+/** One fixture row — home/away team logo+name, score or "vs", status badge. Used on football.php and league detail's Jadwal tab. */
 function wpm_fixture_card(array $fixture): string
 {
     $homeLogo = wpm_image($fixture['home_logo'] ?? null);
@@ -969,7 +1072,7 @@ function wpm_fixture_card(array $fixture): string
     $isLive = wpm_fixture_is_live((string) ($fixture['status_short'] ?? ''));
 
     // data-search backs the client-side "Cari pertandingan" filter on
-    // livescore.php — no server round-trip per keystroke.
+    // football.php — no server round-trip per keystroke.
     $searchText = mb_strtolower($homeName . ' ' . $awayName . ' ' . $leagueName);
 
     $html = '<div class="fixture-card' . ($isLive ? ' is-live' : '') . '" data-fixture-id="' . (int) $fixture['id'] . '" data-status="' . wpm_esc((string) ($fixture['status_short'] ?? '')) . '" data-search="' . wpm_esc($searchText) . '">';
@@ -1095,11 +1198,11 @@ function wpm_group_fixtures_by_league(array $fixtures): array
 }
 
 /**
- * NBA game-card rendering (nba.php) — deliberately reuses the football
+ * NBA game-card rendering (basket.php) — deliberately reuses the football
  * fixture-card's CSS classes (.fixture-card, .fixture-card__team, etc.)
  * and data-search/data-status/data-fixture-id attribute contract so
  * assets/js/livescore.js's search/live-toggle/calendar logic works
- * unchanged on nba.php; only the status-code meaning differs (NBA v2
+ * unchanged on basket.php; only the status-code meaning differs (NBA v2
  * uses numeric codes: 1=Not Started, 2=Live, 3=Finished, 4=Postponed,
  * 5=Delayed, 6=Canceled — not football's "1H/HT/2H/ET/P" strings).
  */
@@ -1108,7 +1211,7 @@ function wpm_nba_is_live(int $statusShort): bool
     return $statusShort === 2;
 }
 
-/** Count of NBA games currently in play — powers the "Live (N)" toggle on nba.php. */
+/** Count of NBA games currently in play — powers the "Live (N)" toggle on basket.php. */
 function wpm_count_live_nba_games(PDO $pdo): int
 {
     try {
@@ -1141,7 +1244,7 @@ function wpm_nba_status_badge(array $game): string
     return '<span class="fixture-status fixture-status--muted">' . wpm_esc($label) . '</span>';
 }
 
-/** One NBA game row — home/away team logo+name, score or "vs", status badge. Used on nba.php. */
+/** One NBA game row — home/away team logo+name, score or "vs", status badge. Used on basket.php. */
 function wpm_nba_game_card(array $game): string
 {
     $homeLogo = wpm_image($game['home_logo'] ?? null);
@@ -1152,7 +1255,7 @@ function wpm_nba_game_card(array $game): string
     $isLive = wpm_nba_is_live((int) ($game['status_short'] ?? 1));
 
     // data-search/data-status back the same client-side search + live
-    // filter that livescore.php uses (assets/js/livescore.js).
+    // filter that football.php uses (assets/js/livescore.js).
     $searchText = mb_strtolower($homeName . ' ' . $awayName);
 
     $html = '<div class="fixture-card' . ($isLive ? ' is-live' : '') . '" data-fixture-id="' . (int) $game['id'] . '" data-status="' . (int) ($game['status_short'] ?? 1) . '" data-search="' . wpm_esc($searchText) . '">';
@@ -1177,137 +1280,6 @@ function wpm_nba_game_card(array $game): string
     $html .= '</div>';
 
     $html .= '</div>';
-
-    return $html;
-}
-
-/**
- * Renders one Featured/Pamungkas homepage section (built in
- * cms-admin/pages/featured-content.php) as a full <section> block,
- * including its optional in-between ad slot. Returns '' for content types
- * with no backing data yet (app promo — Phase 7 is on hold) so the section
- * is silently skipped rather than showing broken/empty content.
- */
-function wpm_render_featured_section(PDO $pdo, array $section): string
-{
-    $type = (string) $section['content_type'];
-    $itemCount = max(1, (int) $section['item_count']);
-    $title = (string) $section['title'];
-    $layout = (string) $section['layout'];
-
-    $classes = 'crypto-section--tight';
-    if ((int) $section['show_on_desktop'] === 0) {
-        $classes .= ' u-hide-desktop';
-    }
-    if ((int) $section['show_on_mobile'] === 0) {
-        $classes .= ' u-hide-mobile';
-    }
-
-    $articles = [];
-    $specialHtml = null;
-
-    switch ($type) {
-        case 'manual':
-            $stmt = $pdo->prepare(
-                'SELECT p.*, c.name AS category_name FROM featured_section_items i
-                 INNER JOIN pages p ON p.page_id = i.page_id
-                 LEFT JOIN article_categories c ON c.id = p.category_id
-                 WHERE i.section_id = :id AND p.status = \'published\'
-                 ORDER BY i.sort_order ASC LIMIT ' . $itemCount
-            );
-            $stmt->execute(['id' => (int) $section['id']]);
-            $articles = $stmt->fetchAll();
-            break;
-
-        case 'latest':
-            $stmt = $pdo->prepare(
-                'SELECT p.*, c.name AS category_name FROM pages p
-                 LEFT JOIN article_categories c ON c.id = p.category_id
-                 WHERE p.status = \'published\' ORDER BY p.published_at DESC LIMIT ' . $itemCount
-            );
-            $stmt->execute();
-            $articles = $stmt->fetchAll();
-            break;
-
-        case 'trending':
-            $stmt = $pdo->prepare(
-                'SELECT p.*, c.name AS category_name FROM pages p
-                 LEFT JOIN article_categories c ON c.id = p.category_id
-                 WHERE p.status = \'published\' AND p.is_trending = 1
-                 ORDER BY p.published_at DESC LIMIT ' . $itemCount
-            );
-            $stmt->execute();
-            $articles = $stmt->fetchAll();
-            break;
-
-        case 'category':
-            if (empty($section['category_id'])) {
-                return '';
-            }
-            $stmt = $pdo->prepare(
-                'SELECT p.*, c.name AS category_name FROM pages p
-                 LEFT JOIN article_categories c ON c.id = p.category_id
-                 WHERE p.status = \'published\' AND p.category_id = :cat
-                 ORDER BY p.published_at DESC LIMIT ' . $itemCount
-            );
-            $stmt->execute(['cat' => (int) $section['category_id']]);
-            $articles = $stmt->fetchAll();
-            break;
-
-        case 'ad_banner':
-            if (empty($section['ad_position_id'])) {
-                return '';
-            }
-            $ad = wpm_ad_pick_by_position_id($pdo, (int) $section['ad_position_id'], 'homepage');
-            if ($ad === null) {
-                return '';
-            }
-            $specialHtml = '<div class="ad-slot-wrap" style="padding:0;"><div class="crypto-container">' . wpm_ad_markup($ad, true) . '</div></div>';
-            break;
-
-        case 'app_promo_android':
-        case 'app_promo_ios':
-            // Not built yet (App Promotion module is on hold) — skip cleanly.
-            return '';
-
-        default:
-            return '';
-    }
-
-    if ($articles === [] && $specialHtml === null) {
-        return '';
-    }
-
-    $html = '<section class="' . $classes . '"><div class="crypto-container">';
-    $html .= '<div class="section-header"><span class="section-kicker">Pamungkas</span><h2 class="section-title">' . wpm_esc($title) . '</h2></div>';
-
-    if ($specialHtml !== null) {
-        $html .= $specialHtml;
-    } else {
-        $gridClass = $layout === 'list' ? '' : 'crypto-grid crypto-grid--3';
-        if ($layout === 'list') {
-            $html .= '<div style="display:flex;flex-direction:column;gap:16px;">';
-            foreach ($articles as $article) {
-                $html .= wpm_article_card($article, true);
-            }
-            $html .= '</div>';
-        } else {
-            $html .= '<div class="' . $gridClass . '">';
-            foreach ($articles as $article) {
-                $html .= wpm_article_card($article);
-            }
-            $html .= '</div>';
-        }
-    }
-
-    if (!empty($section['ad_position_id']) && $type !== 'ad_banner') {
-        $ad = wpm_ad_pick_by_position_id($pdo, (int) $section['ad_position_id'], 'homepage');
-        if ($ad !== null) {
-            $html .= '<div class="ad-slot-wrap">' . wpm_ad_markup($ad, true) . '</div>';
-        }
-    }
-
-    $html .= '</div></section>';
 
     return $html;
 }

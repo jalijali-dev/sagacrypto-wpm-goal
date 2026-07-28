@@ -5,8 +5,9 @@ declare(strict_types=1);
  * Sagagoal — public homepage. Tabbed news feed ("Untuk Anda" / "Terbaru")
  * with a league/live filter row, a hero card + article list on the left,
  * and a trending sidebar on the right. Replaces the old single-page
- * hero+about+contact homepage — "Tentang Kami" and "Kontak" moved to their
- * own pages (tentang.php, kontak.php).
+ * hero+about+contact homepage — "Tentang Kami" moved to its own page
+ * (tentang.php); "Kontak" is now a Special Page served via page.php (see
+ * includes/SpecialPages.php).
  */
 
 require_once __DIR__ . '/includes/site-bootstrap.php';

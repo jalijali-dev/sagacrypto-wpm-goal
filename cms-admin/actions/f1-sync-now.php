@@ -36,7 +36,9 @@ if (!$settings['is_active']) {
 
 $stages = [];
 
-$racesResult = wpm_sync_f1_races($pdo);
+// force=true — an admin clicking "Sync Sekarang" wants a fresh pull now,
+// not the quota-throttle skip message (see FormulaOneSettings::primarySyncDue()).
+$racesResult = wpm_sync_f1_races($pdo, true);
 $stages[] = [
     'name' => 'races',
     'label' => 'Sync kalender race + podium',
@@ -48,7 +50,7 @@ $stages[] = [
     'messages' => $racesResult['messages'],
 ];
 
-$standingsResult = wpm_sync_f1_standings($pdo);
+$standingsResult = wpm_sync_f1_standings($pdo, true);
 $stages[] = [
     'name' => 'standings',
     'label' => 'Sync klasemen pembalap & konstruktor',

@@ -191,18 +191,17 @@ $fmtDt = static function (?string $value): string {
             $qaIsSuper = cms_is_superadmin();
             ?>
             <div class="quick-actions">
-                <?php if ($qaIsAdminUp) : ?>
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('about-settings.php')) ?>">Edit About</a>
-                <?php endif; ?>
+                <?php // Trimmed to 5 primary shortcuts 24 Jul 2026 — the rest (Contact
+                // messages, Manage ads, SEO redirects, SEO schema) stay reachable via
+                // the sidebar, just no longer duplicated here. ?>
                 <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('pages.php')) ?>">Manage pages &amp; articles</a>
                 <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('media-library.php')) ?>">Media library</a>
-                <?php if ($qaIsAdminUp) : ?>
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('contact-messages.php')) ?>">Contact messages</a>
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('ads.php')) ?>">Manage ads</a>
+                <?php if ($qaIsSuper) : ?>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('livescore-api-settings.php')) ?>">Livescore API Settings</a>
                 <?php endif; ?>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('seo-dashboard.php')) ?>">SEO Dashboard</a>
                 <?php if ($qaIsAdminUp) : ?>
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('seo-redirects.php')) ?>">SEO redirects</a>
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('seo-schema.php')) ?>">SEO schema</a>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('special-pages.php')) ?>">Edit Special Pages</a>
                 <?php endif; ?>
             </div>
         </section>

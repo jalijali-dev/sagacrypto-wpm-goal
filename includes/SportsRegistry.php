@@ -2,11 +2,14 @@
 declare(strict_types=1);
 
 /**
- * Sport registry — powers the /olahraga selector (Sagagoal's pivot from a
- * football-only site to a multi-sport livescore site). `is_active = 0`
- * rows render as "Segera Hadir" placeholders rather than being hidden, so
- * visitors can see what's coming. Self-migrating (cms_ensure_table) and
- * seeds the initial 3 rows on first call.
+ * Sport registry (Sagagoal's pivot from a football-only site to a
+ * multi-sport livescore site). Powers the sport accordion list in
+ * cms-admin/pages/livescore-api-settings.php and the homepage's sport
+ * filter chips (wpm_sport_filter_row()) — the /olahraga selector this
+ * table originally fed was removed 24 Jul 2026 (see wpm_nav_menu()).
+ * `is_active = 0` rows still matter for the admin accordion's "Segera
+ * Hadir" state. Self-migrating (cms_ensure_table) and seeds the initial
+ * 3 rows on first call.
  *
  * Pulled out of site-bootstrap.php into its own tiny file so backend-only
  * settings classes (BasketballSettings::syncSportVisibility(), and future
@@ -44,7 +47,7 @@ function wpm_ensure_sports_table(PDO $pdo): void
     }
 }
 
-/** All sports (active + "Segera Hadir" placeholders), in admin-configured order — for the /olahraga selector. */
+/** All sports (active + "Segera Hadir" placeholders), in admin-configured order — used by the admin Livescore API Settings accordion. */
 function wpm_all_sports(PDO $pdo): array
 {
     wpm_ensure_sports_table($pdo);

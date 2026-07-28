@@ -22,8 +22,9 @@ require_once dirname(__DIR__, 2) . '/includes/SportsRegistry.php';
  * calling their existing per-sport action endpoints unchanged.
  *
  * Rows are sourced from the `sports` registry table (see
- * includes/SportsRegistry.php) — the same table /olahraga reads — so
- * this page and the public selector never drift out of sync.
+ * includes/SportsRegistry.php) — the same table the homepage's sport
+ * filter chips read — so this page and the public site never drift out
+ * of sync.
  */
 
 cms_require_role(['superadmin']);
@@ -33,6 +34,23 @@ $selfUrl = 'livescore-api-settings.php';
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $sport = (string) ($_POST['sport'] ?? '');
 
+    // nav_placement/sort_order (24 Jul 2026 sports_api_settings consolidation) —
+    // shared across all 3 sports, saved alongside each sport's own fields below.
+    $navPlacement = (string) ($_POST['nav_placement'] ?? 'menu');
+    if (!in_array($navPlacement, ['menu', 'footer', 'hidden'], true)) {
+        $navPlacement = 'menu';
+    }
+    $sortOrder = (int) ($_POST['sort_order'] ?? 0);
+
+    // Page title/subtitle (24 Jul 2026) — public-facing hero text on
+    // football.php/basket.php/f1.php, editable per sport here instead of
+    // hardcoded. Saved as NULL when left blank so the frontend's own
+    // fallback-to-default logic kicks in (see e.g. football.php).
+    $sportPageTitleInput = trim((string) ($_POST['page_title'] ?? ''));
+    $sportPageSubtitleInput = trim((string) ($_POST['page_subtitle'] ?? ''));
+    $sportPageTitle = $sportPageTitleInput !== '' ? $sportPageTitleInput : null;
+    $sportPageSubtitle = $sportPageSubtitleInput !== '' ? $sportPageSubtitleInput : null;
+
     if ($sport === 'football') {
         $provider = trim((string) ($_POST['provider'] ?? '')) ?: 'API-Football';
         $baseUrl = trim((string) ($_POST['base_url'] ?? '')) ?: 'https://v3.football.api-sports.io';
@@ -41,30 +59,38 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $isActive = !empty($_POST['is_active']) ? 1 : 0;
         $autoSyncEnabled = !empty($_POST['auto_sync_enabled']) ? 1 : 0;
         $syncFixturesInterval = max(1, (int) ($_POST['sync_fixtures_interval_minutes'] ?? 5)) * 60;
+        $syncLeaguesTeamsInterval = max(1, (int) ($_POST['sync_leagues_teams_interval_hours'] ?? 1)) * 3600;
         $cacheDurationLive = max(10, (int) ($_POST['cache_duration_live'] ?? 60));
         $trackedLeagueIds = LivescoreSettings::formatLeagueIds(
             array_map('intval', $_POST['tracked_league_ids'] ?? [])
         );
 
         $setSql = 'provider = :provider, base_url = :base_url, api_key_header = :api_key_header,
-            tracked_league_ids = :tracked_league_ids, sync_fixtures_interval = :sync_fixtures_interval,
+            tracked_ids = :tracked_ids, sync_primary_interval = :sync_primary_interval,
+            sync_secondary_interval = :sync_secondary_interval,
             cache_duration_live = :cache_duration_live, is_active = :is_active,
-            auto_sync_enabled = :auto_sync_enabled';
+            auto_sync_enabled = :auto_sync_enabled, nav_placement = :nav_placement, sort_order = :sort_order,
+            page_title = :page_title, page_subtitle = :page_subtitle';
         $params = [
             'provider' => $provider,
             'base_url' => $baseUrl,
             'api_key_header' => $apiKeyHeader,
-            'tracked_league_ids' => $trackedLeagueIds !== '' ? $trackedLeagueIds : null,
-            'sync_fixtures_interval' => $syncFixturesInterval,
+            'tracked_ids' => $trackedLeagueIds !== '' ? $trackedLeagueIds : null,
+            'sync_primary_interval' => $syncFixturesInterval,
+            'sync_secondary_interval' => $syncLeaguesTeamsInterval,
             'cache_duration_live' => $cacheDurationLive,
             'is_active' => $isActive,
             'auto_sync_enabled' => $autoSyncEnabled,
+            'nav_placement' => $navPlacement,
+            'sort_order' => $sortOrder,
+            'page_title' => $sportPageTitle,
+            'page_subtitle' => $sportPageSubtitle,
         ];
         if ($apiKeyInput !== '') {
             $setSql .= ', api_key_enc = :api_key_enc';
             $params['api_key_enc'] = cms_ai_encrypt($apiKeyInput);
         }
-        $pdo->prepare("UPDATE livescore_api_settings SET {$setSql} WHERE id = 1")->execute($params);
+        $pdo->prepare("UPDATE sports_api_settings SET {$setSql} WHERE sport_key = 'football'")->execute($params);
 
         wpm_ensure_sports_table($pdo);
         $pdo->prepare('UPDATE sports SET is_active = :is_active WHERE `key` = \'football\'')
@@ -82,22 +108,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $cacheDurationLive = max(10, (int) ($_POST['cache_duration_live'] ?? 60));
 
         $setSql = 'provider = :provider, base_url = :base_url, api_key_header = :api_key_header,
-            sync_games_interval = :sync_games_interval, cache_duration_live = :cache_duration_live,
-            is_active = :is_active, auto_sync_enabled = :auto_sync_enabled';
+            sync_primary_interval = :sync_primary_interval, cache_duration_live = :cache_duration_live,
+            is_active = :is_active, auto_sync_enabled = :auto_sync_enabled,
+            nav_placement = :nav_placement, sort_order = :sort_order,
+            page_title = :page_title, page_subtitle = :page_subtitle';
         $params = [
             'provider' => $provider,
             'base_url' => $baseUrl,
             'api_key_header' => $apiKeyHeader,
-            'sync_games_interval' => $syncGamesInterval,
+            'sync_primary_interval' => $syncGamesInterval,
             'cache_duration_live' => $cacheDurationLive,
             'is_active' => $isActive,
             'auto_sync_enabled' => $autoSyncEnabled,
+            'nav_placement' => $navPlacement,
+            'sort_order' => $sortOrder,
+            'page_title' => $sportPageTitle,
+            'page_subtitle' => $sportPageSubtitle,
         ];
         if ($apiKeyInput !== '') {
             $setSql .= ', api_key_enc = :api_key_enc';
             $params['api_key_enc'] = cms_ai_encrypt($apiKeyInput);
         }
-        $pdo->prepare("UPDATE basketball_api_settings SET {$setSql} WHERE id = 1")->execute($params);
+        $pdo->prepare("UPDATE sports_api_settings SET {$setSql} WHERE sport_key = 'basketball'")->execute($params);
         BasketballSettings::syncSportVisibility($pdo, (bool) $isActive);
 
         $_SESSION['cms_flash'] = ['type' => 'success', 'message' => 'Basketball (NBA) API settings saved.'];
@@ -111,20 +143,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $syncInterval = max(1, (int) ($_POST['sync_interval_minutes'] ?? 60)) * 60;
 
         $setSql = 'provider = :provider, base_url = :base_url, api_key_header = :api_key_header,
-            sync_interval = :sync_interval, is_active = :is_active, auto_sync_enabled = :auto_sync_enabled';
+            sync_primary_interval = :sync_primary_interval, is_active = :is_active, auto_sync_enabled = :auto_sync_enabled,
+            nav_placement = :nav_placement, sort_order = :sort_order,
+            page_title = :page_title, page_subtitle = :page_subtitle';
         $params = [
             'provider' => $provider,
             'base_url' => $baseUrl,
             'api_key_header' => $apiKeyHeader,
-            'sync_interval' => $syncInterval,
+            'sync_primary_interval' => $syncInterval,
             'is_active' => $isActive,
             'auto_sync_enabled' => $autoSyncEnabled,
+            'nav_placement' => $navPlacement,
+            'sort_order' => $sortOrder,
+            'page_title' => $sportPageTitle,
+            'page_subtitle' => $sportPageSubtitle,
         ];
         if ($apiKeyInput !== '') {
             $setSql .= ', api_key_enc = :api_key_enc';
             $params['api_key_enc'] = cms_ai_encrypt($apiKeyInput);
         }
-        $pdo->prepare("UPDATE f1_api_settings SET {$setSql} WHERE id = 1")->execute($params);
+        $pdo->prepare("UPDATE sports_api_settings SET {$setSql} WHERE sport_key = 'motorsport'")->execute($params);
         FormulaOneSettings::syncSportVisibility($pdo, (bool) $isActive);
 
         $_SESSION['cms_flash'] = ['type' => 'success', 'message' => 'Formula 1 API settings saved.'];
@@ -199,6 +237,31 @@ $statusFor = static function (array $sportRow, array $settingsByKey): array {
     return ['Segera Hadir', 'muted'];
 };
 
+/**
+ * Quota-exhaustion visual alert (24 Jul 2026) — last_test_status/message/at
+ * now get written by the cron sync itself on a quota failure (see
+ * *Settings::recordSyncFailure() / wpm_is_quota_error() in the Sync
+ * files), not just by a manual Test Connection click, so this badge
+ * surfaces a cron-detected outage without needing an admin to go check
+ * server logs. Returns null when there's nothing to show (last test
+ * succeeded, or never ran).
+ *
+ * @return ?array{0: string, 1: string} [badge label, tooltip]
+ */
+$syncFailureBadgeFor = static function (array $sportRow, array $settingsByKey): ?array {
+    $key = (string) $sportRow['key'];
+    $settings = $settingsByKey[$key] ?? null;
+    if ($settings === null || ($settings['last_test_status'] ?? null) !== 'failed') {
+        return null;
+    }
+    $message = (string) ($settings['last_test_message'] ?? '');
+    $isQuota = stripos($message, 'request limit') !== false;
+    $label = $isQuota ? '⚠ Sync terakhir gagal: quota habis' : '⚠ Sync terakhir gagal';
+    $lastAt = $settings['last_test_at'] ?? null;
+    $tooltip = $message . ($lastAt !== null ? ' — ' . $lastAt : '');
+    return [$label, $tooltip];
+};
+
 $sportRequests = [];
 try {
     cms_ensure_table(
@@ -249,8 +312,26 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <span class="sport-accordion__emoji"><?= $sportEmoji[$key] ?? '🏆' ?></span>
                     <span class="sport-accordion__name"><?= cms_esc((string) $sportRow['name']) ?></span>
                     <span class="pill pill--<?= $statusTone ?>"><?= cms_esc($statusLabel) ?></span>
+                    <?php $failureBadge = $syncFailureBadgeFor($sportRow, $sportSettingsByKey); ?>
+                    <?php if ($failureBadge !== null) : ?>
+                        <span class="pill pill--warn" title="<?= cms_esc($failureBadge[1]) ?>"><?= cms_esc($failureBadge[0]) ?></span>
+                    <?php endif; ?>
                     <?php if (!empty($sportRow['notes'])) : ?>
-                        <span class="sport-accordion__notes"><?= cms_esc((string) $sportRow['notes']) ?></span>
+                        <?php
+                        // notes is free text in `sports`, one row per sport (25 Jul 2026
+                        // consistency fix) — stored as "main line\nsecondary line" so every
+                        // sport renders with the same 2-tier hierarchy (provider info, then
+                        // dimmer setup instruction) regardless of what each row's text says.
+                        // A row with no \n (or a future sport that only fills in one line)
+                        // still renders fine — sub just doesn't appear.
+                        $notesLines = array_values(array_filter(array_map('trim', explode("\n", (string) $sportRow['notes']))));
+                        $notesMain = $notesLines[0] ?? '';
+                        $notesSub = implode(' ', array_slice($notesLines, 1));
+                        ?>
+                        <span class="sport-accordion__notes">
+                            <?php if ($notesMain !== '') : ?><span class="sport-accordion__notes-main"><?= cms_esc($notesMain) ?></span><?php endif; ?>
+                            <?php if ($notesSub !== '') : ?><span class="sport-accordion__notes-sub"><?= cms_esc($notesSub) ?></span><?php endif; ?>
+                        </span>
                     <?php endif; ?>
                     <label class="sport-accordion__quick-toggle" onclick="event.stopPropagation();">
                         <input type="checkbox" class="sport-quick-toggle"
@@ -260,6 +341,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
                                <?= (int) $sportRow['is_active'] === 1 ? 'checked' : '' ?>>
                         <span></span>
                     </label>
+                    <span class="sport-accordion__hint">Kelola</span>
+                    <svg class="sport-accordion__chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </summary>
                 <div class="sport-accordion__body">
                     <?php if ($key === 'football') : ?>
@@ -278,7 +361,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         <div class="panel__head">
             <h3 class="panel__title">Tambah Cabang Sport Baru</h3>
         </div>
-        <p style="font-size:13px;opacity:.75;margin:0 0 16px;">Menambahkan cabang olahraga baru memerlukan pekerjaan development terpisah (client API + skema database sendiri, seperti NBA/Formula 1 di atas) — form ini <strong>tidak</strong> langsung mengaktifkan apa pun, cuma mengajukan permintaan yang direview manual.</p>
+        <p class="section-lead">Menambahkan cabang olahraga baru memerlukan pekerjaan development terpisah (client API + skema database sendiri, seperti NBA/Formula 1 di atas) — form ini <strong>tidak</strong> langsung mengaktifkan apa pun, cuma mengajukan permintaan yang direview manual.</p>
         <form method="post" action="<?= cms_esc(cms_action_href('sport-request-submit.php')) ?>" class="form-grid">
             <?= cms_csrf_field() ?>
             <label class="field">Nama cabang olahraga
@@ -323,13 +406,20 @@ require dirname(__DIR__) . '/includes/alerts.php';
     padding: 18px 22px;
     cursor: pointer;
     user-select: none;
+    transition: background .16s ease;
 }
+.sport-accordion__summary:hover { background: var(--table-row-hover); }
 .sport-accordion__summary::-webkit-details-marker { display: none; }
 .sport-accordion__emoji { font-size: 22px; }
 .sport-accordion__name { font-weight: 700; font-size: 15px; min-width: 140px; }
-.sport-accordion__notes { font-size: 12.5px; opacity: .6; flex: 1; }
+.sport-accordion__notes { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.sport-accordion__notes-main { font-size: 12.5px; opacity: .75; }
+.sport-accordion__notes-sub { font-size: 11.5px; opacity: .5; }
 .sport-accordion__body { padding: 4px 22px 24px; }
 .sport-accordion__quick-toggle { margin-left: auto; display: inline-flex; align-items: center; cursor: pointer; }
+.sport-accordion__hint { font-size: 12.5px; color: var(--muted, #888); flex-shrink: 0; }
+.sport-accordion__chevron { flex-shrink: 0; color: var(--muted, #888); transition: transform 0.2s ease; }
+.sport-accordion__item[open] > .sport-accordion__summary .sport-accordion__chevron { transform: rotate(180deg); }
 .sport-accordion__quick-toggle input { display: none; }
 .sport-accordion__quick-toggle span {
     display: inline-block;

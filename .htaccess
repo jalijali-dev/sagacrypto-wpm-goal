@@ -20,21 +20,69 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # Legacy query-string redirects for football/basket date pages (25 Jul
+    # 2026 SEO clean-URL change) — old links like football.php?date=2026-07-25
+    # now 301 to the clean path football/2026-07-25. Must come BEFORE the
+    # real-file bypass below since football.php/basket.php are real files
+    # that bypass would otherwise let straight through unredirected.
+    #
+    # Matched against THE_REQUEST (the original request line) rather than
+    # REQUEST_URI/QUERY_STRING for two reasons: (1) %N backreferences only
+    # reflect the LAST matched RewriteCond, not all conds in the chain — a
+    # two-condition REQUEST_URI+QUERY_STRING version silently produced a
+    # garbled target (%1 ended up bound to the date, %2 to nothing) — so
+    # both captures must come from a single condition; (2) THE_REQUEST is
+    # frozen at the original browser request and never changes on internal
+    # rewrites, so this can't re-match and loop when the clean-URL forward
+    # rule below internally rewrites football/DATE -> football.php?date=DATE.
+    RewriteCond %{THE_REQUEST} \s(.*)/football\.php\?date=([0-9]{4}-[0-9]{2}-[0-9]{2})\s
+    RewriteRule ^ %1/football/%2? [R=301,L]
+    RewriteCond %{THE_REQUEST} \s(.*)/basket\.php\?date=([0-9]{4}-[0-9]{2}-[0-9]{2})\s
+    RewriteRule ^ %1/basket/%2? [R=301,L]
+
     # Never rewrite requests that already point at a real file or directory
     # (assets/, cms-admin/, uploads/, the *.php files themselves, etc.).
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
+    # Legacy URL redirects (24 Jul 2026 rename — livescore.php/nba.php
+    # renamed to football.php/basket.php, see includes/site-bootstrap.php's
+    # wpm_url_football()/wpm_url_basket()). 301 (not 302) so search
+    # engines transfer ranking to the new URLs instead of indexing both.
+    # Must come before the generic rule below since /livescore and /nba
+    # no longer correspond to any real .php file.
+    #
+    # NOTE on the %{REQUEST_URI}-capture trick below: a plain relative
+    # target (e.g. `RewriteRule ^livescore/?$ football [R=301,L]`) makes
+    # Apache build the Location header from the server FILESYSTEM path
+    # instead of a URL path when the [R] flag is used — it works fine for
+    # internal (non-R) rewrites but breaks external redirects. Capturing
+    # everything in REQUEST_URI before "/livescore" and re-prepending it
+    # keeps this portable across "app in a subfolder" (local dev) and
+    # "app at domain root" (production) without hardcoding a RewriteBase.
+    RewriteCond %{REQUEST_URI} ^(.*)/livescore/?$
+    RewriteRule ^ %1/football [R=301,L]
+    RewriteCond %{REQUEST_URI} ^(.*)/nba/?$
+    RewriteRule ^ %1/basket [R=301,L]
+
     # Generic extension-less alias: /<name> -> <name>.php for any top-level
-    # page whose slug matches its filename exactly (livescore, olahraga,
-    # nba, f1, pencarian, kontak, etc.) — covers new top-level pages
-    # automatically without needing a one-off rule added here every time.
-    # Pages whose slug does NOT match their filename (berita -> kategori.php,
+    # page whose slug matches its filename exactly (football, basket, f1,
+    # pencarian, kontak, etc.) — covers new top-level pages automatically
+    # without needing a one-off rule added here every time. Pages whose
+    # slug does NOT match their filename (berita -> kategori.php,
     # tentang-kami -> tentang.php) still need their own specific rule below,
     # since this generic rule only handles same-name matches.
     RewriteCond %{REQUEST_FILENAME}\.php -f
     RewriteRule ^([a-zA-Z0-9_-]+)/?$ $1.php [L,QSA]
+
+    # /football/YYYY-MM-DD -> football.php?date=YYYY-MM-DD
+    # /basket/YYYY-MM-DD   -> basket.php?date=YYYY-MM-DD
+    # (25 Jul 2026 SEO clean-URL change; see includes/site-bootstrap.php's
+    # $dateUrl closures in football.php/basket.php which now emit this
+    # format instead of the old ?date= query string.)
+    RewriteRule ^football/([0-9]{4}-[0-9]{2}-[0-9]{2})/?$ football.php?date=$1 [L,QSA]
+    RewriteRule ^basket/([0-9]{4}-[0-9]{2}-[0-9]{2})/?$ basket.php?date=$1 [L,QSA]
 
     # /artikel/<slug> -> artikel.php?slug=<slug>
     RewriteRule ^artikel/([^/]+)/?$ artikel.php?slug=$1 [L,QSA]
@@ -65,4 +113,12 @@
     RewriteRule ^sitemap-articles\.xml$ sitemap.php?type=articles [L,QSA]
     RewriteRule ^sitemap-categories\.xml$ sitemap.php?type=categories [L,QSA]
     RewriteRule ^sitemap-custom\.xml$ sitemap.php?type=custom [L,QSA]
+
+    # Special Pages catch-all (Fase 3, Special Pages & Sports Modules spec,
+    # 24 Jul 2026) — admin-managed static pages (Kontak, FAQ, etc.) served
+    # through page.php. Must be LAST: every specific route above (and the
+    # generic same-name .php alias) gets first crack at the URL; only a
+    # slug with no matching file/rule falls through to here. See
+    # includes/SpecialPages.php.
+    RewriteRule ^([a-z0-9-]+)/?$ page.php?slug=$1 [L,QSA]
 </IfModule>

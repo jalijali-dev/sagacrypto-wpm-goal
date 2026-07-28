@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 require_once dirname(__DIR__) . '/includes/schema-guard.php';
 require_once dirname(__DIR__) . '/includes/growth-agent-service.php';
+require_once dirname(__DIR__) . '/includes/gsc-api.php';
 
 // Same tier as the rest of AI Management — see cms_require_role() in
 // functions.php for the full tier breakdown.
@@ -20,6 +21,24 @@ cms_growth_agent_ensure_schema($pdo);
 // what's protected from deletion. A manual "Bersihkan job lama" button
 // further down runs the same function on demand with a chosen window.
 cms_growth_agent_cleanup_old_jobs($pdo, 90);
+
+// Lazy GSC fetch — same "no cron, self-maintaining on request" spirit as
+// the cleanup call above. Re-fetches only if GSC is connected AND the
+// last fetch is more than 24h old; a no-op otherwise. Never throws.
+cms_gsc_fetch_if_stale($pdo, 24);
+
+// Lazy Agent Memory detection (ROADMAP.md gap #3) — same pattern again,
+// gated by gsc_settings.last_memory_detection_at vs
+// memory_thresholds_json's detection_interval_days. Advisory-only: this
+// never creates/approves/executes anything, see
+// cms_growth_agent_detect_memory_patterns()'s own guardrail note. Never throws.
+cms_growth_agent_detect_memory_if_stale($pdo);
+
+// Lazy Feedback Loop snapshot (ROADMAP.md gap #4) — same pattern again,
+// gated by gsc_settings.last_performance_snapshot_at, default 24h. Purely
+// a read/aggregate/upsert into growth_agent_performance — never touches
+// `pages` or growth_agent_jobs. Never throws.
+cms_growth_agent_snapshot_performance_if_stale($pdo, 24);
 
 $pageTitle = 'Growth Agent';
 $currentNav = 'growth-agent';
@@ -50,6 +69,43 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $redirect('Invalid job.', 'error');
         }
 
+        // Content Agent Adapter (ROADMAP.md gap #1, closed 27 Jul 2026):
+        // for job_type='gsc_article_idea', Approve IS the execution step —
+        // see cms_growth_agent_create_article_draft_from_idea()'s own
+        // docblock for why this one job type is a deliberate exception to
+        // "approve isn't execute". Every other job type falls through to
+        // the generic feedback+status-flip logic below, unchanged.
+        $jobRowStmt = $pdo->prepare('SELECT id, job_type, output_json, page_id FROM growth_agent_jobs WHERE id = :id LIMIT 1');
+        $jobRowStmt->execute(['id' => $jobId]);
+        $jobRow = $jobRowStmt->fetch();
+        if (!$jobRow) {
+            $redirect('Job tidak ditemukan.', 'error');
+        }
+
+        if ($action === 'approve' && $jobRow['job_type'] === 'gsc_article_idea' && empty($jobRow['page_id'])) {
+            $draftResult = cms_growth_agent_create_article_draft_from_idea($pdo, $jobRow, $currentAdminId);
+
+            if (!$draftResult['ok']) {
+                // Never silent-fail: the job stays visible as 'failed'
+                // with the real error, instead of quietly looking
+                // "approved" with no draft to show for it.
+                $failUpd = $pdo->prepare("UPDATE growth_agent_jobs SET status = 'failed', error_message = :error, updated_at = NOW() WHERE id = :id");
+                $failUpd->execute(['error' => $draftResult['error'], 'id' => $jobId]);
+                $redirect('Gagal membuat draft artikel: ' . $draftResult['error'], 'error');
+            }
+
+            $ins = $pdo->prepare(
+                'INSERT INTO growth_agent_feedback (job_id, action, reviewed_by, created_at)
+                 VALUES (:job_id, :action, :reviewed_by, NOW())'
+            );
+            $ins->execute(['job_id' => $jobId, 'action' => 'approved_as_is', 'reviewed_by' => $currentAdminId]);
+
+            $upd = $pdo->prepare('UPDATE growth_agent_jobs SET status = :status, page_id = :page_id, updated_at = NOW() WHERE id = :id');
+            $upd->execute(['status' => 'succeeded', 'page_id' => $draftResult['page_id'], 'id' => $jobId]);
+
+            $redirect('Draft artikel berhasil dibuat — klik "Edit draft" di Recent jobs untuk melengkapi & publish.');
+        }
+
         $feedbackAction = $action === 'approve' ? 'approved_as_is' : 'rejected';
         $newStatus = $action === 'approve' ? 'succeeded' : 'failed';
 
@@ -63,6 +119,34 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $upd->execute(['status' => $newStatus, 'id' => $jobId]);
 
         $redirect($action === 'approve' ? 'Job approved — it may now be used as a future example.' : 'Job rejected.');
+    }
+
+    // ── "Close as Legacy" — a third review outcome distinct from
+    // reject/approve: the underlying signal (e.g. stale GSC data, an
+    // outdated recommendation) just isn't relevant anymore, not a
+    // judgment that the job itself was bad. Never counts as an active
+    // reject (see GrowthAgentPromptBuilder — few-shot examples only ever
+    // come from 'approved_as_is', so this can't accidentally pollute that
+    // pool either way) and is purged on the same retention schedule as
+    // 'failed' jobs (see cms_growth_agent_cleanup_old_jobs()).
+    if ($action === 'close_as_legacy') {
+        $jobId = (int) ($_POST['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            $redirect('Invalid job.', 'error');
+        }
+
+        cms_growth_agent_ensure_legacy_status($pdo);
+
+        $ins = $pdo->prepare(
+            'INSERT INTO growth_agent_feedback (job_id, action, reviewed_by, created_at)
+             VALUES (:job_id, :action, :reviewed_by, NOW())'
+        );
+        $ins->execute(['job_id' => $jobId, 'action' => 'closed_as_legacy', 'reviewed_by' => $currentAdminId]);
+
+        $upd = $pdo->prepare("UPDATE growth_agent_jobs SET status = 'closed_as_legacy', updated_at = NOW() WHERE id = :id");
+        $upd->execute(['id' => $jobId]);
+
+        $redirect('Job ditandai sebagai legacy — tidak dihitung sebagai reject, cuma sudah tidak relevan lagi.');
     }
 
     if ($action === 'style_rule_create') {
@@ -127,6 +211,184 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             : 'Tidak ada job yang perlu dibersihkan untuk jendela waktu itu.');
     }
 
+    // ── Recompute Prioritized Opportunities on demand — same pure SQL/
+    // scoring pass that already runs automatically after every GSC fetch
+    // (cms_gsc_fetch_and_cache() -> cms_gsc_compute_opportunities()); this
+    // button exists for refreshing scores without waiting for the next
+    // fetch (e.g. after tuning thresholds).
+    if ($action === 'recompute_opportunities') {
+        $result = cms_gsc_compute_opportunities($pdo);
+        $redirect($result['ok']
+            ? $result['count'] . ' opportunity dihitung ulang.'
+            : 'Gagal recompute: ' . $result['error'], $result['ok'] ? 'success' : 'error');
+    }
+
+    // ── Generate on-demand from one Prioritized Opportunities row ────────
+    // The opportunity table itself is pure scoring (no AI, computed by
+    // cms_gsc_compute_opportunities()) — AI is only ever called here, for
+    // the ONE row the operator picked. Dispatches by recommended_action,
+    // reusing the exact same generate engines as the "Scan for SEO
+    // improvements" button (single-item calls, not bulk).
+    if ($action === 'generate_from_opportunity') {
+        $oppId = (int) ($_POST['opportunity_id'] ?? 0);
+        if ($oppId <= 0) {
+            $redirect('Opportunity tidak valid.', 'error');
+        }
+
+        $oppStmt = $pdo->prepare("SELECT * FROM gsc_opportunities WHERE id = :id AND status = 'open' LIMIT 1");
+        $oppStmt->execute(['id' => $oppId]);
+        $opp = $oppStmt->fetch();
+        if (!$opp) {
+            $redirect('Opportunity tidak ditemukan atau sudah pernah di-generate.', 'error');
+        }
+
+        $metrics = json_decode((string) ($opp['metrics_json'] ?? ''), true);
+        $metrics = is_array($metrics) ? $metrics : [];
+        $priority = (string) $opp['priority'];
+        $jobId = 0;
+        $ok = false;
+        $genError = 'Aksi tidak dikenal untuk opportunity ini.';
+
+        if ($opp['recommended_action'] === 'seo_recommendation') {
+            $pageStmt = $pdo->prepare(
+                'SELECT page_id, title, slug, excerpt, content, meta_title, meta_description FROM pages WHERE page_id = :id LIMIT 1'
+            );
+            $pageStmt->execute(['id' => (int) $opp['matched_page_id']]);
+            $page = $pageStmt->fetch();
+            if (!$page) {
+                $redirect('Artikel sumber tidak ditemukan — mungkin sudah dihapus.', 'error');
+            }
+            $result = cms_growth_agent_run_seo_recommendation_scan($pdo, [$page], [(int) $page['page_id'] => $priority]);
+            $ok = $result['created'] > 0;
+            $jobId = (int) ($result['job_ids'][0] ?? 0);
+            $genError = $ok ? '' : 'AI request gagal atau hasil tidak dalam format yang diharapkan.';
+        } elseif ($opp['recommended_action'] === 'gsc_content_optimization') {
+            $pageStmt = $pdo->prepare('SELECT page_id, title, slug, excerpt, content FROM pages WHERE page_id = :id LIMIT 1');
+            $pageStmt->execute(['id' => (int) $opp['matched_page_id']]);
+            $page = $pageStmt->fetch();
+            if (!$page) {
+                $redirect('Artikel sumber tidak ditemukan — mungkin sudah dihapus.', 'error');
+            }
+            $page['avg_position'] = $metrics['position'] ?? 0;
+            $page['impressions'] = $metrics['impressions'] ?? 0;
+            $page['top_queries'] = $metrics['top_queries'] ?? '';
+            // Content Decay (ROADMAP.md gap #5) — when this opportunity's
+            // primary category is a decline rather than "hasn't broken
+            // into page one yet", pass the trend evidence through so
+            // cms_growth_agent_generate_content_optimization() switches to
+            // its decay-specific prompt instead of the striking-distance one.
+            if (str_contains((string) $opp['matched_categories'], 'Content Decay') && isset($metrics['pct_change_clicks'])) {
+                $page['is_decay'] = true;
+                $page['prev_clicks'] = $metrics['prev_clicks'] ?? 0;
+                $page['cur_clicks'] = $metrics['cur_clicks'] ?? 0;
+                $page['prev_impressions'] = $metrics['prev_impressions'] ?? 0;
+                $page['cur_impressions'] = $metrics['cur_impressions'] ?? 0;
+                $page['pct_change_clicks'] = $metrics['pct_change_clicks'];
+                $page['comparison_window_days'] = $metrics['comparison_window_days'] ?? 28;
+            }
+            $result = cms_growth_agent_generate_content_optimization($pdo, $page, $priority);
+            $ok = $result['ok'];
+            $jobId = $result['job_id'];
+            $genError = $result['error'];
+        } elseif ($opp['recommended_action'] === 'gsc_article_idea') {
+            $queryData = [
+                'query' => (string) $opp['query_text'],
+                'impressions' => (int) ($metrics['impressions'] ?? 0),
+                'avg_position' => (float) ($metrics['position'] ?? 0),
+            ];
+            $result = cms_growth_agent_generate_article_idea($pdo, $queryData, $priority);
+            $ok = $result['ok'];
+            $jobId = $result['job_id'];
+            $genError = $result['error'];
+        } elseif ($opp['recommended_action'] === 'cannibalization_review') {
+            // No AI here at all — this deterministically surfaces the
+            // query + competing pages/shares as a manual_action job for
+            // the operator to review on cannibalization-review.php.
+            // ROADMAP.md gap #5 — deciding intent-split/consolidate/pillar
+            // is a judgment call this codebase never routes to AI.
+            $competingPages = is_array($metrics['competing_pages'] ?? null) ? $metrics['competing_pages'] : [];
+            $jobId = cms_growth_agent_log_cannibalization_review(
+                $pdo, (string) $opp['query_text'], $competingPages,
+                (int) ($metrics['total_clicks'] ?? 0), (int) ($metrics['total_impressions'] ?? 0), $priority
+            );
+            $ok = $jobId > 0;
+            $genError = $ok ? '' : 'Gagal membuat job review cannibalization.';
+        }
+
+        if ($jobId > 0) {
+            $pdo->prepare("UPDATE gsc_opportunities SET status = 'actioned', linked_job_id = :job_id WHERE id = :id")
+                ->execute(['job_id' => $jobId, 'id' => $oppId]);
+        }
+
+        $redirect($ok
+            ? 'Rekomendasi berhasil digenerate — cek tabel "Recent jobs" di bawah untuk review.'
+            : 'Generate gagal: ' . $genError, $ok ? 'success' : 'error');
+    }
+
+    // ── Indexing Workflow (Phase 5 roadmap, ROADMAP.md gap #2) ────────────
+    // Inspect ONE article's index status on demand — never writes to the
+    // article itself, only upserts gsc_url_inspections and, if the verdict
+    // looks problematic, logs a manual_action 'review_indexing_issue' job.
+    if ($action === 'inspect_single_url') {
+        $inspectPageId = (int) ($_POST['page_id'] ?? 0);
+        if ($inspectPageId <= 0) {
+            $redirect('Artikel tidak valid.', 'error');
+        }
+
+        require_once dirname(__DIR__) . '/includes/sitemap-service.php';
+        $inspectPageStmt = $pdo->prepare("SELECT page_id, slug, canonical_url FROM pages WHERE page_id = :id AND status = 'published' LIMIT 1");
+        $inspectPageStmt->execute(['id' => $inspectPageId]);
+        $inspectPage = $inspectPageStmt->fetch();
+        if (!$inspectPage) {
+            $redirect('Artikel tidak ditemukan atau belum published.', 'error');
+        }
+
+        $inspectCanonical = trim((string) ($inspectPage['canonical_url'] ?? ''));
+        $inspectUrl = $inspectCanonical !== ''
+            ? $inspectCanonical
+            : cms_sitemap_absolute_url(cms_sitemap_path_for('article', (string) $inspectPage['slug']));
+
+        $inspectResult = cms_gsc_inspect_url($pdo, $inspectUrl, $inspectPageId);
+        if (!$inspectResult['ok']) {
+            $redirect('Inspect URL gagal: ' . $inspectResult['error'], 'error');
+        }
+
+        if (cms_growth_agent_indexing_issue_needs_review($inspectResult['data'])) {
+            cms_growth_agent_log_indexing_issue($pdo, $inspectPageId, $inspectUrl, $inspectResult['data']);
+            $redirect('Inspect selesai — verdict: ' . $inspectResult['data']['verdict'] . '. Job "review_indexing_issue" dibuat, cek Recent jobs.', 'error');
+        }
+
+        $redirect('Inspect selesai — verdict: ' . $inspectResult['data']['verdict'] . ', tidak ada masalah terdeteksi.');
+    }
+
+    // Batch version of the same inspection — default 10, same clamp
+    // pattern as cms_growth_agent_scan_seo_recommendations()'s $limit.
+    if ($action === 'inspect_priority_urls') {
+        $inspectLimit = (int) ($_POST['limit'] ?? 10);
+        $inspectStats = cms_growth_agent_inspect_priority_urls($pdo, $inspectLimit);
+        if ($inspectStats['inspected'] === 0) {
+            $redirect('Tidak ada artikel published untuk diinspeksi.', 'error');
+        }
+        $redirect(
+            $inspectStats['inspected'] . ' URL diinspeksi, ' . $inspectStats['issues_found'] . ' masalah terdeteksi'
+            . ($inspectStats['errors'] > 0 ? ', ' . $inspectStats['errors'] . ' gagal' : '') . '.'
+        );
+    }
+
+    // ── Agent Memory (ROADMAP.md gap #3) ──────────────────────────────────
+    // The ONLY manual action Agent Memory has — deliberately not "approve"
+    // or "execute" (memory is not an action queue, see the guardrail note
+    // on cms_growth_agent_detect_memory_patterns()). Lets an operator turn
+    // off a pattern they judge no longer relevant; never deletes the row.
+    if ($action === 'mark_memory_stale') {
+        $memoryId = (int) ($_POST['memory_id'] ?? 0);
+        if ($memoryId <= 0) {
+            $redirect('Pattern tidak valid.', 'error');
+        }
+        $marked = cms_growth_agent_mark_memory_stale($pdo, $memoryId);
+        $redirect($marked ? 'Pattern ditandai stale.' : 'Pattern tidak ditemukan.', $marked ? 'success' : 'error');
+    }
+
     $redirect('Unknown action.', 'error');
 }
 
@@ -159,9 +421,37 @@ $statsCards = [
     ['label' => 'Manual Actions', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'manual_action'"), 'hint' => 'Operator execution required'],
 ];
 
+// ── "Need Review" / "Ready to Run" / "Completed" — same 3-way split used
+// both for the Recent Jobs tabs below and these two extra summary cards,
+// so the numbers on the cards always agree with what's actually in each
+// tab (single source of truth: the same WHERE logic, just expressed once
+// in SQL here and once per-row in PHP further down for the table itself).
+// "Need Review" mirrors $canReviewGeneric/$canReviewSeo exactly. Completed
+// is derived as total-minus-the-other-two rather than its own query,
+// since the 3 buckets are exhaustive and mutually exclusive by
+// construction (every job is in exactly one).
+$needReviewCount = $safeCount($pdo, "
+    SELECT COUNT(*) AS cnt FROM growth_agent_jobs j
+     WHERE (SELECT COUNT(*) FROM growth_agent_feedback f WHERE f.job_id = j.id) = 0
+       AND (
+             (j.job_type <> 'seo_recommendation' AND j.status IN ('succeeded', 'failed', 'manual_action'))
+          OR (j.job_type = 'seo_recommendation' AND j.status = 'manual_action')
+           )
+");
+$readyToRunCount = $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status IN ('ready', 'running')");
+$totalJobsCount = $safeCount($pdo, 'SELECT COUNT(*) AS cnt FROM growth_agent_jobs');
+$completedCount = max(0, $totalJobsCount - $needReviewCount - $readyToRunCount);
+$lastAnalysisAt = (string) ($pdo->query('SELECT MAX(created_at) AS m FROM growth_agent_jobs')->fetch()['m'] ?? '');
+
+$summaryCards = [
+    ['label' => 'Pending', 'value' => $needReviewCount, 'hint' => 'Menunggu di-review'],
+    ['label' => 'Completed', 'value' => $completedCount, 'hint' => 'Sudah di-approve/reject/legacy'],
+    ['label' => 'Last Analysis', 'value' => $lastAnalysisAt !== '' ? $lastAnalysisAt : '—', 'hint' => 'Job terakhir dibuat'],
+];
+
 // ── Recent jobs — with page title (if linked) and whether feedback already exists ──
 $jobsStmt = $pdo->query(
-    "SELECT j.id, j.job_type, j.agent_key, j.page_id, j.status, j.model_used, j.latency_ms,
+    "SELECT j.id, j.job_type, j.agent_key, j.page_id, j.status, j.priority, j.model_used, j.latency_ms,
             j.error_message, j.created_at, p.title AS page_title,
             (SELECT COUNT(*) FROM growth_agent_feedback f WHERE f.job_id = j.id) AS feedback_count
        FROM growth_agent_jobs j
@@ -183,10 +473,149 @@ $statusPill = [
     'succeeded' => 'ok',
     'failed' => 'warn',
     'manual_action' => 'info',
+    'closed_as_legacy' => 'muted',
 ];
 
-// Scopes the panel text/spacing CSS fix in admin.css to this page only —
-// see .page-growth-agent rules there.
+$gscSettings = cms_gsc_get_settings($pdo);
+$gscConnected = !empty($gscSettings['is_active']) && !empty($gscSettings['site_url']);
+
+// ── GSC aggregate stats + Top Queries ──
+$gscAggregate = null;
+$gscTopQueries = [];
+if ($gscConnected) {
+    try {
+        $aggRow = $pdo->query(
+            'SELECT SUM(clicks) AS total_clicks, SUM(impressions) AS total_impressions,
+                    AVG(position) AS avg_position, MIN(data_date) AS min_date, MAX(data_date) AS max_date
+               FROM gsc_query_data'
+        )->fetch();
+        if ($aggRow && (int) ($aggRow['total_impressions'] ?? 0) > 0) {
+            $impressions = (int) $aggRow['total_impressions'];
+            $gscAggregate = [
+                'clicks' => (int) $aggRow['total_clicks'],
+                'impressions' => $impressions,
+                'ctr' => round(((int) $aggRow['total_clicks'] / $impressions) * 100, 2),
+                'avg_position' => round((float) $aggRow['avg_position'], 1),
+                'min_date' => (string) $aggRow['min_date'],
+                'max_date' => (string) $aggRow['max_date'],
+            ];
+        }
+
+        $topStmt = $pdo->query(
+            'SELECT query, SUM(clicks) AS clicks, SUM(impressions) AS impressions, AVG(position) AS position
+               FROM gsc_query_data
+              GROUP BY query
+              ORDER BY impressions DESC
+              LIMIT 10'
+        );
+        $gscTopQueries = $topStmt->fetchAll();
+    } catch (Throwable $e) {
+        $gscAggregate = null;
+        $gscTopQueries = [];
+    }
+}
+
+// ── Prioritized Opportunities ──
+$opportunities = [];
+if ($gscConnected) {
+    try {
+        $oppStmt = $pdo->query(
+            "SELECT o.*, p.title AS page_title, p.slug AS page_slug
+               FROM gsc_opportunities o
+               LEFT JOIN pages p ON p.page_id = o.matched_page_id
+              WHERE o.status = 'open'
+              ORDER BY FIELD(o.priority, 'high', 'medium', 'low'), o.impact_score DESC
+              LIMIT 30"
+        );
+        $opportunities = $oppStmt->fetchAll();
+    } catch (Throwable $e) {
+        $opportunities = [];
+    }
+}
+$priorityPill = ['high' => 'warn', 'medium' => 'accent', 'low' => 'muted'];
+
+// ── Index Status (Phase 5 roadmap, ROADMAP.md gap #2) ──
+// Never-inspected pages first, then oldest-inspected — same "round-robin
+// coverage over time" ordering as cms_growth_agent_inspect_priority_urls()
+// itself, so what the operator SEES here matches what the batch button
+// would pick next if clicked. Read-only listing; the actual inspect calls
+// only ever happen from the inspect_single_url/inspect_priority_urls POST
+// actions above, never on a plain page load.
+$indexInspections = [];
+if ($gscConnected) {
+    try {
+        $indexStmt = $pdo->query(
+            "SELECT p.page_id, p.title, p.slug,
+                    i.verdict, i.coverage_state, i.last_crawl_time, i.inspected_at, i.error_message
+               FROM pages p
+               LEFT JOIN gsc_url_inspections i ON i.page_id = p.page_id
+              WHERE p.status = 'published'
+              ORDER BY (i.inspected_at IS NULL) DESC, i.inspected_at ASC
+              LIMIT 15"
+        );
+        $indexInspections = $indexStmt->fetchAll();
+    } catch (Throwable $e) {
+        $indexInspections = [];
+    }
+}
+$indexVerdictPill = ['PASS' => 'ok', 'PARTIAL' => 'warn', 'FAIL' => 'warn', 'NEUTRAL' => 'muted', 'VERDICT_UNSPECIFIED' => 'muted'];
+
+// ── Agent Memory (ROADMAP.md gap #3) ──
+// Read-only listing — no approve/execute here on purpose (memory is not
+// an action queue, see cms_growth_agent_detect_memory_patterns()'s own
+// guardrail note). 'stale' rows are still shown (not hidden) so an
+// operator can see detection history, not just what's currently active.
+$memoryPatterns = [];
+try {
+    $memoryStmt = $pdo->query(
+        "SELECT m.*, p.title AS page_title
+           FROM growth_agent_memory m
+           LEFT JOIN pages p ON p.page_id = m.matched_page_id
+          ORDER BY FIELD(m.status, 'active', 'pending_review', 'stale'), m.last_confirmed_at DESC
+          LIMIT 30"
+    );
+    $memoryPatterns = $memoryStmt->fetchAll();
+} catch (Throwable $e) {
+    $memoryPatterns = [];
+}
+$memoryStatusPill = ['active' => 'ok', 'pending_review' => 'info', 'stale' => 'muted'];
+$memoryPatternLabel = ['winning_pattern' => 'Winning Pattern', 'content_gap' => 'Content Gap'];
+
+// ── Feedback Loop / Before-After (ROADMAP.md gap #4) ──
+// Read-only reporting — no approve/execute here (see
+// cms_growth_agent_get_feedback_report()'s own guardrail note on why
+// gsc_content_optimization is deliberately excluded).
+$feedbackReport = [];
+if ($gscConnected) {
+    try {
+        $feedbackReport = cms_growth_agent_get_feedback_report($pdo, 20, 28);
+    } catch (Throwable $e) {
+        $feedbackReport = [];
+    }
+}
+$feedbackActionLabel = ['seo_recommendation' => 'SEO Recommendation (Apply)', 'gsc_article_idea' => 'Article Idea (Published)'];
+
+// Summary cards first (higher-level "how are things going" numbers), then
+// the existing granular per-status breakdown — same .admin-grid--stats
+// grid, just more cards in it.
+$allStatsCards = array_merge($summaryCards, $statsCards);
+
+// ── AI Health Indicator — reuses two signals already computed elsewhere
+// on this exact page load rather than tracking a new "N failures in a
+// row" counter (nothing in this codebase tracks consecutive failures
+// anywhere today): cms_growth_agent_notifications() (the same count that
+// already drives the navbar bell — failed/manual_action jobs) OR GSC's
+// own last_fetch_status being 'failed'. Either signal alone is enough to
+// flip the badge red.
+$healthNotifCount = cms_growth_agent_notifications($pdo)['count'];
+$healthGscFailed = $gscConnected && ($gscSettings['last_fetch_status'] ?? '') === 'failed';
+$healthNeedsAttention = $healthNotifCount > 0 || $healthGscFailed;
+
+// The panel-lead spacing fix this class used to scope (.page-growth-agent
+// .panel > .section-lead) was generalized to plain `.panel > .section-lead`
+// in admin.css 24 Jul 2026 (same bug turned up on other pages) — this class
+// is now unused by any CSS rule, kept only in case a future page-specific
+// override is needed here again.
 $bodyClass = 'page-growth-agent';
 
 require dirname(__DIR__) . '/includes/header.php';
@@ -198,7 +627,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
 <section class="admin-stack">
     <div class="toolbar">
         <div class="toolbar__left">
-            <h2 class="section-title">Growth Agent</h2>
+            <h2 class="section-title">
+                Growth Agent
+                <?php if ($healthNeedsAttention) : ?>
+                    <span class="pill pill--warn" style="vertical-align:middle;margin-left:8px;" title="<?= $healthGscFailed ? 'GSC fetch terakhir gagal' : $healthNotifCount . ' job butuh review (failed/manual action)' ?>">🔴 Needs Attention</span>
+                <?php else : ?>
+                    <span class="pill pill--ok" style="vertical-align:middle;margin-left:8px;">🟢 Healthy</span>
+                <?php endif; ?>
+            </h2>
             <p class="section-lead">SEO &amp; content pipeline — drafts, runs, and hands work back for approval.</p>
         </div>
         <div class="toolbar__right">
@@ -211,78 +647,283 @@ require dirname(__DIR__) . '/includes/alerts.php';
     </div>
     <p class="section-lead" style="margin-top:-8px;">Scan checks published articles that haven't been scanned yet (up to 5 per click) and proposes an improved meta title/description for each — nothing is changed until you review and apply it.</p>
 
-    <div class="admin-grid admin-grid--stats">
-        <?php foreach ($statsCards as $card) : ?>
-            <article class="stat-card">
-                <div class="stat-card__label"><?= cms_esc($card['label']) ?></div>
-                <div class="stat-card__value"><?= cms_esc((string) $card['value']) ?></div>
-                <div class="stat-card__hint"><?= cms_esc($card['hint']) ?></div>
-            </article>
-        <?php endforeach; ?>
-    </div>
-
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Recent jobs</h3>
-            <span class="panel__meta"><?= count($jobs) ?> shown</span>
+            <h3 class="panel__title">Google Search Console</h3>
+            <span class="pill pill--<?= $gscConnected ? 'ok' : 'muted' ?>"><?= $gscConnected ? 'Connected' : 'Not connected' ?></span>
+        </div>
+        <div class="toolbar" style="padding:16px 20px 20px;">
+            <div class="toolbar__left">
+                <?php if ($gscConnected) : ?>
+                    <p class="muted" style="margin:0;font-size:13px;">
+                        Property: <code><?= cms_esc((string) $gscSettings['site_url']) ?></code><br>
+                        Last fetch:
+                        <?php if (!empty($gscSettings['last_fetch_at'])) : ?>
+                            <span class="pill pill--<?= $gscSettings['last_fetch_status'] === 'success' ? 'ok' : 'warn' ?>" style="margin-left:4px;"><?= cms_esc((string) $gscSettings['last_fetch_status']) ?></span>
+                            <?= (int) $gscSettings['last_fetch_rows'] ?> rows — <?= cms_esc((string) $gscSettings['last_fetch_at']) ?>
+                        <?php else : ?>
+                            <span class="muted">belum pernah — akan otomatis jalan begitu halaman ini dibuka (atau klik Refresh Data).</span>
+                        <?php endif; ?>
+                    </p>
+                <?php else : ?>
+                    <p class="muted" style="margin:0;font-size:13px;">
+                        Belum tersambung ke Google Search Console — rekomendasi berbasis data GSC (tabel "Prioritized Opportunities" di bawah) belum bisa jalan.
+                        <a class="panel__link" href="<?= cms_esc(cms_nav_href('gsc-settings.php')) ?>">Hubungkan sekarang &rarr;</a>
+                    </p>
+                <?php endif; ?>
+            </div>
+            <div class="toolbar__right" style="gap:8px;">
+                <?php if ($gscConnected) : ?>
+                    <form method="post" action="<?= cms_esc(cms_action_href('gsc-refresh.php')) ?>">
+                        <?= cms_csrf_field() ?>
+                        <button type="submit" class="admin-btn admin-btn--secondary">Refresh Data</button>
+                    </form>
+                    <form method="post" action="<?= cms_esc($selfUrl) ?>">
+                        <?= cms_csrf_field() ?>
+                        <input type="hidden" name="action" value="recompute_opportunities">
+                        <button type="submit" class="admin-btn admin-btn--ghost">Recompute Opportunities</button>
+                    </form>
+                <?php endif; ?>
+                <a class="admin-btn admin-btn--ghost" href="<?= cms_esc(cms_nav_href('gsc-settings.php')) ?>">GSC Settings</a>
+            </div>
+        </div>
+
+        <?php if ($gscAggregate !== null) : ?>
+            <div class="table-wrap" style="padding:0 20px 4px;">
+                <p class="muted" style="font-size:12px;margin:0 0 12px;">
+                    Rentang data: <?= cms_esc($gscAggregate['min_date']) ?> &ndash; <?= cms_esc($gscAggregate['max_date']) ?>
+                    (<?= (int) ($gscSettings['fetch_lookback_days'] ?? 14) ?> hari lookback) — Search Console punya delay
+                    &sim;3 hari, jadi beberapa hari paling baru belum tentu lengkap.
+                </p>
+            </div>
+            <div class="admin-grid admin-grid--stats" style="padding:0 20px 20px;">
+                <article class="stat-card">
+                    <div class="stat-card__label">Clicks</div>
+                    <div class="stat-card__value"><?= number_format($gscAggregate['clicks']) ?></div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-card__label">Impressions</div>
+                    <div class="stat-card__value"><?= number_format($gscAggregate['impressions']) ?></div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-card__label">CTR</div>
+                    <div class="stat-card__value"><?= cms_esc((string) $gscAggregate['ctr']) ?>%</div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-card__label">Avg. Position</div>
+                    <div class="stat-card__value"><?= cms_esc((string) $gscAggregate['avg_position']) ?></div>
+                </article>
+            </div>
+
+            <div class="table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr><th>Query</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($gscTopQueries === []) : ?>
+                            <tr><td colspan="5" class="muted">Belum ada data.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($gscTopQueries as $q) : ?>
+                            <?php $qImpressions = (int) $q['impressions']; $qCtr = $qImpressions > 0 ? round(((int) $q['clicks'] / $qImpressions) * 100, 2) : 0.0; ?>
+                            <tr>
+                                <td><?= cms_esc((string) $q['query']) ?></td>
+                                <td><?= number_format((int) $q['clicks']) ?></td>
+                                <td><?= number_format($qImpressions) ?></td>
+                                <td><?= cms_esc((string) $qCtr) ?>%</td>
+                                <td><?= cms_esc((string) round((float) $q['position'], 1)) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <?php if ($gscConnected) : ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Prioritized Opportunities</h3>
+            <span class="panel__meta"><?= count($opportunities) ?> open</span>
         </div>
         <div class="table-wrap">
             <table class="admin-table">
                 <thead>
                     <tr>
-                        <th>Job</th>
-                        <th>Article</th>
-                        <th>Status</th>
-                        <th>Model</th>
-                        <th>Latency</th>
-                        <th>When</th>
+                        <th>Priority</th>
+                        <th>Item</th>
+                        <th>Matched Categories</th>
+                        <th>Impact</th>
+                        <th>Effort</th>
+                        <th>Recommended Agent</th>
+                        <th>Reason</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if ($jobs === []) : ?>
-                        <tr><td colspan="7" class="muted">No jobs yet — they'll show up here every time Generate SEO (or a future Growth Agent job type) runs.</td></tr>
+                    <?php if ($opportunities === []) : ?>
+                        <tr><td colspan="8" class="muted">Belum ada opportunity — akan muncul otomatis setelah data GSC di-fetch (atau klik "Recompute Opportunities" di atas).</td></tr>
                     <?php endif; ?>
-                    <?php foreach ($jobs as $job) : ?>
-                        <?php
-                        $pill = $statusPill[$job['status']] ?? 'muted';
-                        $isSeoRecommendation = $job['job_type'] === 'seo_recommendation';
-                        // seo_recommendation jobs get their own review page (Apply
-                        // writes straight into pages.meta_title/meta_description),
-                        // so they never use the generic Approve/Reject buttons below.
-                        $canReviewGeneric = !$isSeoRecommendation && (int) $job['feedback_count'] === 0 && in_array($job['status'], ['succeeded', 'failed', 'manual_action'], true);
-                        $canReviewSeo = $isSeoRecommendation && $job['status'] === 'manual_action';
-                        ?>
+                    <?php foreach ($opportunities as $opp) : ?>
                         <tr>
+                            <td><span class="pill pill--<?= $priorityPill[$opp['priority']] ?? 'muted' ?>"><?= strtoupper(cms_esc((string) $opp['priority'])) ?></span></td>
                             <td>
-                                <strong><?= cms_esc((string) $job['job_type']) ?></strong><br>
-                                <span class="muted">agent: <code><?= cms_esc((string) $job['agent_key']) ?></code></span>
-                            </td>
-                            <td><?= $job['page_title'] ? cms_esc((string) $job['page_title']) : '<span class="muted">—</span>' ?></td>
-                            <td>
-                                <span class="pill pill--<?= $pill ?>"><?= cms_esc((string) $job['status']) ?></span>
-                                <?php if ($job['status'] === 'failed' && $job['error_message']) : ?>
-                                    <div class="muted" style="font-size:11px;margin-top:4px;max-width:220px;"><?= cms_esc(mb_substr((string) $job['error_message'], 0, 140)) ?></div>
+                                <?php if ($opp['item_type'] === 'page') : ?>
+                                    <?= $opp['page_title'] ? cms_esc((string) $opp['page_title']) : '<span class="muted">Artikel #' . (int) $opp['matched_page_id'] . '</span>' ?>
+                                    <span class="muted" style="font-size:11px;">(page)</span>
+                                <?php else : ?>
+                                    <?= cms_esc((string) $opp['query_text']) ?>
+                                    <span class="muted" style="font-size:11px;">(query)</span>
                                 <?php endif; ?>
                             </td>
-                            <td><?= $job['model_used'] ? cms_esc((string) $job['model_used']) : '<span class="muted">—</span>' ?></td>
-                            <td><?= $job['latency_ms'] !== null ? cms_esc((string) $job['latency_ms']) . ' ms' : '<span class="muted">—</span>' ?></td>
-                            <td class="muted"><?= cms_esc((string) $job['created_at']) ?></td>
+                            <td>
+                                <?php foreach (array_filter(array_map('trim', explode(',', (string) $opp['matched_categories']))) as $cat) : ?>
+                                    <span class="pill pill--muted" style="margin:0 3px 3px 0;"><?= cms_esc($cat) ?></span>
+                                <?php endforeach; ?>
+                            </td>
+                            <td><?= (int) $opp['impact_score'] ?>/10</td>
+                            <td><?= (int) $opp['effort_score'] ?>/10</td>
+                            <td><code><?= cms_esc((string) $opp['recommended_agent']) ?></code></td>
+                            <td class="muted" style="font-size:12px;max-width:320px;"><?= cms_esc((string) $opp['reason']) ?></td>
                             <td class="table-actions">
-                                <?php if ($canReviewSeo) : ?>
-                                    <a class="admin-btn admin-btn--sm admin-btn--primary" href="seo-recommendation-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
-                                <?php elseif ($canReviewGeneric) : ?>
-                                    <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>">
+                                <form method="post" action="<?= cms_esc($selfUrl) ?>">
+                                    <?= cms_csrf_field() ?>
+                                    <input type="hidden" name="action" value="generate_from_opportunity">
+                                    <input type="hidden" name="opportunity_id" value="<?= (int) $opp['id'] ?>">
+                                    <?php if ($opp['recommended_action'] === 'cannibalization_review') : ?>
+                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary" title="Tidak ada AI di sini — cuma surface data query + halaman yang bentrok buat ditinjau manual">Review</button>
+                                    <?php else : ?>
+                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--primary">Generate</button>
+                                    <?php endif; ?>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Index Status</h3>
+            <span class="panel__meta"><?= count($indexInspections) ?> artikel published ditampilkan</span>
+        </div>
+        <div class="toolbar" style="padding:0 20px 16px;">
+            <div class="toolbar__left">
+                <p class="muted" style="margin:0;font-size:13px;">
+                    Baca status index via Search Console URL Inspection API — read-only, tidak pernah menulis/mengubah artikel.
+                    Kalau verdict bermasalah, job "review_indexing_issue" otomatis dibuat di Recent Jobs (checklist deterministik, bukan AI).
+                </p>
+            </div>
+            <div class="toolbar__right">
+                <form method="post" action="<?= cms_esc($selfUrl) ?>" class="inline-form" style="display:flex;gap:8px;align-items:center;">
+                    <?= cms_csrf_field() ?>
+                    <input type="hidden" name="action" value="inspect_priority_urls">
+                    <input type="number" name="limit" value="10" min="1" max="50" style="width:70px;" title="Jumlah URL maksimum per batch">
+                    <button type="submit" class="admin-btn admin-btn--primary">Inspect prioritas</button>
+                </form>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Artikel</th>
+                        <th>Verdict</th>
+                        <th>Last Crawl</th>
+                        <th>Terakhir Diinspeksi</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($indexInspections === []) : ?>
+                        <tr><td colspan="5" class="muted">Belum ada artikel published untuk diinspeksi.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($indexInspections as $insp) : ?>
+                        <tr>
+                            <td><?= cms_esc((string) $insp['title']) ?></td>
+                            <td>
+                                <?php if ($insp['verdict']) : ?>
+                                    <span class="pill pill--<?= $indexVerdictPill[$insp['verdict']] ?? 'muted' ?>"><?= cms_esc((string) $insp['verdict']) ?></span>
+                                <?php elseif ($insp['error_message']) : ?>
+                                    <span class="pill pill--warn" title="<?= cms_esc((string) $insp['error_message']) ?>">Gagal</span>
+                                <?php else : ?>
+                                    <span class="muted">Belum diinspeksi</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="muted"><?= $insp['last_crawl_time'] ? cms_esc((string) $insp['last_crawl_time']) : '—' ?></td>
+                            <td class="muted"><?= $insp['inspected_at'] ? cms_esc((string) $insp['inspected_at']) : '—' ?></td>
+                            <td class="table-actions">
+                                <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>">
+                                    <?= cms_csrf_field() ?>
+                                    <input type="hidden" name="action" value="inspect_single_url">
+                                    <input type="hidden" name="page_id" value="<?= (int) $insp['page_id'] ?>">
+                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary">Inspect URL</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Agent Memory</h3>
+            <span class="panel__meta"><?= count($memoryPatterns) ?> pattern</span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Pola historis dari data GSC (deteksi deterministik, bukan AI) — cuma jadi konteks tambahan buat prompt Growth Agent,
+            bukan action queue. Tidak ada approve/execute di sini; satu-satunya aksi manual adalah menonaktifkan pattern yang sudah tidak relevan.
+        </p>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Tipe</th>
+                        <th>Target</th>
+                        <th>Status</th>
+                        <th>Evidence</th>
+                        <th>Minggu Terdeteksi</th>
+                        <th>Terakhir Dikonfirmasi</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($memoryPatterns === []) : ?>
+                        <tr><td colspan="7" class="muted">Belum ada pattern terdeteksi — akan muncul otomatis setelah cukup data historis GSC terkumpul (minimal <?= (int) cms_gsc_get_memory_thresholds($pdo)['min_distinct_weeks'] ?> minggu berbeda).</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($memoryPatterns as $mem) : ?>
+                        <?php $memEvidence = json_decode((string) ($mem['evidence_json'] ?? ''), true); $memEvidence = is_array($memEvidence) ? $memEvidence : []; ?>
+                        <tr>
+                            <td><?= cms_esc($memoryPatternLabel[$mem['pattern_type']] ?? (string) $mem['pattern_type']) ?></td>
+                            <td>
+                                <?php if ($mem['scope_type'] === 'page') : ?>
+                                    <?= $mem['page_title'] ? cms_esc((string) $mem['page_title']) : '<span class="muted">Artikel #' . (int) $mem['matched_page_id'] . '</span>' ?>
+                                    <span class="muted" style="font-size:11px;">(page)</span>
+                                <?php else : ?>
+                                    <?= cms_esc((string) $mem['query_text']) ?>
+                                    <span class="muted" style="font-size:11px;">(query)</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><span class="pill pill--<?= $memoryStatusPill[$mem['status']] ?? 'muted' ?>"><?= cms_esc((string) $mem['status']) ?></span></td>
+                            <td class="muted" style="font-size:12px;">
+                                <?php if (isset($memEvidence['avg_ctr'])) : ?>
+                                    CTR <?= round(((float) $memEvidence['avg_ctr']) * 100, 2) ?>%, posisi <?= round((float) ($memEvidence['avg_position'] ?? 0), 1) ?>,
+                                <?php endif; ?>
+                                <?= (int) ($memEvidence['total_impressions'] ?? 0) ?> impressions
+                            </td>
+                            <td><?= (int) $mem['distinct_weeks_seen'] ?></td>
+                            <td class="muted"><?= cms_esc((string) $mem['last_confirmed_at']) ?></td>
+                            <td class="table-actions">
+                                <?php if ($mem['status'] !== 'stale') : ?>
+                                    <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Tandai pattern ini sebagai stale? Ini cuma menonaktifkan dari context prompt, tidak menghapus histori.');">
                                         <?= cms_csrf_field() ?>
-                                        <input type="hidden" name="action" value="approve">
-                                        <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
-                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary">Approve</button>
-                                    </form>
-                                    <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>">
-                                        <?= cms_csrf_field() ?>
-                                        <input type="hidden" name="action" value="reject">
-                                        <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
-                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Reject</button>
+                                        <input type="hidden" name="action" value="mark_memory_stale">
+                                        <input type="hidden" name="memory_id" value="<?= (int) $mem['id'] ?>">
+                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Tandai stale</button>
                                     </form>
                                 <?php else : ?>
                                     <span class="muted">—</span>
@@ -294,6 +935,264 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </table>
         </div>
     </div>
+
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Feedback / Before-After</h3>
+            <span class="panel__meta"><?= count($feedbackReport) ?> artikel</span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Laporan read-only: artikel yang pernah kena action Growth Agent (SEO Recommendation yang sudah di-Apply,
+            atau Article Idea yang draft-nya sudah dipublish), dibandingkan performa GSC 28 hari sebelum vs sesudah
+            perubahan. Tidak ada approve/execute di sini — cuma laporan. Data yang belum cukup (minimal 7 hari di tiap
+            sisi) ditandai "Data belum cukup", bukan dipaksakan jadi kesimpulan.
+        </p>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Artikel</th>
+                        <th>Aksi</th>
+                        <th>Tanggal Perubahan</th>
+                        <th>Clicks</th>
+                        <th>Impressions</th>
+                        <th>CTR</th>
+                        <th>Posisi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($feedbackReport === []) : ?>
+                        <tr><td colspan="7" class="muted">Belum ada artikel yang memenuhi syarat (SEO Recommendation ter-Apply, atau Article Idea yang sudah dipublish).</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($feedbackReport as $fb) : ?>
+                        <?php $cmp = $fb['comparison']; ?>
+                        <tr>
+                            <td><?= cms_esc((string) $fb['page_title']) ?></td>
+                            <td><?= cms_esc($feedbackActionLabel[$fb['action_type']] ?? (string) $fb['action_type']) ?></td>
+                            <td class="muted"><?= cms_esc((string) $fb['change_date']) ?></td>
+                            <?php if (($cmp['status'] ?? '') === 'ok') : ?>
+                                <td>
+                                    <?= (int) $cmp['before']['clicks'] ?> &rarr; <?= (int) $cmp['after']['clicks'] ?>
+                                    <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['clicks'] >= 0 ? '+' : '' ?><?= (int) $cmp['delta']['clicks'] ?>)</span>
+                                </td>
+                                <td>
+                                    <?= (int) $cmp['before']['impressions'] ?> &rarr; <?= (int) $cmp['after']['impressions'] ?>
+                                    <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['impressions'] >= 0 ? '+' : '' ?><?= (int) $cmp['delta']['impressions'] ?>)</span>
+                                </td>
+                                <td>
+                                    <?= round($cmp['before']['ctr'] * 100, 2) ?>% &rarr; <?= round($cmp['after']['ctr'] * 100, 2) ?>%
+                                    <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['ctr'] >= 0 ? '+' : '' ?><?= round($cmp['delta']['ctr'] * 100, 2) ?>%)</span>
+                                </td>
+                                <td>
+                                    <?php if ($cmp['before']['avg_position'] !== null && $cmp['after']['avg_position'] !== null) : ?>
+                                        <?= $cmp['before']['avg_position'] ?> &rarr; <?= $cmp['after']['avg_position'] ?>
+                                        <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['avg_position'] >= 0 ? '+' : '' ?><?= $cmp['delta']['avg_position'] ?>)</span>
+                                    <?php else : ?>
+                                        <span class="muted">—</span>
+                                    <?php endif; ?>
+                                </td>
+                            <?php else : ?>
+                                <td colspan="4"><span class="pill pill--muted" title="Minimal 7 hari data di kedua sisi (sebelum/sesudah) diperlukan untuk perbandingan yang valid.">Data belum cukup</span></td>
+                            <?php endif; ?>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <div class="admin-grid admin-grid--stats">
+        <?php foreach ($allStatsCards as $card) : ?>
+            <article class="stat-card">
+                <div class="stat-card__label"><?= cms_esc($card['label']) ?></div>
+                <div class="stat-card__value"<?= !is_numeric($card['value']) ? ' style="font-size:16px;"' : '' ?>><?= cms_esc((string) $card['value']) ?></div>
+                <div class="stat-card__hint"><?= cms_esc($card['hint']) ?></div>
+            </article>
+        <?php endforeach; ?>
+    </div>
+
+    <?php
+    // ── Need Review / Ready to Run / Completed — same 3-way split as the
+    // summary cards above, computed once here per-row so the tabs and
+    // those cards can never disagree (cards use a full-table SQL COUNT,
+    // this loop only sees the 25 most recent — see each tab's own "shown"
+    // count in its header for that distinction, same "X shown" wording
+    // the panel already used before tabs existed).
+    $jobsByTab = ['need-review' => [], 'ready-to-run' => [], 'completed' => []];
+    foreach ($jobs as $job) {
+        $isSeoRecommendation = $job['job_type'] === 'seo_recommendation';
+        $isIndexingIssue = $job['job_type'] === 'review_indexing_issue';
+        $isCannibalization = $job['job_type'] === 'cannibalization_review';
+        // seo_recommendation jobs get their own review page (Apply writes
+        // straight into pages.meta_title/meta_description), so they never
+        // use the generic Approve/Reject buttons — Close as Legacy is
+        // still available to both paths (see the 'gated by the same
+        // conditions' note on the close_as_legacy action above).
+        // review_indexing_issue jobs get the same treatment (own review
+        // page, indexing-issue-review.php) for a different reason: there's
+        // nothing to "approve"/"reject" in a diagnostic checklist — the
+        // dedicated page frames the 2 real actions as "Tandai Sudah
+        // Ditinjau" / "Tutup sebagai Legacy" instead. cannibalization_review
+        // (ROADMAP.md gap #5) gets the same treatment for the same reason —
+        // cannibalization-review.php.
+        $canReviewGeneric = !$isSeoRecommendation && !$isIndexingIssue && !$isCannibalization && (int) $job['feedback_count'] === 0 && in_array($job['status'], ['succeeded', 'failed', 'manual_action'], true);
+        $canReviewSeo = $isSeoRecommendation && $job['status'] === 'manual_action';
+        $canReviewIndexing = $isIndexingIssue && $job['status'] === 'manual_action';
+        $canReviewCannibalization = $isCannibalization && $job['status'] === 'manual_action';
+        $job['_can_review_generic'] = $canReviewGeneric;
+        $job['_can_review_seo'] = $canReviewSeo;
+        $job['_can_review_indexing'] = $canReviewIndexing;
+        $job['_can_review_cannibalization'] = $canReviewCannibalization;
+
+        if ($canReviewGeneric || $canReviewSeo || $canReviewIndexing || $canReviewCannibalization) {
+            $jobsByTab['need-review'][] = $job;
+        } elseif (in_array($job['status'], ['ready', 'running'], true)) {
+            $jobsByTab['ready-to-run'][] = $job;
+        } else {
+            $jobsByTab['completed'][] = $job;
+        }
+    }
+
+    /** Renders one Recent Jobs <tr> (+ its optional preview-toggle row is intentionally omitted here — this page never fetched output_json, unlike the review pages). Shared by all 3 tabs so the row markup only exists once. */
+    $renderJobRow = static function (array $job) use ($statusPill, $priorityPill, $selfUrl): void {
+        $pill = $statusPill[$job['status']] ?? 'muted';
+        $canReviewGeneric = $job['_can_review_generic'];
+        $canReviewSeo = $job['_can_review_seo'];
+        $canReviewIndexing = $job['_can_review_indexing'];
+        $canReviewCannibalization = $job['_can_review_cannibalization'];
+        ?>
+        <tr>
+            <td>
+                <strong><?= cms_esc((string) $job['job_type']) ?></strong><br>
+                <span class="muted">agent: <code><?= cms_esc((string) $job['agent_key']) ?></code></span>
+            </td>
+            <td><?= $job['page_title'] ? cms_esc((string) $job['page_title']) : '<span class="muted">—</span>' ?></td>
+            <td>
+                <span class="pill pill--<?= $pill ?>"><?= cms_esc((string) $job['status']) ?></span>
+                <?php $jobPriority = (string) ($job['priority'] ?? 'medium'); ?>
+                <?php if ($jobPriority === 'high') : ?>
+                    <span class="pill pill--<?= $priorityPill['high'] ?>" title="Prioritas tinggi">HIGH</span>
+                <?php elseif ($jobPriority === 'low') : ?>
+                    <span class="pill pill--<?= $priorityPill['low'] ?>" title="Prioritas rendah">LOW</span>
+                <?php endif; ?>
+                <?php if ($job['status'] === 'failed' && $job['error_message']) : ?>
+                    <div class="muted" style="font-size:11px;margin-top:4px;max-width:220px;"><?= cms_esc(mb_substr((string) $job['error_message'], 0, 140)) ?></div>
+                <?php endif; ?>
+            </td>
+            <td><?= $job['model_used'] ? cms_esc((string) $job['model_used']) : '<span class="muted">—</span>' ?></td>
+            <td><?= $job['latency_ms'] !== null ? cms_esc((string) $job['latency_ms']) . ' ms' : '<span class="muted">—</span>' ?></td>
+            <td class="muted"><?= cms_esc((string) $job['created_at']) ?></td>
+            <td class="table-actions">
+                <?php if ($job['job_type'] === 'gsc_article_idea' && !empty($job['page_id'])) : ?>
+                    <a class="admin-btn admin-btn--sm admin-btn--secondary" href="pages.php?edit=<?= (int) $job['page_id'] ?>">Edit draft</a>
+                <?php elseif ($canReviewSeo) : ?>
+                    <a class="admin-btn admin-btn--sm admin-btn--primary" href="seo-recommendation-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
+                <?php elseif ($canReviewIndexing) : ?>
+                    <a class="admin-btn admin-btn--sm admin-btn--primary" href="indexing-issue-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
+                <?php elseif ($canReviewCannibalization) : ?>
+                    <a class="admin-btn admin-btn--sm admin-btn--primary" href="cannibalization-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
+                <?php elseif ($canReviewGeneric) : ?>
+                    <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>">
+                        <?= cms_csrf_field() ?>
+                        <input type="hidden" name="action" value="approve">
+                        <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
+                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary">Approve</button>
+                    </form>
+                    <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>">
+                        <?= cms_csrf_field() ?>
+                        <input type="hidden" name="action" value="reject">
+                        <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
+                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Reject</button>
+                    </form>
+                <?php else : ?>
+                    <span class="muted">—</span>
+                <?php endif; ?>
+                <?php if ($canReviewGeneric || $canReviewSeo || $canReviewIndexing || $canReviewCannibalization) : ?>
+                    <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Tandai job ini sebagai legacy? Ini BUKAN reject — cuma menandai sudah tidak relevan lagi (mis. data GSC-nya sudah basi), tidak dihitung sebagai penolakan aktif.');">
+                        <?= cms_csrf_field() ?>
+                        <input type="hidden" name="action" value="close_as_legacy">
+                        <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
+                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost" title="Sudah tidak relevan lagi — beda dari Reject (yang berarti 'ditolak karena tidak bagus')">Close as Legacy</button>
+                    </form>
+                <?php endif; ?>
+            </td>
+        </tr>
+        <?php
+    };
+
+    $tabDefs = [
+        ['key' => 'need-review', 'label' => 'Need Review', 'pillTone' => 'warn'],
+        ['key' => 'ready-to-run', 'label' => 'Ready to Run', 'pillTone' => 'muted'],
+        ['key' => 'completed', 'label' => 'Completed', 'pillTone' => 'ok'],
+    ];
+    ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Recent jobs</h3>
+            <span class="panel__meta"><?= count($jobs) ?> shown</span>
+        </div>
+        <div class="js-ga-tabs" style="display:flex;gap:8px;padding:0 20px 16px;flex-wrap:wrap;">
+            <?php foreach ($tabDefs as $i => $tab) : ?>
+                <button type="button"
+                        class="admin-btn admin-btn--sm js-ga-tab-btn <?= $i === 0 ? 'admin-btn--secondary is-active' : 'admin-btn--ghost' ?>"
+                        data-tab-target="<?= $tab['key'] ?>">
+                    <?= $tab['label'] ?> <span class="pill pill--<?= $tab['pillTone'] ?>"><?= count($jobsByTab[$tab['key']]) ?></span>
+                </button>
+            <?php endforeach; ?>
+        </div>
+        <?php foreach ($tabDefs as $i => $tab) : ?>
+            <div class="table-wrap js-ga-tab-panel" data-tab-panel="<?= $tab['key'] ?>"<?= $i === 0 ? '' : ' hidden' ?>>
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Job</th>
+                            <th>Article</th>
+                            <th>Status</th>
+                            <th>Model</th>
+                            <th>Latency</th>
+                            <th>When</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($jobsByTab[$tab['key']] === []) : ?>
+                            <tr><td colspan="7" class="muted">
+                                <?= $tab['key'] === 'need-review'
+                                    ? 'Tidak ada job yang perlu direview saat ini.'
+                                    : ($tab['key'] === 'ready-to-run'
+                                        ? 'Tidak ada job yang sedang antre/berjalan.'
+                                        : 'Belum ada job yang selesai di-review.') ?>
+                            </td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($jobsByTab[$tab['key']] as $job) : $renderJobRow($job); ?>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endforeach; ?>
+    </div>
+    <script>
+    // ---- Recent Jobs tabs (Growth Agent) ----
+    (function () {
+        document.querySelectorAll('.js-ga-tabs').forEach(function (tabs) {
+            tabs.addEventListener('click', function (e) {
+                var btn = e.target.closest('.js-ga-tab-btn');
+                if (!btn) { return; }
+                var target = btn.getAttribute('data-tab-target');
+                var panel = tabs.closest('.panel');
+                tabs.querySelectorAll('.js-ga-tab-btn').forEach(function (b) {
+                    b.classList.toggle('is-active', b === btn);
+                    b.classList.toggle('admin-btn--secondary', b === btn);
+                    b.classList.toggle('admin-btn--ghost', b !== btn);
+                });
+                panel.querySelectorAll('.js-ga-tab-panel').forEach(function (p) {
+                    p.hidden = p.getAttribute('data-tab-panel') !== target;
+                });
+            });
+        });
+    })();
+    </script>
 
     <div class="panel">
         <div class="panel__head">

@@ -88,7 +88,27 @@ $pg_redirect = static function (string $message, string $type = 'success', ?stri
     exit;
 };
 
-$pg_validate = static function (string $title, string $slug, string $status): ?string {
+// 'general' isn't a row in the `sports` table (that table is reserved for
+// real API-tracked sports used by the sync/registry system) — it's a
+// dedicated escape hatch for articles that genuinely aren't about one
+// specific sport, added alongside this validation so the now-required
+// dropdown always has a truthful option to pick.
+$pgSportKeyGeneral = 'general';
+
+// Fetched here (rather than down near the form-rendering code, where a
+// near-identical query used to live) so it's available both to POST
+// validation above and to the dropdown further down — same list, one query.
+$articleSports = [];
+try {
+    // All sports, not just is_active — lets an admin pre-tag content for a
+    // sport whose data integration isn't live yet (e.g. an early F1 piece).
+    $articleSports = $pdo->query('SELECT `key`, name FROM sports ORDER BY sort_order ASC, name ASC')->fetchAll();
+} catch (Throwable $e) {
+    $articleSports = [];
+}
+$pgValidSportKeys = array_merge(array_column($articleSports, 'key'), [$pgSportKeyGeneral]);
+
+$pg_validate = static function (string $title, string $slug, string $status, string $sportKey, array $validSportKeys) : ?string {
     if ($title === '') {
         return 'Title is required.';
     }
@@ -97,6 +117,12 @@ $pg_validate = static function (string $title, string $slug, string $status): ?s
     }
     if (!in_array($status, ['draft', 'published'], true)) {
         return 'Status must be draft or published.';
+    }
+    // Required as of 26 Jul 2026 — an empty sport_key silently excluded
+    // articles from every homepage sport filter chip (Sepak Bola/Basket/
+    // Formula 1), and nobody noticed until it was investigated directly.
+    if (!in_array($sportKey, $validSportKeys, true)) {
+        return 'Cabang Sport wajib dipilih agar artikel muncul di filter livescore.';
     }
 
     return null;
@@ -191,7 +217,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     }
 
-    $validationError = $pg_validate($title, $slug, $status);
+    $validationError = $pg_validate($title, $slug, $status, (string) ($sportKey ?? ''), $pgValidSportKeys);
     if ($validationError !== null) {
         $errorQuery = null;
         if ($action === 'update') {
@@ -447,7 +473,7 @@ $paginateUrl = static function (int $targetPage) use ($listSearchRaw, $listStatu
 if ($editId > 0) {
     $editStmt = $pdo->prepare(
         'SELECT page_id, title, slug, featured_image, content, excerpt, meta_title, meta_description,
-                faq_json, status, published_at, category_id, author_id, meta_keywords,
+                faq_json, status, published_at, category_id, league_id, sport_key, author_id, meta_keywords,
                 canonical_url, og_image, is_featured, is_trending, noindex, views
          FROM pages
          WHERE page_id = :id
@@ -469,15 +495,16 @@ try {
 } catch (Throwable $e) {
     $articleLeagues = [];
 }
-$articleSports = [];
-try {
-    // All sports, not just is_active — lets an admin pre-tag content for a
-    // sport whose data integration isn't live yet (e.g. an early F1 piece).
-    $articleSports = $pdo->query('SELECT `key`, name FROM sports ORDER BY sort_order ASC, name ASC')->fetchAll();
-} catch (Throwable $e) {
-    $articleSports = [];
-}
+// $articleSports fetched earlier (near $pg_validate), reused here.
 $articleAuthors = $pdo->query('SELECT admin_id, name FROM admins ORDER BY name ASC')->fetchAll();
+
+// ---- Existing tag names, for the <datalist> autocomplete on the Tags field ----
+$allTagNames = [];
+try {
+    $allTagNames = array_column($pdo->query('SELECT name FROM article_tags ORDER BY name ASC')->fetchAll(), 'name');
+} catch (Throwable $e) {
+    $allTagNames = [];
+}
 
 // ---- Current tags for the edit form, as a comma-separated string ----
 $editTagsString = '';
@@ -518,6 +545,11 @@ require dirname(__DIR__) . '/includes/navbar.php';
 require dirname(__DIR__) . '/includes/breadcrumb.php';
 require dirname(__DIR__) . '/includes/alerts.php';
 ?>
+<datalist id="pg-tags-datalist">
+    <?php foreach ($allTagNames as $tagName) : ?>
+        <option value="<?= cms_esc($tagName) ?>"></option>
+    <?php endforeach; ?>
+</datalist>
 <section class="admin-stack">
     <div class="toolbar">
         <div class="toolbar__left">
@@ -548,19 +580,25 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <input type="text" name="slug" value="<?= cms_esc($val($editRow, 'slug')) ?>" required>
             </label>
             <label class="field">Featured image
-                <input type="text" name="featured_image" id="pg-feat-img-edit"
+                <input type="text" name="featured_image" id="pg-feat-img-edit" class="js-pg-img-input"
                        value="<?= cms_esc($val($editRow, 'featured_image')) ?>"
                        placeholder="e.g. /uploads/media/2026/05/file.webp"
                        autocomplete="off">
+                <img class="cms-path-upload__preview js-pg-img-preview" alt="Preview featured image"
+                     <?= ($fiPrev = app_asset_preview_url($val($editRow, 'featured_image'))) !== '' ? 'src="' . cms_esc($fiPrev) . '"' : 'hidden' ?>>
+                <small class="field__hint field__hint--error js-pg-img-error" hidden>Gambar tidak ditemukan.</small>
                 <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick" data-target="featured_image"
                         style="margin-top:6px;align-self:flex-start;">Choose from Media Library</button>
                 <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Recommended: 1200 × 630 px. JPG, PNG, atau WEBP. Maks. 5 MB.</small>
             </label>
             <label class="field">Open Graph image
-                <input type="text" name="og_image"
+                <input type="text" name="og_image" id="pg-og-img-edit" class="js-pg-img-input"
                        value="<?= cms_esc($val($editRow, 'og_image')) ?>"
                        placeholder="Kosongkan = pakai Featured image"
                        autocomplete="off">
+                <img class="cms-path-upload__preview js-pg-img-preview" alt="Preview Open Graph image"
+                     <?= ($ogPrev = app_asset_preview_url($val($editRow, 'og_image'))) !== '' ? 'src="' . cms_esc($ogPrev) . '"' : 'hidden' ?>>
+                <small class="field__hint field__hint--error js-pg-img-error" hidden>Gambar tidak ditemukan.</small>
                 <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick" data-target="og_image"
                         style="margin-top:6px;align-self:flex-start;">Choose from Media Library</button>
                 <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Gambar khusus untuk preview share ke Facebook/Twitter/WhatsApp. 1200 × 630 px.</small>
@@ -573,6 +611,13 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <?php endforeach; ?>
                 </select>
             </label>
+            <!-- Field Liga disembunyikan sementara (25 Jul 2026) — fungsinya belum jelas
+                 terhubung ke frontend, lihat investigasi terpisah. Jangan hapus, tinggal
+                 ubah `if (false)` jadi `if (true)` kalau sudah diputuskan dipakai. Kolom
+                 league_id di database dan data lama TIDAK disentuh oleh perubahan ini —
+                 form tetap submit league_id apa adanya (kosong untuk artikel baru), field
+                 ini sebelumnya juga sudah opsional jadi tidak ada validasi yang terpengaruh. -->
+            <?php if (false) : ?>
             <label class="field">Liga
                 <select name="league_id">
                     <option value="">— Tidak terkait liga —</option>
@@ -581,13 +626,16 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <?php endforeach; ?>
                 </select>
             </label>
+            <?php endif; ?>
             <label class="field">Cabang Sport
-                <select name="sport_key">
-                    <option value="">— Tidak spesifik —</option>
+                <select name="sport_key" class="js-pg-sport-key" required>
+                    <option value="" disabled<?= (string) ($editRow['sport_key'] ?? '') === '' ? ' selected' : '' ?>>— Pilih cabang sport —</option>
                     <?php foreach ($articleSports as $sport) : ?>
                         <option value="<?= cms_esc((string) $sport['key']) ?>"<?= (string) ($editRow['sport_key'] ?? '') === (string) $sport['key'] ? ' selected' : '' ?>><?= cms_esc((string) $sport['name']) ?></option>
                     <?php endforeach; ?>
+                    <option value="<?= cms_esc($pgSportKeyGeneral) ?>"<?= (string) ($editRow['sport_key'] ?? '') === $pgSportKeyGeneral ? ' selected' : '' ?>>Umum / Semua Cabang</option>
                 </select>
+                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Wajib diisi — menentukan apakah artikel ini muncul saat pengunjung klik filter Sepak Bola/Basket/Formula 1 di homepage. Pilih "Umum / Semua Cabang" kalau artikel tidak membahas satu cabang spesifik.</small>
             </label>
             <label class="field">Author
                 <select name="author_id">
@@ -598,7 +646,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 </select>
             </label>
             <label class="field" style="grid-column: 1 / -1;">Tags
-                <input type="text" name="tags" value="<?= cms_esc($editTagsString) ?>" placeholder="pisahkan dengan koma, mis: bitcoin, market, regulasi">
+                <input type="text" name="tags" value="<?= cms_esc($editTagsString) ?>" placeholder="pisahkan dengan koma, mis: Messi, Liga Inggris, transfer" list="pg-tags-datalist">
             </label>
             <label class="field field--checkbox">
                 <input type="checkbox" name="is_featured" value="1"<?= (int) ($editRow['is_featured'] ?? 0) === 1 ? ' checked' : '' ?>>
@@ -726,17 +774,21 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <input type="text" name="slug" required>
             </label>
             <label class="field">Featured image
-                <input type="text" name="featured_image" id="pg-feat-img-create"
+                <input type="text" name="featured_image" id="pg-feat-img-create" class="js-pg-img-input"
                        placeholder="e.g. /uploads/media/2026/05/file.webp"
                        autocomplete="off">
+                <img class="cms-path-upload__preview js-pg-img-preview" alt="Preview featured image" hidden>
+                <small class="field__hint field__hint--error js-pg-img-error" hidden>Gambar tidak ditemukan.</small>
                 <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick" data-target="featured_image"
                         style="margin-top:6px;align-self:flex-start;">Choose from Media Library</button>
                 <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Recommended: 1200 × 630 px. JPG, PNG, atau WEBP. Maks. 5 MB.</small>
             </label>
             <label class="field">Open Graph image
-                <input type="text" name="og_image"
+                <input type="text" name="og_image" id="pg-og-img-create" class="js-pg-img-input"
                        placeholder="Kosongkan = pakai Featured image"
                        autocomplete="off">
+                <img class="cms-path-upload__preview js-pg-img-preview" alt="Preview Open Graph image" hidden>
+                <small class="field__hint field__hint--error js-pg-img-error" hidden>Gambar tidak ditemukan.</small>
                 <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick" data-target="og_image"
                         style="margin-top:6px;align-self:flex-start;">Choose from Media Library</button>
                 <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Gambar khusus untuk preview share ke Facebook/Twitter/WhatsApp. 1200 × 630 px.</small>
@@ -749,6 +801,10 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <?php endforeach; ?>
                 </select>
             </label>
+            <!-- Field Liga disembunyikan sementara (25 Jul 2026) — fungsinya belum jelas
+                 terhubung ke frontend, lihat investigasi terpisah. Jangan hapus, tinggal
+                 ubah `if (false)` jadi `if (true)` kalau sudah diputuskan dipakai. -->
+            <?php if (false) : ?>
             <label class="field">Liga
                 <select name="league_id">
                     <option value="">— Tidak terkait liga —</option>
@@ -757,13 +813,16 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <?php endforeach; ?>
                 </select>
             </label>
+            <?php endif; ?>
             <label class="field">Cabang Sport
-                <select name="sport_key">
-                    <option value="">— Tidak spesifik —</option>
+                <select name="sport_key" class="js-pg-sport-key" required>
+                    <option value="" disabled selected>— Pilih cabang sport —</option>
                     <?php foreach ($articleSports as $sport) : ?>
                         <option value="<?= cms_esc((string) $sport['key']) ?>"><?= cms_esc((string) $sport['name']) ?></option>
                     <?php endforeach; ?>
+                    <option value="<?= cms_esc($pgSportKeyGeneral) ?>">Umum / Semua Cabang</option>
                 </select>
+                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Wajib diisi — menentukan apakah artikel ini muncul saat pengunjung klik filter Sepak Bola/Basket/Formula 1 di homepage. Pilih "Umum / Semua Cabang" kalau artikel tidak membahas satu cabang spesifik.</small>
             </label>
             <label class="field">Author
                 <select name="author_id">
@@ -774,7 +833,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 </select>
             </label>
             <label class="field" style="grid-column: 1 / -1;">Tags
-                <input type="text" name="tags" placeholder="pisahkan dengan koma, mis: bitcoin, market, regulasi">
+                <input type="text" name="tags" placeholder="pisahkan dengan koma, mis: Messi, Liga Inggris, transfer" list="pg-tags-datalist">
             </label>
             <label class="field field--checkbox">
                 <input type="checkbox" name="is_featured" value="1">
@@ -1561,7 +1620,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
         var item = e.target.closest('.mce-ml-item');
         if (!item || modal.hidden) { return; }
         var path = item.getAttribute('data-path') || '';
-        if (path) { _targetInput.value = path; }
+        if (path) {
+            _targetInput.value = path;
+            // Setting .value in JS doesn't fire 'input'/'change' on its own —
+            // dispatch it so the image-preview wiring below (which only
+            // listens for those events) picks up the newly-picked path too,
+            // not just manual typing.
+            _targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
         closePicker();
     });
 
@@ -1572,6 +1638,78 @@ require dirname(__DIR__) . '/includes/alerts.php';
     document.addEventListener('keydown', function (e) {
         if (!modal.hidden && (e.key === 'Escape' || e.key === 'Esc')) { onDismiss(); }
     });
+})();
+</script>
+<script>
+// ---- Featured/OG image live preview (26 Jul 2026) ----
+// Wires every .js-pg-img-input to the .cms-path-upload__preview <img> and
+// .js-pg-img-error hint that immediately follow it in the DOM. Covers all
+// three ways the path can change: page load with an existing value (edit
+// mode — src is already set server-side via app_asset_preview_url(), this
+// just re-validates it can actually load), manual typing/paste (debounced
+// so it doesn't fire a request per keystroke), and the "Choose from Media
+// Library" picker (which now dispatches an 'input' event after setting
+// .value, see the picker script above — same listener handles both).
+(function () {
+    // Mirrors app_asset_preview_url()'s rule: absolute http(s) URLs pass
+    // through untouched, everything else is resolved against the same
+    // public-site base prefix the server used for the initial (edit-mode)
+    // preview, so a manually-typed path resolves to the identical URL an
+    // edit-mode reload would have produced.
+    var BASE_PREFIX = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : '', JSON_UNESCAPED_SLASHES) ?>;
+
+    function resolveUrl(path) {
+        path = (path || '').trim();
+        if (path === '') { return ''; }
+        if (/^https?:\/\//i.test(path)) { return path; }
+        return BASE_PREFIX + path.replace(/^\/+/, '');
+    }
+
+    function wireOne(input) {
+        var preview = input.nextElementSibling;
+        if (!preview || !preview.classList.contains('js-pg-img-preview')) { return; }
+        var errorHint = preview.nextElementSibling;
+        if (!errorHint || !errorHint.classList.contains('js-pg-img-error')) { errorHint = null; }
+
+        var debounceTimer = null;
+        function update() {
+            var url = resolveUrl(input.value);
+            if (errorHint) { errorHint.hidden = true; }
+            if (url === '') {
+                preview.hidden = true;
+                preview.removeAttribute('src');
+                return;
+            }
+            preview.hidden = false;
+            preview.src = url;
+        }
+
+        preview.addEventListener('error', function () {
+            if (preview.hidden) { return; }
+            preview.hidden = true;
+            if (errorHint) { errorHint.hidden = false; }
+        });
+        preview.addEventListener('load', function () {
+            if (errorHint) { errorHint.hidden = true; }
+        });
+
+        input.addEventListener('input', function () {
+            window.clearTimeout(debounceTimer);
+            debounceTimer = window.setTimeout(update, 300);
+        });
+
+        // Edit mode renders the preview's src server-side (already loaded
+        // or already failed by the time this script runs), so the 'error'/
+        // 'load' listeners just attached above may have missed that first
+        // load/fail — .complete + naturalWidth catches it retroactively
+        // without re-requesting the image.
+        if (!preview.hidden && preview.complete && preview.naturalWidth === 0) {
+            preview.hidden = true;
+            if (errorHint) { errorHint.hidden = false; }
+        }
+    }
+
+    document.querySelectorAll('.js-pg-img-input').forEach(wireOne);
 })();
 </script>
 <script>
@@ -1606,6 +1744,26 @@ require dirname(__DIR__) . '/includes/alerts.php';
         slugEl.addEventListener('input', function () {
             locked = true;
         });
+    });
+})();
+</script>
+<script>
+// ---- Require "Cabang Sport" before an article can be saved (26 Jul 2026) ----
+// Server-side is the real gate (see $pg_validate in this file) — this is
+// just the friendlier, immediate version so admins don't have to submit
+// first to find out. setCustomValidity() is used instead of relying on the
+// browser's default "please select an item" text, so the message actually
+// explains WHY the field matters (it drives the homepage sport filter
+// chips), not just that it's empty.
+(function () {
+    var SPORT_KEY_MESSAGE = 'Cabang Sport wajib dipilih agar artikel muncul di filter livescore.';
+    document.querySelectorAll('.js-pg-sport-key').forEach(function (select) {
+        var check = function () {
+            select.setCustomValidity(select.value === '' ? SPORT_KEY_MESSAGE : '');
+        };
+        check();
+        select.addEventListener('change', check);
+        select.addEventListener('invalid', check);
     });
 })();
 </script>

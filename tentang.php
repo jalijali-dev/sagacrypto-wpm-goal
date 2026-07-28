@@ -2,12 +2,13 @@
 declare(strict_types=1);
 
 /**
- * Sagagoal — Tentang Kami page. Moved out of index.php when the homepage
- * became a tabbed news feed; content/logic unchanged from the old
- * homepage "Tentang Kami" section. Managed from
- * cms-admin/pages/about-settings.php via the `landing_sections` table
- * (page_key='about'). Keep these defaults in sync with
- * about-settings.php's ABOUT_DEFAULTS and index.php's old fallback.
+ * Sagagoal — Tentang Kami page. Hero (title+content) now migrated into
+ * Special Pages (page_key='about', see includes/SpecialPages.php) — Fase
+ * 3 v2, 24 Jul 2026. The 4 feature cards below stay fully hardcoded (not
+ * in special_pages.content): fixed at 4, rarely changes, not meant to be
+ * admin-editable. Managed from cms-admin/pages/special-pages.php now,
+ * not the old about-settings.php/landing_sections (that admin page +
+ * table are retired by this same migration).
  */
 
 require_once __DIR__ . '/includes/site-bootstrap.php';
@@ -20,41 +21,21 @@ $aboutFeatures = [
     ['icon' => 'book', 'title' => 'Jadwal Pertandingan', 'desc' => 'Jadwal lengkap pertandingan dari liga-liga pilihan, mudah dipantau setiap hari.'],
     ['icon' => 'flame', 'title' => 'Klasemen Liga', 'desc' => 'Klasemen liga terkini, update otomatis setiap pertandingan selesai.'],
 ];
-try {
-    $aboutStmt = $pdo->prepare("SELECT section_key, title, subtitle FROM landing_sections WHERE page_key = 'about' AND status = 'published'");
-    $aboutStmt->execute();
-    $featureKeys = ['feature_1', 'feature_2', 'feature_3', 'feature_4'];
-    foreach ($aboutStmt->fetchAll() as $row) {
-        $key = (string) ($row['section_key'] ?? '');
-        $title = trim((string) ($row['title'] ?? ''));
-        $subtitle = trim((string) ($row['subtitle'] ?? ''));
-        if ($key === 'main') {
-            if ($title !== '') {
-                $aboutTitle = $title;
-            }
-            if ($subtitle !== '') {
-                $aboutBody = $subtitle;
-            }
-        } else {
-            $idx = array_search($key, $featureKeys, true);
-            if ($idx !== false) {
-                if ($title !== '') {
-                    $aboutFeatures[$idx]['title'] = $title;
-                }
-                if ($subtitle !== '') {
-                    $aboutFeatures[$idx]['desc'] = $subtitle;
-                }
-            }
-        }
+
+$aboutPage = wpm_special_page_by_slug($pdo, 'tentang-kami');
+if ($aboutPage !== null) {
+    if (trim((string) $aboutPage['title']) !== '') {
+        $aboutTitle = (string) $aboutPage['title'];
     }
-} catch (Throwable $e) {
-    // Keep static fallback.
+    if (trim((string) $aboutPage['content']) !== '') {
+        $aboutBody = (string) $aboutPage['content'];
+    }
 }
 
 $pageTitle = 'Tentang Kami — Sagagoal';
 $pageDescription = $aboutBody;
-$activeNav = 'tentang';
-$canonicalUrl = wpm_site_url('tentang.php');
+$activeNav = 'special-about';
+$canonicalUrl = wpm_site_url(wpm_url_tentang());
 
 require __DIR__ . '/includes/site-header.php';
 ?>
@@ -64,7 +45,7 @@ require __DIR__ . '/includes/site-header.php';
         <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> Tentang Kami</nav>
         <span class="section-kicker">Tentang Kami</span>
         <h1><?= wpm_esc($aboutTitle) ?></h1>
-        <p><?= wpm_esc($aboutBody) ?></p>
+        <div class="page-hero-lead"><?= $aboutBody ?></div>
     </div>
 </section>
 

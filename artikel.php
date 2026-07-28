@@ -123,6 +123,31 @@ if ($ogImage !== null) {
 
 $shareUrl = wpm_site_url(wpm_url_artikel($slug));
 
+/* ── Promo banners (cms-admin/pages/banners.php), placement="article" ── */
+$articleBanners = wpm_banners_active($pdo, 'article');
+
+/* ── Sidebar ad slots (25 Jul 2026) — rendered once here (not inside the
+ * layout markup below) so the resulting HTML doubles as both the "is an ad
+ * actually active in this slot" check AND the markup to print, instead of
+ * querying/counting the impression twice. When a slot comes back empty the
+ * <aside> for it is skipped entirely (not just hidden) so the grid column
+ * it would have occupied is never reserved — see .article-layout's
+ * variant classes in site.css for the column-count logic this drives. */
+$leftAdHtml = wpm_render_ad_slot($pdo, 'sidebar-left', 'article', $pageId);
+$rightAdHtml = wpm_render_ad_slot($pdo, 'sidebar-right', 'article', $pageId);
+$hasLeftAd = $leftAdHtml !== '';
+$hasRightAd = $rightAdHtml !== '';
+$articleLayoutClass = 'article-layout';
+if ($hasLeftAd && $hasRightAd) {
+    $articleLayoutClass .= ' article-layout--both';
+} elseif ($hasRightAd) {
+    $articleLayoutClass .= ' article-layout--right-only';
+} elseif ($hasLeftAd) {
+    $articleLayoutClass .= ' article-layout--left-only';
+} else {
+    $articleLayoutClass .= ' article-layout--no-ads';
+}
+
 require __DIR__ . '/includes/site-header.php';
 ?>
 
@@ -136,11 +161,13 @@ require __DIR__ . '/includes/site-header.php';
             <?php endif; ?>
         </nav>
 
-        <div class="article-layout">
+        <div class="<?= wpm_esc($articleLayoutClass) ?>">
+            <?php if ($hasLeftAd) : ?>
             <!-- Sticky sidebar ad (left) -->
             <aside class="article-layout__sidebar">
-                <?= wpm_render_ad_slot($pdo, 'sidebar-left', 'article', $pageId) ?>
+                <?= $leftAdHtml ?>
             </aside>
+            <?php endif; ?>
 
             <div class="article-layout__main">
                 <?= wpm_render_ad_slot($pdo, 'article-before-title', 'article', $pageId) ?>
@@ -170,6 +197,16 @@ require __DIR__ . '/includes/site-header.php';
                 </div>
 
                 <?= wpm_render_ad_slot($pdo, 'below-article', 'article', $pageId) ?>
+
+                <?php if ($articleBanners !== []) : ?>
+                <div class="banner-strip" style="margin:24px 0;">
+                    <div class="banner-strip__grid">
+                        <?php foreach ($articleBanners as $banner) : ?>
+                            <?= wpm_banner_markup($banner) ?>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
 
                 <?php if ($tags !== []) : ?>
                 <div class="article-tags">
@@ -220,10 +257,12 @@ require __DIR__ . '/includes/site-header.php';
                 <?php endif; ?>
             </div>
 
+            <?php if ($hasRightAd) : ?>
             <!-- Sticky sidebar ad (right) -->
             <aside class="article-layout__sidebar">
-                <?= wpm_render_ad_slot($pdo, 'sidebar-right', 'article', $pageId) ?>
+                <?= $rightAdHtml ?>
             </aside>
+            <?php endif; ?>
         </div>
     </div>
 </section>

@@ -18,6 +18,13 @@ declare(strict_types=1);
 require_once __DIR__ . '/../cms-admin/config/database.php';
 require_once __DIR__ . '/../cms-admin/includes/schema-guard.php';
 require_once __DIR__ . '/../includes/BasketballSync.php';
+require_once __DIR__ . '/../includes/SportsApiSettings.php';
+
+// Sports Modules kill-switch (Fase 2, 24 Jul 2026; sports_api_settings consolidation, 24 Jul 2026) — see sync_fixtures.php.
+if (!wpm_sport_module_active($pdo, 'basketball')) {
+    echo "[sync_nba_games] Skipped — sports_api_settings.is_active off for 'basketball'.\n";
+    exit(0);
+}
 
 if (!BasketballSettings::autoSyncAllowed($pdo)) {
     echo "[sync_nba_games] Skipped — is_active atau auto_sync_enabled sedang off.\n";

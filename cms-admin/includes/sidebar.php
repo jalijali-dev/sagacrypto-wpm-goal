@@ -46,18 +46,37 @@ $integrationsNavGroup = [
     'label' => 'Integrations',
     'icon' => 'plug',
     'items' => [
-        ['id' => 'matches', 'label' => 'Matches', 'href' => cms_nav_href('matches.php'), 'icon' => 'chart', 'roles' => $ROLES_ADMIN_UP],
         // League Settings (leagues.is_active/sort_order toggle UI) removed —
         // it existed to curate the old /liga hub (deleted in the multi-sport
-        // pivot). The `leagues` table itself stays (Matches' League column,
-        // cron/sync_leagues_teams.php name resolution). Note: is_active/
-        // sort_order are still read by wpm_active_leagues() for the
-        // homepage's league filter chips — that's now DB-edit-only.
+        // pivot). The `leagues` table itself stays (Football Matches' League
+        // column, cron/sync_leagues_teams.php name resolution). Note:
+        // is_active/sort_order are still read by wpm_active_leagues() for
+        // the homepage's league filter chips — that's now DB-edit-only.
         // Holds the raw API key(s) — superadmin-only, same tier as Admin Users/AI Credentials.
         // Consolidated hub: one page, accordion per sport (football/basketball/motorsport) — see
         // cms-admin/pages/livescore-api-settings.php's docblock for why the other 2 settings pages
         // (formerly separate sidebar entries) were folded in here instead of staying standalone.
         ['id' => 'livescore-api-settings', 'label' => 'Livescore API Settings', 'href' => cms_nav_href('livescore-api-settings.php'), 'icon' => 'link', 'roles' => $ROLES_SUPER_ONLY],
+    ],
+];
+
+/**
+ * Read-only per-sport match/schedule reporting pages (24 Jul 2026) — each
+ * reads its own sport's tables (fixtures/nba_games/f1_*), filled by that
+ * sport's own cron script, no shared/unified table. Split out of
+ * Integrations (which is about API *configuration*) into its own group
+ * since this is read-only *data*, same reasoning as AI Management being
+ * its own group instead of living under Integrations.
+ */
+$sportsDataNavGroup = [
+    'label' => 'Sports Data',
+    'icon' => 'chart',
+    'items' => [
+        ['id' => 'matches', 'label' => 'Football Matches', 'href' => cms_nav_href('matches.php'), 'icon' => 'chart', 'roles' => $ROLES_ADMIN_UP],
+        ['id' => 'nba-games', 'label' => 'NBA Games', 'href' => cms_nav_href('nba-games.php'), 'icon' => 'chart', 'roles' => $ROLES_ADMIN_UP],
+        ['id' => 'f1-races', 'label' => 'F1 Races', 'href' => cms_nav_href('f1-races.php'), 'icon' => 'flag', 'roles' => $ROLES_ADMIN_UP],
+        ['id' => 'f1-podium', 'label' => 'F1 Podium', 'href' => cms_nav_href('f1-podium.php'), 'icon' => 'flag', 'roles' => $ROLES_ADMIN_UP],
+        ['id' => 'f1-standings', 'label' => 'F1 Standings', 'href' => cms_nav_href('f1-standings.php'), 'icon' => 'chart', 'roles' => $ROLES_ADMIN_UP],
     ],
 ];
 
@@ -84,6 +103,9 @@ $aiNavGroup = [
         ['id' => 'ai-models', 'label' => 'AI Models', 'href' => cms_nav_href('ai-models.php'), 'icon' => 'puzzle', 'roles' => $ROLES_ADMIN_UP],
         ['id' => 'ai-agent-settings', 'label' => 'AI Agent Settings', 'href' => cms_nav_href('ai-agent-settings.php'), 'icon' => 'person', 'roles' => $ROLES_ADMIN_UP],
         ['id' => 'growth-agent', 'label' => 'Growth Agent', 'href' => cms_nav_href('growth-agent.php'), 'icon' => 'chart', 'roles' => $ROLES_ADMIN_UP],
+        // Holds a raw Google service-account private key — same
+        // superadmin-only tier as AI Credentials above, same reasoning.
+        ['id' => 'gsc-settings', 'label' => 'GSC Settings', 'href' => cms_nav_href('gsc-settings.php'), 'icon' => 'key', 'roles' => $ROLES_SUPER_ONLY],
     ],
 ];
 
@@ -100,9 +122,10 @@ $aiNavGroup = [
 $sidebarSections = [
     ['type' => 'link', 'id' => 'dashboard', 'label' => 'Dashboard', 'href' => cms_dashboard_href(), 'icon' => 'grid'],
     ['type' => 'link', 'id' => 'site-settings', 'label' => 'Site Settings', 'href' => cms_nav_href('site-settings.php'), 'icon' => 'gear', 'roles' => $ROLES_ADMIN_UP],
-    ['type' => 'link', 'id' => 'about-settings', 'label' => 'About', 'href' => cms_nav_href('about-settings.php'), 'icon' => 'home', 'roles' => $ROLES_ADMIN_UP],
     ['type' => 'link', 'id' => 'banners', 'label' => 'Banners', 'href' => cms_nav_href('banners.php'), 'icon' => 'flag'],
-    ['type' => 'link', 'id' => 'featured-content', 'label' => 'Featured Content', 'href' => cms_nav_href('featured-content.php'), 'icon' => 'star', 'roles' => $ROLES_ADMIN_UP],
+    // Admin-managed static pages (Kontak, FAQ, etc.) (Fase 3, Special
+    // Pages & Sports Modules spec, 24 Jul 2026) — see includes/SpecialPages.php.
+    ['type' => 'link', 'id' => 'special-pages', 'label' => 'Special Pages', 'href' => cms_nav_href('special-pages.php'), 'icon' => 'star', 'roles' => $ROLES_ADMIN_UP],
     ['type' => 'link', 'id' => 'media-library', 'label' => 'Media Library', 'href' => cms_nav_href('media-library.php'), 'icon' => 'folder'],
     ['type' => 'link', 'id' => 'contact-messages', 'label' => 'Contact Messages', 'href' => cms_nav_href('contact-messages.php'), 'icon' => 'mail', 'roles' => $ROLES_ADMIN_UP],
     // Manages other admin accounts/roles — superadmin-only. Moved out of
@@ -115,7 +138,10 @@ $sidebarSections = [
     // 2. SEO Settings — Dashboard, Redirects, and Schema all in one group.
     ['type' => 'group'] + $seoNavGroup,
 
-    // 3. Integrations
+    // 3. Sports Data (read-only per-sport match/schedule reporting)
+    ['type' => 'group'] + $sportsDataNavGroup,
+
+    // 3b. Integrations
     ['type' => 'group'] + $integrationsNavGroup,
 
     // 4. Advertisements

@@ -31,7 +31,7 @@ declare(strict_types=1);
         <input type="checkbox" name="is_active" value="1"<?= $settings['is_active'] ? ' checked' : '' ?>>
         <span class="field--checkbox__text">
             <span class="field--checkbox__title">Fitur Formula 1 aktif</span>
-            <span class="field--checkbox__desc">Mengontrol dua hal sekaligus: apakah cron sync boleh jalan, dan apakah card "Formula 1" di /olahraga tampil aktif (bukan "Segera Hadir"). Aktifkan setelah API key valid &amp; sync pertama berhasil.</span>
+            <span class="field--checkbox__desc">Mengontrol dua hal sekaligus: apakah cron sync boleh jalan, dan apakah chip "Formula 1" muncul di filter beranda. Halaman /f1 sendiri tetap bisa diakses langsung — ini tidak menyembunyikannya. Aktifkan setelah API key valid &amp; sync pertama berhasil.</span>
         </span>
     </label>
     <label class="field field--checkbox">
@@ -84,6 +84,25 @@ declare(strict_types=1);
         <p style="margin-top:8px;font-size:12.5px;opacity:.7;">Menjalankan 2 tahap: kalender race + podium → klasemen pembalap &amp; konstruktor — sama persis dengan yang dijalankan cron.</p>
         <div id="f1-sync-now-progress" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;font-size:13px;"></div>
     </div>
+
+    <label class="field">Penempatan menu
+        <select name="nav_placement">
+            <option value="menu" <?= $settings['nav_placement'] === 'menu' ? 'selected' : '' ?>>Menu header</option>
+            <option value="footer" <?= $settings['nav_placement'] === 'footer' ? 'selected' : '' ?>>Footer saja</option>
+            <option value="hidden" <?= $settings['nav_placement'] === 'hidden' ? 'selected' : '' ?>>Sembunyikan</option>
+        </select>
+    </label>
+    <label class="field">Urutan tampil
+        <input type="number" name="sort_order" value="<?= (int) $settings['sort_order'] ?>">
+    </label>
+    <label class="field">Judul Halaman
+        <input type="text" name="page_title" placeholder="Kalender &amp; Klasemen F1" value="<?= cms_esc((string) ($settings['page_title'] ?? '')) ?>">
+        <span class="field__hint">Kosongkan untuk pakai judul default. Tahun musim ditambahkan otomatis di halaman publik.</span>
+    </label>
+    <label class="field">Subtitle Halaman
+        <input type="text" name="page_subtitle" placeholder="Jadwal race musim ini, hasil podium, dan klasemen pembalap & konstruktor." value="<?= cms_esc((string) ($settings['page_subtitle'] ?? '')) ?>">
+        <span class="field__hint">Kosongkan untuk pakai subtitle default.</span>
+    </label>
 
     <div class="form-grid__actions">
         <button type="submit" class="admin-btn admin-btn--primary">Save settings</button>

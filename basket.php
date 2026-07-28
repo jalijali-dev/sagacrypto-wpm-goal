@@ -2,12 +2,13 @@
 declare(strict_types=1);
 
 /**
- * Sagagoal — NBA livescore & jadwal (/nba). Reached via the /olahraga
- * selector's "Basket" card. Mirrors livescore.php's controls (search,
- * "Live (N)" toggle, 7-day date strip, calendar popup) by deliberately
- * reusing the same element IDs/CSS classes and assets/js/livescore.js
- * unchanged — see wpm_nba_game_card() in site-bootstrap.php for how the
- * card markup stays compatible with that shared JS.
+ * Sagagoal — Basketball (NBA) livescore & jadwal (/basket, renamed from
+ * /nba 24 Jul 2026, direct top-level page — no more /olahraga hub).
+ * Mirrors football.php's controls (search, "Live (N)" toggle, 7-day
+ * date strip, calendar popup) by deliberately reusing the same element
+ * IDs/CSS classes and assets/js/livescore.js unchanged — see
+ * wpm_nba_game_card() in site-bootstrap.php for how the card markup
+ * stays compatible with that shared JS.
  *
  * No league/round grouping here (unlike football) — NBA is a single
  * competition, so games for a date render as one flat list.
@@ -44,7 +45,7 @@ try {
 $liveCount = wpm_count_live_nba_games($pdo);
 
 // Same "genuinely empty" vs "provider can't fetch this date yet"
-// classification as livescore.php — see BasketballSettings::getGameDateWindow().
+// classification as football.php — see BasketballSettings::getGameDateWindow().
 $apiWindow = BasketballSettings::getGameDateWindow($pdo);
 if ($apiWindow['checked_at'] === null) {
     $apiWindowStart = date('Y-m-d', strtotime($today . ' -1 day'));
@@ -84,25 +85,35 @@ $buildDateStrip = static function (string $today, string $selected): array {
 $dateStrip = $buildDateStrip($today, $targetDate);
 
 $dateUrl = static function (string $date): string {
-    return 'nba.php?date=' . $date;
+    return 'basket/' . $date;
 };
 
 $pageTitle = 'NBA — Sagagoal';
 $pageDescription = 'Jadwal dan skor live pertandingan NBA hari ini, besok, dan yang sedang berlangsung.';
-$activeNav = 'olahraga';
-$canonicalUrl = wpm_site_url(wpm_url_nba());
+$activeNav = 'basketball';
+$canonicalUrl = wpm_site_url(wpm_url_basket());
 $livescoreJsVer = @filemtime(__DIR__ . '/assets/js/livescore.js') ?: 1;
 $extraHead = '<script src="assets/js/livescore.js?v=' . $livescoreJsVer . '" defer></script>';
+
+/* ── Promo banners (cms-admin/pages/banners.php), placement="basket" ── */
+$basketBanners = wpm_banners_active($pdo, 'basket');
+
+// Page title/subtitle editable from Livescore API Settings (24 Jul 2026) —
+// sports_api_settings.page_title/page_subtitle, fall back to the original
+// hardcoded text if the admin hasn't set them (fresh row, empty field).
+$basketSettings = BasketballSettings::load($pdo);
+$basketPageTitle = trim((string) ($basketSettings['page_title'] ?? '')) !== '' ? $basketSettings['page_title'] : 'Jadwal & Skor NBA';
+$basketPageSubtitle = trim((string) ($basketSettings['page_subtitle'] ?? '')) !== '' ? $basketSettings['page_subtitle'] : 'Live score dan jadwal pertandingan NBA, hari ini dan besok.';
 
 require __DIR__ . '/includes/site-header.php';
 ?>
 
     <section class="page-hero">
         <div class="crypto-container">
-            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> <a href="<?= wpm_esc(wpm_url_olahraga()) ?>">Sport</a> <span>/</span> NBA</nav>
+            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> Basket</nav>
             <span class="section-kicker"><?= wpm_icon('basketball') ?> NBA</span>
-            <h1>Jadwal &amp; Skor NBA</h1>
-            <p>Live score dan jadwal pertandingan NBA, hari ini dan besok.</p>
+            <h1><?= htmlspecialchars($basketPageTitle) ?></h1>
+            <p><?= htmlspecialchars($basketPageSubtitle) ?></p>
         </div>
     </section>
 
@@ -138,6 +149,16 @@ require __DIR__ . '/includes/site-header.php';
             </span>
         </div>
         <p class="livescore-tz-note">Semua jam ditampilkan dalam WIB (UTC+7).</p>
+
+        <?php if ($basketBanners !== []) : ?>
+        <div class="banner-strip" style="margin-bottom:24px;">
+            <div class="banner-strip__grid">
+                <?php foreach ($basketBanners as $banner) : ?>
+                    <?= wpm_banner_markup($banner) ?>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <div id="livescore-list" data-live-statuses="2">
             <?php if ($games === []) : ?>

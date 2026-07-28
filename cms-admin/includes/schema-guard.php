@@ -32,6 +32,39 @@ if (!function_exists('cms_ensure_column')) {
 }
 
 /**
+ * Widens an existing column's type (e.g. VARCHAR(50) -> VARCHAR(255)) —
+ * cms_ensure_column() only adds a column when it's missing entirely, it
+ * can't change an already-existing column's definition. Checks the live
+ * COLUMN_TYPE first and only runs ALTER TABLE ... MODIFY COLUMN when it
+ * differs from the target, so repeat calls are safe no-ops once applied.
+ */
+if (!function_exists('cms_widen_column')) {
+    function cms_widen_column(PDO $pdo, string $table, string $column, string $newDefinition): bool
+    {
+        $check = $pdo->prepare(
+            'SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME   = :table
+               AND COLUMN_NAME  = :column'
+        );
+        $check->execute(['table' => $table, 'column' => $column]);
+        $currentType = (string) $check->fetchColumn();
+        if ($currentType === '') {
+            return false; // column doesn't exist — nothing to widen
+        }
+
+        $desiredType = strtolower((string) strtok($newDefinition, ' '));
+        if (strtolower($currentType) === $desiredType) {
+            return false; // already at target width
+        }
+
+        $pdo->exec("ALTER TABLE `{$table}` MODIFY COLUMN `{$column}` {$newDefinition}");
+
+        return true;
+    }
+}
+
+/**
  * Companion helper: create a whole table if it doesn't exist yet.
  * `$definitionSql` is the full column/constraint list that goes between
  * the parens of CREATE TABLE — safe to call on every page load.

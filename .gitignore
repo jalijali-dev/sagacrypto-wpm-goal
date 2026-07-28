@@ -19,6 +19,10 @@ cms-admin/uploads/
 *.bak
 sagacrypto-*.zip
 
+# Scratch folder for deployment packages / migration files handed to the
+# user (SQL migrations, deploy zips, etc.) — not part of the codebase.
+migration/
+
 # OS/editor junk
 .DS_Store
 Thumbs.db

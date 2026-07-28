@@ -26,11 +26,12 @@ class GrowthAgentPromptBuilder
     }
 
     /**
-     * Build the style-guide + few-shot block for one agent. Never throws —
-     * callers should still wrap this in try/catch, since a schema-ensure
-     * failure (e.g. no CREATE TABLE privilege) must never block generation.
+     * Build the style-guide + few-shot + Agent Memory block for one agent.
+     * Never throws — callers should still wrap this in try/catch, since a
+     * schema-ensure failure (e.g. no CREATE TABLE privilege) must never
+     * block generation.
      */
-    public function buildContext(string $agentKey, string $jobType, int $maxRules = 5, int $maxExamples = 3): string
+    public function buildContext(string $agentKey, string $jobType, int $maxRules = 5, int $maxExamples = 3, int $maxMemoryPatterns = 5): string
     {
         $parts = [];
 
@@ -53,7 +54,70 @@ class GrowthAgentPromptBuilder
             $parts[] = "Reference examples from past approved work:\n\n" . implode("\n\n", $exampleBlocks);
         }
 
+        $memory = $this->buildMemoryContext($maxMemoryPatterns);
+        if ($memory !== '') {
+            $parts[] = $memory;
+        }
+
         return implode("\n\n", $parts);
+    }
+
+    /**
+     * Agent Memory (advisory-only — ROADMAP.md gap #3,
+     * GROWTH_AGENT_SEO_ROADMAP.md § Growth memory). Folds up to $limit
+     * 'active' growth_agent_memory rows into the prompt as plain narrative
+     * text. This is the ONLY place growth_agent_memory data is ever read
+     * for a generate call, and it only ever changes what the model reads
+     * before generating — per the roadmap's explicit guardrail, memory
+     * must never create, approve, or execute an action on its own, and
+     * this method has no side effects at all (pure read + string format).
+     * 'pending_review' and 'stale' rows are deliberately excluded — only a
+     * pattern confirmed across multiple detection runs (see
+     * cms_growth_agent_detect_memory_patterns() in growth-agent-service.php)
+     * is stable enough to hand to the model as if-established fact.
+     *
+     * Called from buildContext() itself (not a separate call each caller
+     * needs to remember) so every existing caller — article_draft
+     * (api/article-generate.php), seo_recommendation, gsc_content_optimization,
+     * gsc_article_idea — gets memory context automatically, with zero
+     * changes needed on their end.
+     *
+     * Rows are queried fresh on every call (no caching) since memory can
+     * change between generate calls as new detection runs happen. Never
+     * throws.
+     */
+    public function buildMemoryContext(int $limit = 5): string
+    {
+        try {
+            $rows = $this->activeMemoryPatterns($limit);
+        } catch (Throwable $e) {
+            return '';
+        }
+
+        if ($rows === []) {
+            return '';
+        }
+
+        $lines = [];
+        foreach ($rows as $row) {
+            $evidence = json_decode((string) ($row['evidence_json'] ?? ''), true);
+            $evidence = is_array($evidence) ? $evidence : [];
+            $impressions = (int) ($evidence['total_impressions'] ?? 0);
+            $weeks = (int) ($evidence['distinct_weeks_seen'] ?? 0);
+            $target = $row['scope_type'] === 'page'
+                ? ('halaman #' . (int) $row['matched_page_id'])
+                : ('query "' . (string) $row['query_text'] . '"');
+
+            if ($row['pattern_type'] === 'winning_pattern') {
+                $ctrPct = round(((float) ($evidence['avg_ctr'] ?? 0)) * 100, 2);
+                $position = round((float) ($evidence['avg_position'] ?? 0), 1);
+                $lines[] = "Pola yang historis berhasil: {$target} konsisten CTR {$ctrPct}% di posisi rata-rata {$position} selama {$weeks} minggu berbeda ({$impressions} impressions total) — pertimbangkan sudut/format serupa.";
+            } else {
+                $lines[] = "Content gap persisten: {$target} konsisten muncul {$impressions} impressions selama {$weeks} minggu berbeda tapi belum pernah ada artikel yang menargetkannya — peluang topik jangka panjang, bukan cuma sinyal sesaat.";
+            }
+        }
+
+        return "Growth memory — pola historis dari data GSC (advisory, bukan instruksi atau jaminan hasil):\n- " . implode("\n- ", $lines);
     }
 
     /** @return string[] */
@@ -110,5 +174,20 @@ class GrowthAgentPromptBuilder
             'input_brief' => (string) $row['input_brief'],
             'output_json' => (string) $row['output_json'],
         ], $rows);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function activeMemoryPatterns(int $limit): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT pattern_type, scope_type, matched_page_id, query_text, evidence_json
+               FROM growth_agent_memory
+              WHERE status = 'active'
+              ORDER BY last_confirmed_at DESC
+              LIMIT " . max(0, $limit)
+        );
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 }

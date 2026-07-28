@@ -32,16 +32,16 @@ $isActive = !empty($_POST['is_active']);
 
 switch ($sport) {
     case 'football':
-        $pdo->prepare('UPDATE livescore_api_settings SET is_active = :is_active WHERE id = 1')
+        $pdo->prepare('UPDATE sports_api_settings SET is_active = :is_active WHERE sport_key = \'football\'')
             ->execute(['is_active' => $isActive ? 1 : 0]);
         break;
     case 'basketball':
-        $pdo->prepare('UPDATE basketball_api_settings SET is_active = :is_active WHERE id = 1')
+        $pdo->prepare('UPDATE sports_api_settings SET is_active = :is_active WHERE sport_key = \'basketball\'')
             ->execute(['is_active' => $isActive ? 1 : 0]);
         BasketballSettings::syncSportVisibility($pdo, $isActive);
         break;
     case 'motorsport':
-        $pdo->prepare('UPDATE f1_api_settings SET is_active = :is_active WHERE id = 1')
+        $pdo->prepare('UPDATE sports_api_settings SET is_active = :is_active WHERE sport_key = \'motorsport\'')
             ->execute(['is_active' => $isActive ? 1 : 0]);
         FormulaOneSettings::syncSportVisibility($pdo, $isActive);
         break;
@@ -51,10 +51,10 @@ switch ($sport) {
         exit;
 }
 
-// Football doesn't have its own syncSportVisibility() (its /livescore page
-// was never gated by the /olahraga selector's is_active — it's the one
-// sport that also has its own permanent "Livescore" nav item), so mirror
-// the sports-table flip here for consistency with the accordion's badge.
+// Football doesn't have its own syncSportVisibility() (its /football page
+// was never gated by the `sports` table's is_active — it's the one sport
+// that also has its own permanent nav item), so mirror the sports-table
+// flip here for consistency with the accordion's badge.
 if ($sport === 'football') {
     require_once dirname(__DIR__, 2) . '/includes/SportsRegistry.php';
     wpm_ensure_sports_table($pdo);

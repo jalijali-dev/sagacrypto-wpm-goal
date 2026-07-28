@@ -2,15 +2,18 @@
 declare(strict_types=1);
 
 /**
- * Sagagoal — Formula 1 (/f1). Reached via the /olahraga selector's
- * "Formula 1" card. Deliberately NOT built like livescore.php/nba.php's
- * search+live-toggle+date-strip pattern — F1 doesn't fit that shape
- * (races are sparse, ~24/year, no two-team score). Instead: a season
- * calendar (Grand Prix cards, podium once completed) + driver/constructor
- * standings, switched via a simple tab param.
+ * Sagagoal — Formula 1 (/f1). Footer-only placement (not in the main
+ * nav) — see wpm_nav_menu()/wpm_url_football()/wpm_url_basket() in
+ * site-bootstrap.php; the /olahraga hub this used to be reached through
+ * was removed 24 Jul 2026. Deliberately NOT built like football.php/
+ * basket.php's search+live-toggle+date-strip pattern — F1 doesn't fit
+ * that shape (races are sparse, ~24/year, no two-team score). Instead:
+ * a season calendar (Grand Prix cards, podium once completed) +
+ * driver/constructor standings, switched via a simple tab param.
  */
 
 require_once __DIR__ . '/includes/site-bootstrap.php';
+require_once __DIR__ . '/includes/FormulaOneSettings.php';
 
 $tab = (string) ($_GET['tab'] ?? 'kalender');
 if (!in_array($tab, ['kalender', 'klasemen'], true)) {
@@ -85,18 +88,27 @@ $tabUrl = static function (string $t): string {
 
 $pageTitle = 'Formula 1 — Sagagoal';
 $pageDescription = 'Kalender race, hasil, dan klasemen pembalap & konstruktor Formula 1 musim ' . $season . '.';
-$activeNav = 'olahraga';
+$activeNav = ''; // Not in the main nav — footer-only (see wpm_nav_menu()).
 $canonicalUrl = wpm_site_url(wpm_url_f1());
+
+// Page title/subtitle editable from Livescore API Settings (24 Jul 2026) —
+// sports_api_settings.page_title/page_subtitle, fall back to the original
+// hardcoded text if the admin hasn't set them (fresh row, empty field).
+// The season number is always appended live (not admin-editable) since
+// it's inherently dynamic, not static page copy.
+$f1Settings = FormulaOneSettings::load($pdo);
+$f1PageTitle = trim((string) ($f1Settings['page_title'] ?? '')) !== '' ? $f1Settings['page_title'] : 'Kalender & Klasemen F1';
+$f1PageSubtitle = trim((string) ($f1Settings['page_subtitle'] ?? '')) !== '' ? $f1Settings['page_subtitle'] : 'Jadwal race musim ini, hasil podium, dan klasemen pembalap & konstruktor.';
 
 require __DIR__ . '/includes/site-header.php';
 ?>
 
     <section class="page-hero">
         <div class="crypto-container">
-            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> <a href="<?= wpm_esc(wpm_url_olahraga()) ?>">Sport</a> <span>/</span> Formula 1</nav>
+            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> Formula 1</nav>
             <span class="section-kicker"><?= wpm_icon('motorsport') ?> Formula 1</span>
-            <h1>Kalender &amp; Klasemen F1 <?= (int) $season ?></h1>
-            <p>Jadwal race musim ini, hasil podium, dan klasemen pembalap &amp; konstruktor.</p>
+            <h1><?= htmlspecialchars($f1PageTitle) ?> <?= (int) $season ?></h1>
+            <p><?= htmlspecialchars($f1PageSubtitle) ?></p>
         </div>
     </section>
 

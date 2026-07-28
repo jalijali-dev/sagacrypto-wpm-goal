@@ -35,7 +35,8 @@ if (!$settings['is_active']) {
     exit;
 }
 
-$gamesResult = wpm_sync_nba_games($pdo);
+// force=true — same reasoning as the football/F1 manual sync actions.
+$gamesResult = wpm_sync_nba_games($pdo, true);
 $stages = [
     [
         'name' => 'games',

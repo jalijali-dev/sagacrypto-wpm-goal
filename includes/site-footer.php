@@ -14,6 +14,8 @@ if (!defined('WPM_BOOTSTRAPPED')) {
  */
 
 $wpmMenu = wpm_nav_menu($pdo);
+$wpmFooterSports = wpm_sports_modules_by_placement($pdo, 'footer');
+$wpmFooterPages = wpm_special_pages_for_footer($pdo);
 $adSettings = wpm_ad_settings($pdo);
 $popupAd = (empty($adSettings) || (int) ($adSettings['ads_enabled'] ?? 1) === 1) ? wpm_ad_pick($pdo, 'popup') : null;
 $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 1 && (int) ($adSettings['sticky_mobile_enabled'] ?? 1) === 1))
@@ -26,7 +28,14 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
     <div class="crypto-container">
         <div class="footer-grid">
             <div class="footer-brand">
-                <span class="crypto-logo__text" style="font-size:24px;">Sagagoal</span>
+                <a href="index.php" class="crypto-logo footer-brand__logo">
+                    <?php if ($wpmSiteLogoUrl !== null && $wpmSiteLogoUrl !== '') : ?>
+                        <img class="crypto-logo__mark crypto-logo__mark--img footer-brand__logo-mark" src="<?= wpm_esc($wpmSiteLogoUrl) ?>" alt="<?= wpm_esc($wpmSiteName) ?> logo">
+                    <?php else : ?>
+                        <span class="crypto-logo__mark footer-brand__logo-mark" aria-hidden="true">SG</span>
+                    <?php endif; ?>
+                    <span class="crypto-logo__text" style="font-size:24px;"><?= wpm_esc($wpmSiteName) ?></span>
+                </a>
                 <p>Portal livescore dan berita sepak bola — jadwal pertandingan, skor live, klasemen liga, disajikan ringkas dan mudah dipahami.</p>
             </div>
             <div>
@@ -41,8 +50,12 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
                 <p class="footer-heading">Konten</p>
                 <ul class="footer-links">
                     <li><a href="<?= wpm_esc(wpm_url_kategori()) ?>">Semua Berita</a></li>
-                    <li><a href="<?= wpm_esc(wpm_url_olahraga()) ?>">Sport</a></li>
-                    <li><a href="<?= wpm_esc(wpm_url_tentang()) ?>">Tentang Kami</a></li>
+                    <?php foreach ($wpmFooterSports as $module) : ?>
+                        <li><a href="<?= wpm_esc((string) $module['route_slug']) ?>"><?= wpm_esc((string) $module['label']) ?></a></li>
+                    <?php endforeach; ?>
+                    <?php foreach ($wpmFooterPages as $specialPage) : ?>
+                        <li><a href="<?= wpm_esc((string) $specialPage['slug']) ?>"><?= wpm_esc((string) $specialPage['title']) ?></a></li>
+                    <?php endforeach; ?>
                 </ul>
             </div>
         </div>
@@ -94,6 +107,8 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
         <?= wpm_ad_markup($stickyAd, empty($adSettings) || (int) ($adSettings['show_ad_label'] ?? 1) === 1, 'sticky-bottom-mobile') ?>
     </div>
 <?php endif; ?>
+
+<?= wpm_floating_contact_buttons($wpmSiteSettings) ?>
 
 <script src="assets/js/site.js?v=<?= (int) $jsVer ?>" defer></script>
 </body>

@@ -31,7 +31,7 @@ declare(strict_types=1);
         <input type="checkbox" name="is_active" value="1"<?= $settings['is_active'] ? ' checked' : '' ?>>
         <span class="field--checkbox__text">
             <span class="field--checkbox__title">Fitur NBA aktif</span>
-            <span class="field--checkbox__desc">Mengontrol dua hal sekaligus: apakah cron sync boleh jalan, dan apakah card "NBA" di /olahraga tampil aktif (bukan "Segera Hadir"). Aktifkan setelah API key valid &amp; sync pertama berhasil.</span>
+            <span class="field--checkbox__desc">Mengontrol dua hal sekaligus: apakah cron sync boleh jalan, dan apakah chip "Basket" muncul di filter beranda. Halaman /basket sendiri tetap bisa diakses langsung — ini tidak menyembunyikannya. Aktifkan setelah API key valid &amp; sync pertama berhasil.</span>
         </span>
     </label>
     <label class="field field--checkbox">
@@ -87,6 +87,25 @@ declare(strict_types=1);
         <p style="margin-top:8px;font-size:12.5px;opacity:.7;">Sync games (+ teams ter-embed) untuk hari ini &amp; besok — sama persis dengan yang dijalankan cron.</p>
         <div id="basketball-sync-now-progress" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;font-size:13px;"></div>
     </div>
+
+    <label class="field">Penempatan menu
+        <select name="nav_placement">
+            <option value="menu" <?= $settings['nav_placement'] === 'menu' ? 'selected' : '' ?>>Menu header</option>
+            <option value="footer" <?= $settings['nav_placement'] === 'footer' ? 'selected' : '' ?>>Footer saja</option>
+            <option value="hidden" <?= $settings['nav_placement'] === 'hidden' ? 'selected' : '' ?>>Sembunyikan</option>
+        </select>
+    </label>
+    <label class="field">Urutan tampil
+        <input type="number" name="sort_order" value="<?= (int) $settings['sort_order'] ?>">
+    </label>
+    <label class="field">Judul Halaman
+        <input type="text" name="page_title" placeholder="Jadwal &amp; Skor NBA" value="<?= cms_esc((string) ($settings['page_title'] ?? '')) ?>">
+        <span class="field__hint">Kosongkan untuk pakai judul default.</span>
+    </label>
+    <label class="field">Subtitle Halaman
+        <input type="text" name="page_subtitle" placeholder="Live score dan jadwal pertandingan NBA, hari ini dan besok." value="<?= cms_esc((string) ($settings['page_subtitle'] ?? '')) ?>">
+        <span class="field__hint">Kosongkan untuk pakai subtitle default.</span>
+    </label>
 
     <div class="form-grid__actions">
         <button type="submit" class="admin-btn admin-btn--primary">Save settings</button>

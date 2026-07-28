@@ -1450,25 +1450,28 @@ body.admin-body {
   text-decoration: underline;
 }
 
-/* Growth Agent page only (see $bodyClass in cms-admin/pages/growth-agent.php)
-   — .panel itself has no padding by design (tables/.panel__head/.form-grid
-   provide their own), but the "Style rules" / "Maintenance" panels on this
-   page drop a bare .section-lead / <form> directly inside a .panel with no
-   wrapping card, so text/controls end up flush against the panel border.
-   Scoped to .page-growth-agent instead of changing .section-lead globally,
-   since most of its usages elsewhere sit in page-header toolbars that are
-   already correctly padded by the page layout. Also drops .section-lead's
-   default max-width:56ch here — that's meant for short page-header leads,
-   but inside a full-width panel it left an empty gap on the right instead
-   of the paragraph using the panel's actual width. */
-.page-growth-agent .panel > .section-lead {
+/* Any .section-lead (or plain <p>) sitting directly inside a .panel right
+   after .panel__head — .panel itself has no padding by design (tables/
+   .panel__head/.form-grid provide their own), so a bare description
+   paragraph dropped straight into the panel with no wrapping card ends up
+   flush against the panel border while .panel__head's own 18px 20px
+   padding pushes the title inward — the two end up misaligned (found in
+   livescore-api-settings.php's "Tambah Cabang Sport Baru" and sitemaps.php's
+   "Sitemap Settings", 24 Jul 2026; growth-agent.php's "Style rules"/
+   "Maintenance" panels already relied on a page-scoped version of this same
+   fix, generalized here instead of duplicated per page). Doesn't touch
+   .section-lead usages in page-header toolbars (.toolbar__left) — those
+   sit outside any .panel and are already correctly aligned by the page
+   layout, so this selector's specificity (.panel > .section-lead) leaves
+   them alone. */
+.panel > .section-lead {
   padding: 14px 20px 16px;
   margin-top: 0;
   max-width: none;
   line-height: 1.6;
 }
 
-.page-growth-agent .panel > .section-lead + form {
+.panel > .section-lead + form {
   padding: 0 20px 20px;
 }
 
@@ -1801,7 +1804,6 @@ body.admin-body {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.5;
-  max-width: 56ch;
 }
 
 .module-note {
@@ -1843,6 +1845,14 @@ body.admin-body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   padding: 18px 20px;
+  /* Default `stretch` makes every field's grid cell match the tallest
+     cell in its row — so a field with a long <small> hint (e.g. Cabang
+     Sport) stretches its shorter neighbor's cell too, pushing whatever
+     comes next in that column down to align with the tall cell's bottom
+     instead of sitting right under its own field. `start` sizes each
+     cell to its own content, so uneven hint-text length in one column
+     never misaligns the next field in the other column. */
+  align-items: start;
 }
 
 .form-stack {
@@ -2017,6 +2027,26 @@ body.admin-body {
   font-weight: 400;
   color: var(--muted);
   line-height: 1.55;
+}
+
+/* Featured/OG image live preview (pages.php) — reuses .field__hint's sizing,
+   just swaps the color for the "image failed to load" message. */
+.field__hint--error { color: var(--danger-text); }
+
+/* .field__hint's own `display: block` (above) has author-stylesheet
+   specificity, which beats the UA stylesheet's `[hidden] { display: none }`
+   rule at equal specificity — so toggling the `hidden` attribute on a
+   .field__hint element (as the image-preview error hint does) silently did
+   nothing without this override. */
+.field__hint[hidden] { display: none; }
+
+/* Featured/OG image live preview thumbnail — sits between the path input
+   and "Choose from Media Library", so it reads as a preview of what's
+   currently in the field above it, not a separate upload widget. */
+.js-pg-img-preview {
+  margin: 8px 0 0;
+  max-width: 160px;
+  max-height: 100px;
 }
 
 /* A bordered sub-section inside a form-grid, used to group a related

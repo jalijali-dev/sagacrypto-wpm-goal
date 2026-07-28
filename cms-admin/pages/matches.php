@@ -85,11 +85,11 @@ $STATUS_LABELS = [
     'FT' => 'Selesai', 'PST' => 'Ditunda', 'CANC' => 'Dibatalkan',
 ];
 
-$pageTitle = 'Matches';
+$pageTitle = 'Football Matches';
 $currentNav = 'matches';
 $breadcrumbs = [
     ['label' => 'Dashboard', 'href' => cms_dashboard_href()],
-    ['label' => 'Matches', 'href' => ''],
+    ['label' => 'Football Matches', 'href' => ''],
 ];
 
 require dirname(__DIR__) . '/includes/header.php';
@@ -101,8 +101,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
 <section class="admin-stack">
     <div class="toolbar">
         <div class="toolbar__left">
-            <h2 class="section-title">Matches</h2>
-            <p class="section-lead">Jadwal &amp; skor pertandingan — data diisi otomatis oleh <code>cron/sync_fixtures.php</code>, read-only di sini.</p>
+            <h2 class="section-title">Football Matches</h2>
+            <p class="section-lead">Jadwal &amp; skor pertandingan sepak bola — data diisi otomatis oleh <code>cron/sync_fixtures.php</code>, read-only di sini.</p>
             <p style="margin:6px 0 0;font-size:12.5px;">
                 <?php if ($lastSyncedAt !== null) : ?>
                     <span class="pill pill--ok">●</span> Data terakhir disinkronkan: <strong><?= cms_esc(date('d M Y, H:i', strtotime($lastSyncedAt))) ?></strong> <span style="opacity:.6;">(<?= cms_esc($lastSyncedRelative) ?>)</span>
