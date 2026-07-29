@@ -673,9 +673,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <label class="field">Meta title
                 <input type="text" name="meta_title" value="<?= cms_esc($val($editRow, 'meta_title')) ?>">
             </label>
-            <label class="field">Meta keywords
-                <input type="text" name="meta_keywords" value="<?= cms_esc($val($editRow, 'meta_keywords')) ?>" placeholder="pisahkan dengan koma">
-            </label>
+            <!-- Meta keywords disembunyikan dari UI (29 Jul 2026) — field ini
+                 tersimpan di DB tapi tidak pernah dirender ke <head> halaman
+                 publik manapun (Google sendiri sudah mengabaikan tag ini
+                 sejak 2009), jadi cuma bikin bingung admin tanpa efek SEO
+                 nyata. Tetap dikirim sebagai hidden input supaya nilai lama
+                 yang sudah tersimpan tidak ke-null-kan setiap kali artikel
+                 ini disave. -->
+            <input type="hidden" name="meta_keywords" value="<?= cms_esc($val($editRow, 'meta_keywords')) ?>">
             <label class="field" style="grid-column: 1 / -1;">Canonical URL
                 <input type="text" name="canonical_url" value="<?= cms_esc($val($editRow, 'canonical_url')) ?>" placeholder="Kosongkan = pakai URL artikel ini">
             </label>
@@ -859,9 +864,9 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <label class="field">Meta title
                 <input type="text" name="meta_title">
             </label>
-            <label class="field">Meta keywords
-                <input type="text" name="meta_keywords" placeholder="pisahkan dengan koma">
-            </label>
+            <!-- Meta keywords disembunyikan dari UI (29 Jul 2026) — lihat
+                 catatan di form edit di atas untuk alasannya. -->
+            <input type="hidden" name="meta_keywords" value="">
             <label class="field" style="grid-column: 1 / -1;">Canonical URL
                 <input type="text" name="canonical_url" placeholder="Kosongkan = pakai URL artikel ini">
             </label>
