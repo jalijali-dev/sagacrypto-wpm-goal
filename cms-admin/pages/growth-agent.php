@@ -413,6 +413,23 @@ $safeCount = static function (PDO $pdo, string $sql): int {
     }
 };
 
+// ── Artikel Terpopuler (by total views) — NOT gated by $gscConnected, this
+// reads pages.views directly (already populated by wpm_increment_views()
+// in artikel.php), not GSC data at all. Read-only, no action buttons.
+$topViewedArticles = [];
+try {
+    $topViewedStmt = $pdo->query(
+        "SELECT page_id, title, slug, views
+           FROM pages
+          WHERE status = 'published'
+          ORDER BY views DESC
+          LIMIT 10"
+    );
+    $topViewedArticles = $topViewedStmt->fetchAll();
+} catch (Throwable $e) {
+    $topViewedArticles = [];
+}
+
 $statsCards = [
     ['label' => 'Disetujui / Siap', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'ready'"), 'hint' => 'Menunggu eksekusi'],
     ['label' => 'Berjalan', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'running'"), 'hint' => 'Sedang berjalan'],
@@ -479,9 +496,10 @@ $statusPill = [
 $gscSettings = cms_gsc_get_settings($pdo);
 $gscConnected = !empty($gscSettings['is_active']) && !empty($gscSettings['site_url']);
 
-// ── GSC aggregate stats + Top Queries ──
+// ── GSC aggregate stats + Top Queries + Top Pages ──
 $gscAggregate = null;
 $gscTopQueries = [];
+$gscTopPages = [];
 if ($gscConnected) {
     try {
         $aggRow = $pdo->query(
@@ -509,9 +527,22 @@ if ($gscConnected) {
               LIMIT 10'
         );
         $gscTopQueries = $topStmt->fetchAll();
+
+        $topPagesStmt = $pdo->query(
+            "SELECT g.page_url, g.matched_page_id, p.title AS page_title,
+                    SUM(g.clicks) AS clicks, SUM(g.impressions) AS impressions,
+                    AVG(g.position) AS position
+               FROM gsc_query_data g
+               LEFT JOIN pages p ON p.page_id = g.matched_page_id
+              GROUP BY g.page_url, g.matched_page_id, p.title
+              ORDER BY impressions DESC
+              LIMIT 10"
+        );
+        $gscTopPages = $topPagesStmt->fetchAll();
     } catch (Throwable $e) {
         $gscAggregate = null;
         $gscTopQueries = [];
+        $gscTopPages = [];
     }
 }
 
@@ -732,6 +763,30 @@ require dirname(__DIR__) . '/includes/alerts.php';
                                 <td><?= number_format($qImpressions) ?></td>
                                 <td><?= cms_esc((string) $qCtr) ?>%</td>
                                 <td><?= cms_esc((string) round((float) $q['position'], 1)) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <h4 style="margin:20px 0 8px;padding:0 20px;">Halaman Teratas</h4>
+            <div class="table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr><th>Artikel</th><th>Klik</th><th>Impresi</th><th>CTR</th><th>Posisi</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($gscTopPages === []) : ?>
+                            <tr><td colspan="5" class="muted">Belum ada data.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($gscTopPages as $pg) : ?>
+                            <?php $pImpressions = (int) $pg['impressions']; $pCtr = $pImpressions > 0 ? round(((int) $pg['clicks'] / $pImpressions) * 100, 2) : 0.0; ?>
+                            <tr>
+                                <td><?= $pg['page_title'] ? cms_esc((string) $pg['page_title']) : cms_esc((string) $pg['page_url']) ?></td>
+                                <td><?= number_format((int) $pg['clicks']) ?></td>
+                                <td><?= number_format($pImpressions) ?></td>
+                                <td><?= cms_esc((string) $pCtr) ?>%</td>
+                                <td><?= cms_esc((string) round((float) $pg['position'], 1)) ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -1001,6 +1056,34 @@ require dirname(__DIR__) . '/includes/alerts.php';
         </div>
     </div>
     <?php endif; ?>
+
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Artikel Terpopuler</h3>
+            <span class="panel__meta">Total views, top 10</span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Total views sepanjang waktu (bukan data 28 hari terakhir) — jangan disalahartikan sebagai angka real-time terbaru.
+        </p>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Artikel</th><th>Views</th></tr>
+                </thead>
+                <tbody>
+                    <?php if ($topViewedArticles === []) : ?>
+                        <tr><td colspan="2" class="muted">Belum ada data.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($topViewedArticles as $art) : ?>
+                        <tr>
+                            <td><?= cms_esc((string) $art['title']) ?></td>
+                            <td><?= number_format((int) $art['views']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
 
     <div class="admin-grid admin-grid--stats">
         <?php foreach ($allStatsCards as $card) : ?>

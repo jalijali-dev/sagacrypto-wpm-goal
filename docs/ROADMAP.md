@@ -4,7 +4,7 @@
 > perubahan detail per-tanggal, lihat `SITEMAP.md` (root). Untuk konteks
 > cepat & konvensi teknis, lihat `HANDOFF.md` (root) dan `docs/DEV_GUIDE.md`.
 
-Terakhir diperbarui: **28 Juli 2026**
+Terakhir diperbarui: **28 Juli 2026** (deploy translation UI Growth Agent)
 
 ---
 
@@ -46,6 +46,27 @@ Prioritas berjalan / yang paling butuh perhatian saat ini.
   Detail lengkap troubleshooting (git lock, force-push, branch cPanel
   nyangkut, isi `.cpanel.yml`) sudah didokumentasikan di
   `docs/DEPLOY_WORKFLOW.md` buat referensi deploy berikutnya.
+- ✅ **Selesai (28 Jul 2026)** — UI admin Growth Agent (5 halaman:
+  `growth-agent.php`, `gsc-settings.php`, `indexing-issue-review.php`,
+  `cannibalization-review.php`, `seo-recommendation-review.php`)
+  diterjemahkan penuh ke Bahasa Indonesia, plus tombol "Refresh Data" di
+  `growth-agent.php` di-rename jadi "🔄 Fetch GSC Data" (emoji, bukan
+  Font Awesome — codebase ini belum pakai FA sama sekali). Sengaja
+  dibiarkan tetap Inggris atas keputusan user: tombol aksi utama
+  Approve/Reject/Generate/Apply (dianggap sudah familiar buat admin).
+  Commit `7931229`, di-deploy ke production via alur 3-langkah standar
+  (`docs/DEPLOY_WORKFLOW.md`) — `cp` selective ke 5 file di atas,
+  diverifikasi `diff` kosong semua.
+- ✅ **Selesai (28 Jul 2026)** — 2 panel dashboard baru di
+  `growth-agent.php`: **Halaman Teratas** (breakdown GSC per-artikel —
+  klik/impresi/CTR/posisi, dari `gsc_query_data` di-`GROUP BY page_url`,
+  di dalam guard `$gscConnected` sama seperti Top Queries) dan **Artikel
+  Terpopuler** (total views sepanjang waktu per artikel, dari kolom
+  `pages.views` yang sudah lama jalan lewat `wpm_increment_views()` —
+  sengaja diletakkan di LUAR guard `$gscConnected` karena tidak
+  bergantung ke GSC sama sekali). Tidak ada tabel/kolom DB baru, murni
+  `SELECT` read-only tanpa tombol aksi. Diverifikasi kode + query
+  langsung ke database live (bukan cuma lint) sebelum deploy.
 
 ## Next
 
