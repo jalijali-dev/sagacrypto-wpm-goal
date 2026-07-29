@@ -646,7 +646,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 </select>
             </label>
             <label class="field" style="grid-column: 1 / -1;">Tags
-                <input type="text" name="tags" value="<?= cms_esc($editTagsString) ?>" placeholder="pisahkan dengan koma, mis: Messi, Liga Inggris, transfer" list="pg-tags-datalist">
+                <input type="text" name="tags" class="js-tags-input" value="<?= cms_esc($editTagsString) ?>" placeholder="pisahkan dengan koma, mis: Messi, Liga Inggris, transfer" list="pg-tags-datalist">
             </label>
             <label class="field field--checkbox">
                 <input type="checkbox" name="is_featured" value="1"<?= (int) ($editRow['is_featured'] ?? 0) === 1 ? ' checked' : '' ?>>
@@ -838,7 +838,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 </select>
             </label>
             <label class="field" style="grid-column: 1 / -1;">Tags
-                <input type="text" name="tags" placeholder="pisahkan dengan koma, mis: Messi, Liga Inggris, transfer" list="pg-tags-datalist">
+                <input type="text" name="tags" class="js-tags-input" placeholder="pisahkan dengan koma, mis: Messi, Liga Inggris, transfer" list="pg-tags-datalist">
             </label>
             <label class="field field--checkbox">
                 <input type="checkbox" name="is_featured" value="1">
@@ -1423,6 +1423,113 @@ require dirname(__DIR__) . '/includes/alerts.php';
           btn.disabled = false;
         });
     });
+  });
+})();
+</script>
+<script>
+(function () {
+  // Tags field chip/pill UI — purely presentational. The original
+  // <input type="text" name="tags" ...> stays in the DOM (just hidden),
+  // still carrying the comma-separated string $pg_syncTags() expects in
+  // $_POST['tags'] — nothing server-side changes. Runs once per
+  // .js-tags-input on the page (edit form + add-new form both have one).
+  document.querySelectorAll('.js-tags-input').forEach(function (original) {
+    var datalistId = original.getAttribute('list');
+    var tags = original.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+
+    original.style.display = 'none';
+
+    var wrap = document.createElement('div');
+    wrap.className = 'pg-tags-chip-wrap';
+    wrap.style.display = 'flex';
+    wrap.style.flexWrap = 'wrap';
+    wrap.style.gap = '6px';
+    wrap.style.alignItems = 'center';
+    original.parentNode.insertBefore(wrap, original.nextSibling);
+
+    var chipsEl = document.createElement('div');
+    chipsEl.style.display = 'contents';
+    wrap.appendChild(chipsEl);
+
+    var typer = document.createElement('input');
+    typer.type = 'text';
+    typer.placeholder = tags.length ? '' : 'Ketik tag lalu Enter atau koma';
+    typer.style.flex = '1 1 160px';
+    typer.style.minWidth = '160px';
+    typer.style.border = 'none';
+    typer.style.outline = 'none';
+    typer.style.background = 'transparent';
+    typer.style.font = 'inherit';
+    typer.style.color = 'inherit';
+    if (datalistId) {
+      typer.setAttribute('list', datalistId);
+    }
+    wrap.appendChild(typer);
+
+    function syncOriginal() {
+      original.value = tags.join(', ');
+    }
+
+    function render() {
+      chipsEl.innerHTML = '';
+      tags.forEach(function (tag, index) {
+        var chip = document.createElement('span');
+        chip.className = 'pill pill--tag';
+
+        var label = document.createElement('span');
+        label.textContent = tag;
+        chip.appendChild(label);
+
+        var remove = document.createElement('span');
+        remove.className = 'js-tag-remove';
+        remove.textContent = '×';
+        remove.addEventListener('click', function () {
+          tags.splice(index, 1);
+          syncOriginal();
+          render();
+          typer.focus();
+        });
+        chip.appendChild(remove);
+
+        chipsEl.appendChild(chip);
+      });
+      syncOriginal();
+    }
+
+    function commitTyped() {
+      var value = typer.value.trim();
+      // Datalist autocomplete always resets against the freshly-emptied
+      // typer input below — native <datalist> behavior needs no extra
+      // wiring per commit, it just re-triggers because the input is empty
+      // again and still carries the same `list` attribute.
+      typer.value = '';
+      if (value === '') {
+        return;
+      }
+      var exists = tags.some(function (t) { return t.toLowerCase() === value.toLowerCase(); });
+      if (!exists) {
+        tags.push(value);
+        render();
+      }
+    }
+
+    typer.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        commitTyped();
+      } else if (e.key === 'Backspace' && typer.value === '' && tags.length > 0) {
+        e.preventDefault();
+        tags.pop();
+        syncOriginal();
+        render();
+      }
+    });
+
+    typer.addEventListener('blur', function () {
+      commitTyped();
+    });
+
+    render();
   });
 })();
 </script>

@@ -1605,6 +1605,28 @@ body.admin-body {
   color: var(--danger-text);
 }
 
+/* Tag chip pill — used by the Tags field's chip/pill UI on
+   cms-admin/pages/pages.php (see the .js-tags-input script). Solid accent
+   fill rather than the soft/muted tone the other .pill modifiers use, to
+   read clearly as an interactive, removable chip. */
+.pill--tag {
+  gap: 6px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.pill--tag .js-tag-remove {
+  cursor: pointer;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.pill--tag .js-tag-remove:hover {
+  opacity: 1;
+}
+
 /* ============================================================
    DASHBOARD WIDGETS
    ============================================================ */
