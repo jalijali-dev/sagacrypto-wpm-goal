@@ -177,6 +177,503 @@ function cms_growth_agent_ensure_legacy_status(PDO $pdo): void
 }
 
 /**
+ * SEO Intelligence (Topic Cluster + Content Conflict Detection) — separate
+ * lazy schema from cms_growth_agent_ensure_schema(), same
+ * cms_ensure_table() pattern, called explicitly from
+ * pages/seo-intelligence.php and pages/content-conflict-detection.php
+ * rather than folded into the main schema function, since this feature is
+ * its own self-contained addition.
+ *
+ * Both tables are full-recompute, not incremental: every "Generate" click
+ * deletes all existing rows for that table and inserts a fresh batch (see
+ * cms_growth_agent_generate_topic_clusters() /
+ * cms_growth_agent_generate_content_conflicts()) — same spirit as the
+ * existing "Hitung Ulang Opportunities" recompute.
+ */
+function cms_growth_agent_seo_intel_ensure_schema(PDO $pdo): void
+{
+    cms_ensure_table(
+        $pdo,
+        'growth_agent_topic_clusters',
+        "id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+         cluster_name VARCHAR(255) NOT NULL,
+         pillar_page_id INT UNSIGNED DEFAULT NULL COMMENT 'pages.page_id, app-level FK',
+         supporting_page_ids TEXT NOT NULL COMMENT 'JSON array of page_id',
+         status ENUM('needs_more_content','good_coverage') NOT NULL DEFAULT 'needs_more_content',
+         missing_content_json TEXT DEFAULT NULL COMMENT 'JSON array of {topic: string}',
+         generated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+         model_used VARCHAR(100) DEFAULT NULL,
+         KEY idx_gatc_status (status)"
+    );
+
+    cms_ensure_table(
+        $pdo,
+        'growth_agent_content_conflicts',
+        "id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+         page_a_id INT UNSIGNED NOT NULL,
+         page_b_id INT UNSIGNED NOT NULL,
+         risk ENUM('low','medium','high') NOT NULL DEFAULT 'low',
+         issue_text TEXT NOT NULL,
+         recommendation_text TEXT NOT NULL,
+         status ENUM('open','proposal_requested','dismissed') NOT NULL DEFAULT 'open',
+         generated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+         model_used VARCHAR(100) DEFAULT NULL,
+         KEY idx_gacc_status (status)"
+    );
+}
+
+/**
+ * Resolves a list of AI-provided slugs back to page_id, using ONLY the
+ * slug=>page_id map built from the exact candidate list sent in the prompt
+ * — never trusts a page_id the AI might return directly, since that's an
+ * easy hallucination surface. Unknown slugs are silently dropped.
+ *
+ * @param array<string, int> $slugToPageId
+ * @param list<mixed> $slugs
+ * @return list<int>
+ */
+function cms_growth_agent_seo_intel_resolve_slugs(array $slugToPageId, array $slugs): array
+{
+    $resolved = [];
+    foreach ($slugs as $slug) {
+        $slug = trim((string) $slug);
+        if ($slug !== '' && isset($slugToPageId[$slug])) {
+            $resolved[] = $slugToPageId[$slug];
+        }
+    }
+    return $resolved;
+}
+
+/**
+ * Topic Cluster generation — full recompute triggered by the "Generate
+ * Cluster" button on pages/seo-intelligence.php. Sends title + slug +
+ * meta_description (falling back to excerpt) for the 50 most recent
+ * published articles — NOT full content, too expensive for 50 articles in
+ * one call — and asks the AI to group them into topic clusters, pick a
+ * pillar per cluster, flag clusters that need more supporting content, and
+ * suggest missing subtopics.
+ *
+ * Same "generate + log" pattern as cms_growth_agent_generate_content_optimization()
+ * (cms_ai_resolve_agent + cms_ai_call_provider + cms_ai_extract_json), just
+ * writing into growth_agent_topic_clusters instead of growth_agent_jobs —
+ * this is a data table, not an action queue, since clustering itself isn't
+ * something to approve/reject.
+ *
+ * On parse/AI failure, existing rows are left untouched so the UI keeps
+ * showing the last successful generate instead of going blank.
+ *
+ * @return array{ok:bool, clusters_created:int, error:string}
+ */
+function cms_growth_agent_generate_topic_clusters(PDO $pdo): array
+{
+    try {
+        cms_growth_agent_seo_intel_ensure_schema($pdo);
+        require_once __DIR__ . '/ai-helpers.php';
+    } catch (Throwable $e) {
+        return ['ok' => false, 'clusters_created' => 0, 'error' => $e->getMessage()];
+    }
+
+    try {
+        $stmt = $pdo->query(
+            "SELECT page_id, title, slug, meta_description, excerpt
+               FROM pages
+              WHERE status = 'published'
+              ORDER BY created_at DESC
+              LIMIT 50"
+        );
+        $pages = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return ['ok' => false, 'clusters_created' => 0, 'error' => $e->getMessage()];
+    }
+
+    if ($pages === []) {
+        return ['ok' => false, 'clusters_created' => 0, 'error' => 'Tidak ada artikel published untuk dianalisis.'];
+    }
+
+    $slugToPageId = [];
+    $promptLines = [];
+    foreach ($pages as $page) {
+        $slug = (string) $page['slug'];
+        $slugToPageId[$slug] = (int) $page['page_id'];
+        $desc = trim((string) ($page['meta_description'] ?? ''));
+        if ($desc === '') {
+            $desc = trim((string) ($page['excerpt'] ?? ''));
+        }
+        $promptLines[] = "- slug: {$slug} | title: {$page['title']} | description: {$desc}";
+    }
+
+    $defaultSystemPrompt =
+        'You are the Growth Agent SEO strategist for Sagagoal, a livescore & sports news website. ' .
+        'You are given a list of published articles (slug, title, short description). Group them into ' .
+        'topic clusters based on topical similarity / shared search intent. For each cluster, pick the ' .
+        'single most comprehensive/representative article as the "pillar" and the rest as "supporting". ' .
+        'Mark a cluster status "needs_more_content" if it has fewer than 3 supporting articles, otherwise ' .
+        '"good_coverage". For every "needs_more_content" cluster, suggest 3-5 specific subtopics not yet ' .
+        'covered by any article in that cluster. Only reference slugs from the given list — never invent a ' .
+        'slug. Respond with ONLY a raw JSON object, no markdown, no code fences, no commentary, in exactly ' .
+        'this shape: {"clusters": [{"cluster_name": "...", "pillar_slug": "...", ' .
+        '"supporting_slugs": ["...", "..."], "status": "needs_more_content", "missing_topics": ["...", "..."]}]}';
+
+    $agent = cms_ai_resolve_agent($pdo, 'growth_agent', $defaultSystemPrompt);
+    if (!$agent['ok']) {
+        return ['ok' => false, 'clusters_created' => 0, 'error' => $agent['error']];
+    }
+
+    $userPrompt = "Articles (max 50, most recent published first):\n" . implode("\n", $promptLines);
+
+    try {
+        $result = cms_ai_call_provider(
+            $agent['provider'], $agent['api_key'], $agent['model'],
+            $userPrompt, $agent['system_prompt'], max($agent['max_tokens'], 1500), $agent['temperature']
+        );
+    } catch (Throwable $e) {
+        return ['ok' => false, 'clusters_created' => 0, 'error' => $e->getMessage()];
+    }
+
+    $parsed = $result['success'] ? cms_ai_extract_json($result['text']) : null;
+    if (!$result['success'] || !is_array($parsed) || !is_array($parsed['clusters'] ?? null)) {
+        $errorMessage = $result['success'] ? 'AI response was not in the expected format' : ('AI request failed: ' . $result['error']);
+        return ['ok' => false, 'clusters_created' => 0, 'error' => $errorMessage];
+    }
+
+    $rows = [];
+    foreach ($parsed['clusters'] as $cluster) {
+        if (!is_array($cluster)) {
+            continue;
+        }
+        $clusterName = trim((string) ($cluster['cluster_name'] ?? ''));
+        if ($clusterName === '') {
+            continue;
+        }
+        $pillarSlug = trim((string) ($cluster['pillar_slug'] ?? ''));
+        $pillarPageId = $pillarSlug !== '' && isset($slugToPageId[$pillarSlug]) ? $slugToPageId[$pillarSlug] : null;
+        $supportingIds = cms_growth_agent_seo_intel_resolve_slugs($slugToPageId, is_array($cluster['supporting_slugs'] ?? null) ? $cluster['supporting_slugs'] : []);
+        $status = (string) ($cluster['status'] ?? 'needs_more_content');
+        $status = in_array($status, ['needs_more_content', 'good_coverage'], true) ? $status : 'needs_more_content';
+        $missingTopics = [];
+        foreach (is_array($cluster['missing_topics'] ?? null) ? $cluster['missing_topics'] : [] as $topic) {
+            $topic = trim((string) $topic);
+            if ($topic !== '') {
+                $missingTopics[] = ['topic' => $topic];
+            }
+        }
+
+        $rows[] = [
+            'cluster_name' => $clusterName,
+            'pillar_page_id' => $pillarPageId,
+            'supporting_page_ids' => json_encode($supportingIds, JSON_UNESCAPED_UNICODE),
+            'status' => $status,
+            'missing_content_json' => $missingTopics !== [] ? json_encode($missingTopics, JSON_UNESCAPED_UNICODE) : null,
+            'model_used' => $agent['model'],
+        ];
+    }
+
+    if ($rows === []) {
+        return ['ok' => false, 'clusters_created' => 0, 'error' => 'AI tidak menghasilkan cluster yang valid.'];
+    }
+
+    try {
+        $pdo->beginTransaction();
+        $pdo->exec('DELETE FROM growth_agent_topic_clusters');
+        $ins = $pdo->prepare(
+            'INSERT INTO growth_agent_topic_clusters
+                (cluster_name, pillar_page_id, supporting_page_ids, status, missing_content_json, generated_at, model_used)
+             VALUES
+                (:cluster_name, :pillar_page_id, :supporting_page_ids, :status, :missing_content_json, NOW(), :model_used)'
+        );
+        foreach ($rows as $row) {
+            $ins->execute($row);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        return ['ok' => false, 'clusters_created' => 0, 'error' => $e->getMessage()];
+    }
+
+    return ['ok' => true, 'clusters_created' => count($rows), 'error' => ''];
+}
+
+/**
+ * Content Conflict Detection — full recompute triggered by the "Generate"
+ * button on pages/content-conflict-detection.php. Same 50-article
+ * title+description candidate set as
+ * cms_growth_agent_generate_topic_clusters() (kept identical on purpose so
+ * both features are analyzing the same snapshot), asks the AI to find
+ * PAIRS of articles whose search intent is too similar / at risk of
+ * cannibalizing each other.
+ *
+ * This is a distinct, AI-driven sibling to
+ * cms_growth_agent_log_cannibalization_review() — that one is pure SQL
+ * against real GSC click/impression data (a query IS already splitting
+ * traffic across pages), this one is a content-similarity heuristic over
+ * article metadata (a query MIGHT end up splitting traffic once both
+ * articles rank). Different evidence, different table, both still land on
+ * the same "Recommendation only" guardrail: neither ever merges/redirects
+ * anything automatically.
+ *
+ * @return array{ok:bool, conflicts_created:int, error:string}
+ */
+function cms_growth_agent_generate_content_conflicts(PDO $pdo): array
+{
+    try {
+        cms_growth_agent_seo_intel_ensure_schema($pdo);
+        require_once __DIR__ . '/ai-helpers.php';
+    } catch (Throwable $e) {
+        return ['ok' => false, 'conflicts_created' => 0, 'error' => $e->getMessage()];
+    }
+
+    try {
+        $stmt = $pdo->query(
+            "SELECT page_id, title, slug, meta_description, excerpt
+               FROM pages
+              WHERE status = 'published'
+              ORDER BY created_at DESC
+              LIMIT 50"
+        );
+        $pages = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return ['ok' => false, 'conflicts_created' => 0, 'error' => $e->getMessage()];
+    }
+
+    if ($pages === []) {
+        return ['ok' => false, 'conflicts_created' => 0, 'error' => 'Tidak ada artikel published untuk dianalisis.'];
+    }
+
+    $slugToPageId = [];
+    $promptLines = [];
+    foreach ($pages as $page) {
+        $slug = (string) $page['slug'];
+        $slugToPageId[$slug] = (int) $page['page_id'];
+        $desc = trim((string) ($page['meta_description'] ?? ''));
+        if ($desc === '') {
+            $desc = trim((string) ($page['excerpt'] ?? ''));
+        }
+        $promptLines[] = "- slug: {$slug} | title: {$page['title']} | description: {$desc}";
+    }
+
+    $defaultSystemPrompt =
+        'You are the Growth Agent SEO strategist for Sagagoal, a livescore & sports news website. ' .
+        'You are given a list of published articles (slug, title, short description). Find PAIRS of ' .
+        'articles whose search intent is too similar and at risk of cannibalizing each other in Google ' .
+        'Search (competing for the same queries). For each pair, give a risk level (low/medium/high), a ' .
+        'short issue description, and a free-text recommendation (e.g. differentiate intent, merge ' .
+        'candidate, distinguish angle). Only reference slugs from the given list — never invent a slug. ' .
+        'Only report pairs with a real, specific overlap — do not pad the list. Respond with ONLY a raw ' .
+        'JSON object, no markdown, no code fences, no commentary, in exactly this shape: ' .
+        '{"conflicts": [{"slug_a": "...", "slug_b": "...", "risk": "low", "issue": "...", "recommendation": "..."}]}';
+
+    $agent = cms_ai_resolve_agent($pdo, 'growth_agent', $defaultSystemPrompt);
+    if (!$agent['ok']) {
+        return ['ok' => false, 'conflicts_created' => 0, 'error' => $agent['error']];
+    }
+
+    $userPrompt = "Articles (max 50, most recent published first):\n" . implode("\n", $promptLines);
+
+    try {
+        $result = cms_ai_call_provider(
+            $agent['provider'], $agent['api_key'], $agent['model'],
+            $userPrompt, $agent['system_prompt'], max($agent['max_tokens'], 1500), $agent['temperature']
+        );
+    } catch (Throwable $e) {
+        return ['ok' => false, 'conflicts_created' => 0, 'error' => $e->getMessage()];
+    }
+
+    $parsed = $result['success'] ? cms_ai_extract_json($result['text']) : null;
+    if (!$result['success'] || !is_array($parsed) || !is_array($parsed['conflicts'] ?? null)) {
+        $errorMessage = $result['success'] ? 'AI response was not in the expected format' : ('AI request failed: ' . $result['error']);
+        return ['ok' => false, 'conflicts_created' => 0, 'error' => $errorMessage];
+    }
+
+    $rows = [];
+    foreach ($parsed['conflicts'] as $conflict) {
+        if (!is_array($conflict)) {
+            continue;
+        }
+        $slugA = trim((string) ($conflict['slug_a'] ?? ''));
+        $slugB = trim((string) ($conflict['slug_b'] ?? ''));
+        if ($slugA === '' || $slugB === '' || !isset($slugToPageId[$slugA], $slugToPageId[$slugB])) {
+            continue;
+        }
+        $pageAId = $slugToPageId[$slugA];
+        $pageBId = $slugToPageId[$slugB];
+        if ($pageAId === $pageBId) {
+            continue;
+        }
+        $issue = trim((string) ($conflict['issue'] ?? ''));
+        $recommendation = trim((string) ($conflict['recommendation'] ?? ''));
+        if ($issue === '' || $recommendation === '') {
+            continue;
+        }
+        $risk = (string) ($conflict['risk'] ?? 'low');
+        $risk = in_array($risk, ['low', 'medium', 'high'], true) ? $risk : 'low';
+
+        $rows[] = [
+            'page_a_id' => $pageAId,
+            'page_b_id' => $pageBId,
+            'risk' => $risk,
+            'issue_text' => $issue,
+            'recommendation_text' => $recommendation,
+            'model_used' => $agent['model'],
+        ];
+    }
+
+    if ($rows === []) {
+        return ['ok' => false, 'conflicts_created' => 0, 'error' => 'AI tidak menemukan konflik konten yang valid.'];
+    }
+
+    try {
+        $pdo->beginTransaction();
+        $pdo->exec('DELETE FROM growth_agent_content_conflicts');
+        $ins = $pdo->prepare(
+            'INSERT INTO growth_agent_content_conflicts
+                (page_a_id, page_b_id, risk, issue_text, recommendation_text, status, generated_at, model_used)
+             VALUES
+                (:page_a_id, :page_b_id, :risk, :issue_text, :recommendation_text, \'open\', NOW(), :model_used)'
+        );
+        foreach ($rows as $row) {
+            $ins->execute($row);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        return ['ok' => false, 'conflicts_created' => 0, 'error' => $e->getMessage()];
+    }
+
+    return ['ok' => true, 'conflicts_created' => count($rows), 'error' => ''];
+}
+
+/**
+ * Logs a 'topic_gap_article' manual_action job — clicking "Generate Saran
+ * Artikel" on a missing topic never calls the AI itself, it only queues a
+ * review row (same "click just surfaces a job, approve does the real
+ * work" split as cms_growth_agent_log_cannibalization_review()). The
+ * actual draft is only created if/when this job gets approved — see
+ * cms_growth_agent_create_article_draft_from_topic_gap().
+ */
+function cms_growth_agent_request_topic_gap_article(PDO $pdo, int $clusterId, string $missingTopic): int
+{
+    $inputBrief = [
+        'cluster_id' => $clusterId,
+        'missing_topic' => $missingTopic,
+    ];
+
+    return cms_growth_agent_log_job(
+        $pdo, 'topic_gap_article', 'growth_agent', null, 'manual_action', $inputBrief, null,
+        null, null, null, null, '', 'medium'
+    );
+}
+
+/**
+ * Logs a 'content_conflict_proposal' manual_action job for one
+ * growth_agent_content_conflicts row, and flips that row's status to
+ * 'proposal_requested' so content-conflict-detection.php can grey out the
+ * button instead of letting it be queued twice. No AI call here either —
+ * approving this job never merges/redirects anything (guardrail:
+ * "Recommendation only" — see cms_growth_agent_ensure... note in
+ * gsc-api.php for the same principle applied to cannibalization), it only
+ * marks the conflict as human-reviewed.
+ */
+function cms_growth_agent_request_conflict_proposal(PDO $pdo, int $conflictId): int
+{
+    $inputBrief = [
+        'conflict_id' => $conflictId,
+    ];
+
+    $jobId = cms_growth_agent_log_job(
+        $pdo, 'content_conflict_proposal', 'growth_agent', null, 'manual_action', $inputBrief, null,
+        null, null, null, null, '', 'medium'
+    );
+
+    if ($jobId > 0) {
+        try {
+            $pdo->prepare("UPDATE growth_agent_content_conflicts SET status = 'proposal_requested' WHERE id = :id")
+                ->execute(['id' => $conflictId]);
+        } catch (Throwable $e) {
+            // Best-effort — the job itself is already logged either way.
+        }
+    }
+
+    return $jobId;
+}
+
+/**
+ * Content Agent Adapter for 'topic_gap_article' — approving this job type
+ * creates a draft article from a topic-cluster's missing subtopic, exactly
+ * the same "Approve IS the execution step" exception as
+ * cms_growth_agent_create_article_draft_from_idea() (gsc_article_idea).
+ * Title is the missing topic itself, content is a single placeholder
+ * paragraph the operator fleshes out manually — there's no outline to
+ * build from here (unlike the GSC article-idea flow), just one topic
+ * string. Always produces a 'draft', never 'published'.
+ *
+ * Never throws — matches this file's own convention.
+ */
+function cms_growth_agent_create_article_draft_from_topic_gap(PDO $pdo, array $job, ?int $authorId): array
+{
+    try {
+        $inputBrief = json_decode((string) ($job['input_brief'] ?? ''), true);
+        $title = is_array($inputBrief) ? trim((string) ($inputBrief['missing_topic'] ?? '')) : '';
+        if ($title === '') {
+            return ['ok' => false, 'page_id' => 0, 'error' => 'Job input tidak berisi missing_topic yang valid.'];
+        }
+
+        require_once __DIR__ . '/functions.php';
+        require_once __DIR__ . '/sitemap-service.php';
+
+        $slugBase = cms_slugify($title);
+        if ($slugBase === '') {
+            $slugBase = 'topic-gap-' . (int) $job['id'];
+        }
+        $slug = $slugBase;
+        $dupCheck = $pdo->prepare('SELECT COUNT(*) FROM pages WHERE slug = :slug');
+        for ($suffix = 2; ; $suffix++) {
+            $dupCheck->execute(['slug' => $slug]);
+            if ((int) $dupCheck->fetchColumn() === 0) {
+                break;
+            }
+            $slug = $slugBase . '-' . $suffix;
+        }
+
+        $contentHtml = '<p><em>Draft dibuat otomatis oleh Growth Agent dari topik yang belum tercover di sebuah topic cluster — lengkapi konten di bawah sebelum publish.</em></p><p>[Tulis konten untuk topik ini]</p>';
+
+        $payload = [
+            'title'     => $title,
+            'slug'      => $slug,
+            'content'   => $contentHtml,
+            'status'    => 'draft',
+            'author_id' => $authorId,
+        ];
+
+        $insert = $pdo->prepare(
+            'INSERT INTO pages (title, slug, content, status, author_id, created_at, updated_at)
+             VALUES (:title, :slug, :content, :status, :author_id, NOW(), NOW())'
+        );
+        $insert->execute($payload);
+        $pageId = (int) $pdo->lastInsertId();
+
+        try {
+            cms_sitemap_ensure_schema($pdo);
+            cms_sitemap_on_article_save($pdo, [], $payload + [
+                'page_id'       => $pageId,
+                'noindex'       => 0,
+                'canonical_url' => null,
+                'published_at'  => null,
+            ]);
+        } catch (Throwable $e) {
+            error_log('[cms_growth_agent_create_article_draft_from_topic_gap] Sitemap upsert failed: ' . $e->getMessage());
+        }
+
+        return ['ok' => true, 'page_id' => $pageId, 'error' => ''];
+    } catch (Throwable $e) {
+        return ['ok' => false, 'page_id' => 0, 'error' => $e->getMessage()];
+    }
+}
+
+/**
  * Insert one growth_agent_jobs row. Never throws — a logging failure must
  * never break the actual generate response, matching cms_ai_log()'s own
  * philosophy in ai-helpers.php. Returns the new job id, or 0 on failure.

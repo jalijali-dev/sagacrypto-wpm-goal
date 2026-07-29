@@ -106,6 +106,7 @@ $aiNavGroup = [
         // Holds a raw Google service-account private key — same
         // superadmin-only tier as AI Credentials above, same reasoning.
         ['id' => 'gsc-settings', 'label' => 'GSC Settings', 'href' => cms_nav_href('gsc-settings.php'), 'icon' => 'key', 'roles' => $ROLES_SUPER_ONLY],
+        ['id' => 'seo-intelligence', 'label' => 'SEO Intelligence', 'href' => cms_nav_href('seo-intelligence.php'), 'icon' => 'search', 'roles' => $ROLES_ADMIN_UP],
     ],
 ];
 

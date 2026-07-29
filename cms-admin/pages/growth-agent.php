@@ -106,6 +106,38 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $redirect('Draft artikel berhasil dibuat — klik "Edit draft" di Job Terbaru untuk melengkapi & publish.');
         }
 
+        // SEO Intelligence Content Agent Adapter (topic_gap_article) — same
+        // "Approve IS the execution step" exception as gsc_article_idea
+        // above, see cms_growth_agent_create_article_draft_from_topic_gap().
+        if ($action === 'approve' && $jobRow['job_type'] === 'topic_gap_article' && empty($jobRow['page_id'])) {
+            $draftResult = cms_growth_agent_create_article_draft_from_topic_gap($pdo, $jobRow, $currentAdminId);
+
+            if (!$draftResult['ok']) {
+                $failUpd = $pdo->prepare("UPDATE growth_agent_jobs SET status = 'failed', error_message = :error, updated_at = NOW() WHERE id = :id");
+                $failUpd->execute(['error' => $draftResult['error'], 'id' => $jobId]);
+                $redirect('Gagal membuat draft artikel: ' . $draftResult['error'], 'error');
+            }
+
+            $ins = $pdo->prepare(
+                'INSERT INTO growth_agent_feedback (job_id, action, reviewed_by, created_at)
+                 VALUES (:job_id, :action, :reviewed_by, NOW())'
+            );
+            $ins->execute(['job_id' => $jobId, 'action' => 'approved_as_is', 'reviewed_by' => $currentAdminId]);
+
+            $upd = $pdo->prepare('UPDATE growth_agent_jobs SET status = :status, page_id = :page_id, updated_at = NOW() WHERE id = :id');
+            $upd->execute(['status' => 'succeeded', 'page_id' => $draftResult['page_id'], 'id' => $jobId]);
+
+            $redirect('Draft artikel berhasil dibuat — klik "Edit draft" di Job Terbaru untuk melengkapi & publish.');
+        }
+
+        // SEO Intelligence — content_conflict_proposal: approve is NEVER an
+        // execution step here, "Recommendation only" guardrail — this just
+        // falls through to the generic feedback+status-flip logic below,
+        // exactly like cannibalization_review/review_indexing_issue. No
+        // special-case block needed; noted here so the guardrail is
+        // explicit at the point where it would be easy to "accidentally"
+        // wire up real article changes later.
+
         $feedbackAction = $action === 'approve' ? 'approved_as_is' : 'rejected';
         $newStatus = $action === 'approve' ? 'succeeded' : 'failed';
 

@@ -68,6 +68,26 @@ Prioritas berjalan / yang paling butuh perhatian saat ini.
   `SELECT` read-only tanpa tombol aksi. Diverifikasi kode + query
   langsung ke database live (bukan cuma lint) sebelum deploy.
 
+- ✅ **Selesai (28 Jul 2026)** — Modul baru **SEO Intelligence** (Topic
+  Cluster + Content Conflict Detection), ditaruh di grup AI Management di
+  bawah GSC Settings. Dua tabel baru (`growth_agent_topic_clusters`,
+  `growth_agent_content_conflicts`, lazy auto-create). Trigger manual
+  doang (tombol "Generate"), batch dibatasi ke 50 artikel published
+  terbaru per generate (title+meta_description, bukan full content).
+  Topic Cluster: AI kelompokkan artikel jadi cluster, pilih pillar,
+  tandai cluster yang butuh konten tambahan + saran topik yang kurang.
+  Content Conflict Detection: AI cari pasangan artikel yang search
+  intent-nya kemiripan tinggi (beda dari Cannibalization Review yang
+  udah ada — itu murni dari data klik/impresi GSC asli, ini heuristik
+  dari kemiripan metadata artikel). Guardrail "Recommendation only"
+  dijaga penuh: "Generate Saran Artikel"/"Buat Proposal Konflik" cuma
+  bikin job `manual_action` baru di antrian review, approve untuk topic
+  gap article baru bikin draft artikel (`status='draft'`), approve untuk
+  conflict proposal TIDAK PERNAH mengubah/merge/redirect artikel apapun
+  — cuma menandai sudah ditinjau manusia. Slug dari AI di-resolve balik
+  ke `page_id` cuma dari daftar 50 artikel yang memang dikirim di
+  prompt (anti-halusinasi). Diverifikasi lewat pembacaan kode langsung.
+
 ## Next
 
 Antrian berikutnya setelah item "Now" selesai.
