@@ -4,7 +4,7 @@
 > perubahan detail per-tanggal, lihat `SITEMAP.md` (root). Untuk konteks
 > cepat & konvensi teknis, lihat `HANDOFF.md` (root) dan `docs/DEV_GUIDE.md`.
 
-Terakhir diperbarui: **28 Juli 2026** (deploy translation UI Growth Agent)
+Terakhir diperbarui: **31 Juli 2026** (setup backup otomatis mingguan ke Google Drive)
 
 ---
 
@@ -134,6 +134,22 @@ Diketahui perlu dikerjakan suatu saat, tapi bukan prioritas sekarang.
   kapan modul ini (app beneran) mulai dibangun.
 
 ---
+
+**31 Jul 2026:**
+- **Backup otomatis mingguan (DB + file) ke Google Drive** disetup penuh
+  di server (bukan di repo/sandbox — operasi cPanel murni). rclone
+  terpasang manual (binary standalone, tanpa root) dan terhubung ke
+  Google Drive lewat OAuth scope `drive.file` (least privilege). Script
+  `~/backup-weekly.sh` di server men-dump `sagagoal_cms` + tar seluruh
+  `public_html`, upload kedua file ke folder Drive `SagagoalBackups`,
+  lalu bersihkan backup lokal >14 hari. Dijadwalkan lewat Cron Job cPanel
+  (`0 2 * * 0`, tiap Minggu 02:00). Diverifikasi end-to-end: file muncul
+  benar di Google Drive, isi dump lengkap (31 tabel). Detail teknis penuh
+  (termasuk 2 bug nyata yang ketemu & diperbaiki saat setup — password DB
+  mengandung `#` kepotong sebagai komentar di file `.my.cnf`, dan
+  peringatan non-fatal `PROCESS privilege` dari `mysqldump` di
+  shared-hosting) ada di `docs/BACKUP_WORKFLOW.md`. Restore belum pernah
+  dites sungguhan — dicatat eksplisit sebagai gap di dokumen itu.
 
 ## Done (arsip ringkas)
 
