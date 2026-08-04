@@ -547,18 +547,331 @@ function cms_growth_agent_generate_content_conflicts(PDO $pdo): array
 }
 
 /**
+ * ── SEO-G0 Gate (GROWTH_AGENT_V2_PROPOSAL.md Fase A item 3, 4 Agu 2026) ──
+ *
+ * Deterministic topic-overlap pre-check run before either of the two
+ * new-article proposal paths logs its job: cms_growth_agent_generate_
+ * article_idea() (job_type 'gsc_article_idea', triggered from the
+ * "Peluang Terprioritas" panel on growth-agent.php) and
+ * cms_growth_agent_request_topic_gap_article() (job_type
+ * 'topic_gap_article', triggered from seo-intelligence.php). Both call
+ * cms_growth_agent_seo_g0_gate() below and merge its result into their own
+ * input_brief under the 'seo_g0_gate' key — no new table/column, per the
+ * doc's § 1b "Action Queue is the only queue" rule.
+ *
+ * Design decisions locked in by the proposal doc, not to be changed here:
+ *   - Advisory only, never blocking. The proposal is ALWAYS created
+ *     regardless of what the gate finds; a warning just rides along on
+ *     the same row for the operator to see during their normal
+ *     approve/reject review. No separate override control — there is
+ *     nothing to override since nothing is blocked.
+ *   - Deterministic only. All three checks are plain SQL + string/token
+ *     comparison, never an AI call — same "must be consistent and
+ *     auditable, not vary run to run" reasoning as the Opportunity Engine.
+ *   - Never throws. A gate failure must never prevent the proposal it's
+ *     attached to from being created (see cms_growth_agent_seo_g0_gate()'s
+ *     own docblock for how each sub-check degrades independently).
+ */
+
+/**
+ * Tokenizer + stopword filter for the gate's topic-similarity checks — not
+ * a general NLP tool, tuned specifically for short Indonesian sports-news
+ * phrases (GSC queries, article titles, topic-gap labels). Strips
+ * punctuation, lowercases, and removes both standard Indonesian function
+ * words AND terms that are generic on THIS site specifically ("jadwal",
+ * "hasil", "live", "streaming", "vs", "skor", "berita", ...). The
+ * sports-generic half matters as much as the stopword half: without it,
+ * almost every headline on a livescore site shares 3-4 of those words
+ * regardless of actual topic, which would flag nearly any two articles as
+ * "similar" and train operators to ignore the warning entirely.
+ *
+ * @return string[] unique, order-independent token set (empty array if
+ *                   nothing meaningful survives filtering)
+ */
+function cms_growth_agent_g0_tokenize(string $text): array
+{
+    static $stopwords = null;
+    if ($stopwords === null) {
+        $stopwords = array_flip([
+            // Indonesian function/structural words.
+            'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'dengan', 'pada', 'itu', 'ini', 'akan', 'atau',
+            'juga', 'saja', 'adalah', 'sudah', 'belum', 'tidak', 'ada', 'dalam', 'oleh', 'para', 'bisa',
+            'dapat', 'tersebut', 'seperti', 'karena', 'jika', 'kalau', 'saat', 'ketika', 'setelah',
+            'sebelum', 'terhadap', 'antara', 'hingga', 'sampai', 'lebih', 'sangat', 'banyak', 'semua',
+            'satu', 'dua', 'tiga', 'empat', 'lima', 'apa', 'siapa', 'kapan', 'dimana', 'mengapa',
+            'bagaimana', 'tanpa', 'atas', 'bawah', 'antar', 'per', 'nya', 'pun', 'tak', 'gak', 'ga',
+            'yg', 'dgn', 'utk', 'dr', 'pd', 'si', 'sang', 'tentang', 'soal', 'seputar', 'mengenai',
+            'bagi', 'agar', 'supaya', 'maupun', 'namun', 'tetapi', 'serta', 'usai',
+            // Generic on a livescore/sports-news site — present in most
+            // headlines regardless of topic, so keeping them would make
+            // nearly any two articles register as "similar".
+            'jadwal', 'hasil', 'live', 'streaming', 'vs', 'skor', 'score', 'berita', 'terbaru', 'update',
+            'video', 'highlight', 'highlights', 'prediksi', 'link', 'nonton', 'gratis', 'malam', 'hari',
+            'wib', 'babak', 'pertandingan', 'main', 'bermain', 'laga', 'duel', 'partai', 'leg',
+            'matchday', 'preview', 'recap', 'ringkasan', 'terkini', 'terkait', 'klasemen', 'statistik',
+            'info', 'cara', 'h2h',
+        ]);
+    }
+
+    $normalized = mb_strtolower($text);
+    $normalized = preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $normalized) ?? '';
+    $rawTokens = preg_split('/\s+/', trim($normalized)) ?: [];
+
+    $tokens = [];
+    foreach ($rawTokens as $token) {
+        if ($token === '' || mb_strlen($token) < 3 || isset($stopwords[$token])) {
+            continue;
+        }
+        $tokens[$token] = true;
+    }
+
+    return array_keys($tokens);
+}
+
+/**
+ * Overlap coefficient (|A∩B| / min(|A|,|B|)) between two token sets — used
+ * instead of Jaccard (|A∩B| / |A∪B|) because the two sides being compared
+ * are usually very different lengths: a GSC query or missing-topic label
+ * is typically 2-5 meaningful words, an article title 6-12. Jaccard would
+ * get dragged down by the longer side's unrelated words even when every
+ * meaningful word of the SHORT side is fully contained in the long one —
+ * exactly the "this query is already covered by that article" case this
+ * gate exists to catch. Overlap coefficient measures "how much of the
+ * smaller set is contained in the larger one", which matches that intent
+ * directly.
+ *
+ * @param string[] $a
+ * @param string[] $b
+ * @return array{coefficient: float, intersection: string[]}
+ */
+function cms_growth_agent_g0_overlap(array $a, array $b): array
+{
+    if ($a === [] || $b === []) {
+        return ['coefficient' => 0.0, 'intersection' => []];
+    }
+    $intersection = array_values(array_intersect($a, $b));
+    $minSize = min(count($a), count($b));
+
+    return [
+        'coefficient' => $minSize > 0 ? count($intersection) / $minSize : 0.0,
+        'intersection' => $intersection,
+    ];
+}
+
+/**
+ * Reads the gate's similarity_threshold/min_overlap_tokens, nested under
+ * opportunity_thresholds_json's 'seo_g0_gate' key (see
+ * cms_gsc_default_opportunity_thresholds() in gsc-api.php) — same
+ * array_replace_recursive-over-defaults pattern as every other threshold
+ * getter in this codebase, so an admin can retune it from the DB without a
+ * migration. Never throws.
+ *
+ * @return array{similarity_threshold: float, min_overlap_tokens: int}
+ */
+function cms_growth_agent_g0_gate_thresholds(PDO $pdo): array
+{
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $defaults = cms_gsc_default_opportunity_thresholds()['seo_g0_gate'];
+        $configured = cms_gsc_get_opportunity_thresholds($pdo)['seo_g0_gate'] ?? [];
+
+        return array_replace_recursive($defaults, is_array($configured) ? $configured : []);
+    } catch (Throwable $e) {
+        return ['similarity_threshold' => 0.6, 'min_overlap_tokens' => 2];
+    }
+}
+
+/**
+ * The gate itself. Runs three independent, deterministic checks against
+ * $topicText (the raw GSC query for 'gsc_article_idea', or the raw
+ * missing-topic label for 'topic_gap_article') and returns every match as
+ * a warning — never blocks, never throws (each sub-check is wrapped
+ * separately so one failing SQL query still lets the other two run, and a
+ * top-level catch guarantees an empty result rather than a fatal error no
+ * matter what goes wrong).
+ *
+ *   A. Another pending proposal (growth_agent_jobs, job_type IN
+ *      ('gsc_article_idea','topic_gap_article'), status IN
+ *      ('manual_action','ready','running')) already covers a similar
+ *      topic — compared against that job's OWN input_brief.query /
+ *      .missing_topic (the two job types store the proposed topic under
+ *      different keys, see cms_growth_agent_generate_article_idea() and
+ *      cms_growth_agent_request_topic_gap_article()).
+ *   B. A published article's title already covers a similar topic.
+ *   C. The topic overlaps an OPEN growth_agent_content_conflicts row, or
+ *      an OPEN gsc_opportunities row with recommended_action =
+ *      'cannibalization_review'.
+ *
+ * Each warning carries enough for an operator to act without re-deriving
+ * anything: which check, what it matched (type + id + a human label), and
+ * the computed similarity score.
+ *
+ * @return array{warnings: array<int, array<string, mixed>>}
+ */
+function cms_growth_agent_seo_g0_gate(PDO $pdo, string $jobType, string $topicText): array
+{
+    $warnings = [];
+
+    try {
+        $thresholds = cms_growth_agent_g0_gate_thresholds($pdo);
+        $simThreshold = (float) $thresholds['similarity_threshold'];
+        $minOverlap = (int) $thresholds['min_overlap_tokens'];
+
+        $topicTokens = cms_growth_agent_g0_tokenize($topicText);
+        if ($topicTokens === []) {
+            return ['warnings' => []];
+        }
+
+        $isMatch = static function (array $candidateTokens) use ($topicTokens, $simThreshold, $minOverlap): ?array {
+            $overlap = cms_growth_agent_g0_overlap($topicTokens, $candidateTokens);
+            if ($overlap['coefficient'] >= $simThreshold && count($overlap['intersection']) >= $minOverlap) {
+                return $overlap;
+            }
+            return null;
+        };
+
+        // ── A. Duplicate pending proposal ───────────────────────────────
+        try {
+            $pendingStmt = $pdo->query(
+                "SELECT id, job_type, status, input_brief FROM growth_agent_jobs
+                  WHERE job_type IN ('gsc_article_idea', 'topic_gap_article')
+                    AND status IN ('manual_action', 'ready', 'running')"
+            );
+            foreach ($pendingStmt->fetchAll() as $row) {
+                $brief = json_decode((string) $row['input_brief'], true);
+                if (!is_array($brief)) {
+                    continue;
+                }
+                $candidateText = $row['job_type'] === 'gsc_article_idea'
+                    ? (string) ($brief['query'] ?? '')
+                    : (string) ($brief['missing_topic'] ?? '');
+                if ($candidateText === '') {
+                    continue;
+                }
+                $match = $isMatch(cms_growth_agent_g0_tokenize($candidateText));
+                if ($match !== null) {
+                    $warnings[] = [
+                        'check' => 'duplicate_pending',
+                        'similarity' => round($match['coefficient'], 2),
+                        'ref_type' => 'job',
+                        'ref_id' => (int) $row['id'],
+                        'ref_label' => $candidateText,
+                        'message' => 'Sudah ada usulan lain (job #' . (int) $row['id'] . ', status ' . $row['status']
+                            . ') dengan topik serupa: "' . $candidateText . '".',
+                    ];
+                }
+            }
+        } catch (Throwable $e) {
+            // Check A degrades independently — B/C still run.
+        }
+
+        // ── B. Already covered by a published article ───────────────────
+        try {
+            $pagesStmt = $pdo->query("SELECT page_id, title FROM pages WHERE status = 'published'");
+            foreach ($pagesStmt->fetchAll() as $row) {
+                $match = $isMatch(cms_growth_agent_g0_tokenize((string) $row['title']));
+                if ($match !== null) {
+                    $warnings[] = [
+                        'check' => 'published_coverage',
+                        'similarity' => round($match['coefficient'], 2),
+                        'ref_type' => 'page',
+                        'ref_id' => (int) $row['page_id'],
+                        'ref_label' => (string) $row['title'],
+                        'message' => 'Sudah ada artikel published yang mirip: "' . $row['title']
+                            . '" (page_id ' . (int) $row['page_id'] . ').',
+                    ];
+                }
+            }
+        } catch (Throwable $e) {
+            // Check B degrades independently.
+        }
+
+        // ── C1. Open content conflicts ───────────────────────────────────
+        try {
+            $conflictStmt = $pdo->query(
+                "SELECT c.id, c.issue_text, a.page_id AS page_a_id, a.title AS page_a_title,
+                        b.page_id AS page_b_id, b.title AS page_b_title
+                   FROM growth_agent_content_conflicts c
+                   JOIN pages a ON a.page_id = c.page_a_id
+                   JOIN pages b ON b.page_id = c.page_b_id
+                  WHERE c.status = 'open'"
+            );
+            foreach ($conflictStmt->fetchAll() as $row) {
+                foreach (['page_a_title', 'page_b_title'] as $titleKey) {
+                    $match = $isMatch(cms_growth_agent_g0_tokenize((string) $row[$titleKey]));
+                    if ($match !== null) {
+                        $warnings[] = [
+                            'check' => 'conflict_flagged',
+                            'similarity' => round($match['coefficient'], 2),
+                            'ref_type' => 'conflict',
+                            'ref_id' => (int) $row['id'],
+                            'ref_label' => (string) $row[$titleKey],
+                            'message' => 'Topik ini bersinggungan dengan content conflict #' . (int) $row['id']
+                                . ' yang masih terbuka (melibatkan "' . $row[$titleKey] . '"): ' . $row['issue_text'],
+                        ];
+                        break; // one warning per conflict row is enough
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            // Check C1 degrades independently.
+        }
+
+        // ── C2. Open cannibalization-review opportunities ────────────────
+        try {
+            $oppStmt = $pdo->query(
+                "SELECT id, query_text FROM gsc_opportunities
+                  WHERE recommended_action = 'cannibalization_review' AND status = 'open'"
+            );
+            foreach ($oppStmt->fetchAll() as $row) {
+                $queryText = (string) ($row['query_text'] ?? '');
+                if ($queryText === '') {
+                    continue;
+                }
+                $match = $isMatch(cms_growth_agent_g0_tokenize($queryText));
+                if ($match !== null) {
+                    $warnings[] = [
+                        'check' => 'conflict_flagged',
+                        'similarity' => round($match['coefficient'], 2),
+                        'ref_type' => 'opportunity',
+                        'ref_id' => (int) $row['id'],
+                        'ref_label' => $queryText,
+                        'message' => 'Topik ini bersinggungan dengan opportunity cannibalization-review #'
+                            . (int) $row['id'] . ' yang masih terbuka (query: "' . $queryText . '").',
+                    ];
+                }
+            }
+        } catch (Throwable $e) {
+            // Check C2 degrades independently.
+        }
+    } catch (Throwable $e) {
+        return ['warnings' => []];
+    }
+
+    return ['warnings' => $warnings];
+}
+
+/**
  * Logs a 'topic_gap_article' manual_action job — clicking "Generate Saran
  * Artikel" on a missing topic never calls the AI itself, it only queues a
  * review row (same "click just surfaces a job, approve does the real
  * work" split as cms_growth_agent_log_cannibalization_review()). The
  * actual draft is only created if/when this job gets approved — see
  * cms_growth_agent_create_article_draft_from_topic_gap().
+ *
+ * Runs the SEO-G0 Gate against $missingTopic before logging — see the
+ * gate's own docblock above cms_growth_agent_seo_g0_gate(). Advisory only:
+ * the job is logged unconditionally, warnings (if any) just ride along in
+ * input_brief.seo_g0_gate for the operator to see during review.
  */
 function cms_growth_agent_request_topic_gap_article(PDO $pdo, int $clusterId, string $missingTopic): int
 {
+    $gateResult = cms_growth_agent_seo_g0_gate($pdo, 'topic_gap_article', $missingTopic);
+
     $inputBrief = [
         'cluster_id' => $clusterId,
         'missing_topic' => $missingTopic,
+        'seo_g0_gate' => $gateResult,
     ];
 
     return cms_growth_agent_log_job(
@@ -1137,10 +1450,18 @@ function cms_growth_agent_generate_article_idea(PDO $pdo, array $queryData, stri
         "Total impressions (recent window): {$impressions}\n" .
         "Average position: " . round($avgPosition, 1);
 
+    // SEO-G0 Gate (GROWTH_AGENT_V2_PROPOSAL.md Fase A item 3) — run against
+    // the raw query BEFORE the AI call, since the gate exists to catch
+    // overlap in the underlying topic itself, not in whatever title the AI
+    // happens to phrase. Advisory only: never affects whether generation
+    // proceeds, just rides along in input_brief for the operator's review.
+    $gateResult = cms_growth_agent_seo_g0_gate($pdo, 'gsc_article_idea', $query);
+
     $inputBrief = [
         'query' => $query,
         'gsc_impressions' => $impressions,
         'avg_position' => round($avgPosition, 1),
+        'seo_g0_gate' => $gateResult,
     ];
 
     try {

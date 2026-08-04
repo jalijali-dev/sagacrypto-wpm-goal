@@ -992,6 +992,28 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
             ],
             'cannibalization_min_share' => 0.20, // each competing page must hold >=20% of the query's total clicks (or impressions, if the query has zero clicks) — a page getting only a few % isn't real cannibalization, just an incidental secondary match
             'cannibalization_min_impressions' => 200, // total impressions for the query across all matched pages combined
+
+            // SEO-G0 Gate (GROWTH_AGENT_V2_PROPOSAL.md Fase A item 3, 4 Agu
+            // 2026) — deterministic topic-overlap pre-check run before a new
+            // article proposal (gsc_article_idea/topic_gap_article) is
+            // logged. See cms_growth_agent_seo_g0_gate() in
+            // growth-agent-service.php for how these are used. Nested here
+            // (not a new gsc_settings column) — same array_replace_recursive
+            // override pattern as 'effort'/'priority' above, tunable from
+            // the DB without a migration.
+            'seo_g0_gate' => [
+                // Overlap coefficient (|intersection| / min(|A|,|B|) of the
+                // two token sets, see cms_growth_agent_g0_overlap()) at or
+                // above which two topics count as "similar enough to warn
+                // about". 1.0 = the shorter side's meaningful words are
+                // entirely contained in the longer side.
+                'similarity_threshold' => 0.6,
+                // Minimum number of overlapping meaningful tokens required
+                // — guards against a single coincidental shared word (e.g.
+                // one shared team name) tripping the threshold by itself
+                // when one side only has 1-2 tokens after stopword removal.
+                'min_overlap_tokens' => 2,
+            ],
         ];
     }
 }

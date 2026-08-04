@@ -504,7 +504,7 @@ $summaryCards = [
 // ── Recent jobs — with page title (if linked) and whether feedback already exists ──
 $jobsStmt = $pdo->query(
     "SELECT j.id, j.job_type, j.agent_key, j.page_id, j.status, j.priority, j.model_used, j.latency_ms,
-            j.error_message, j.created_at, p.title AS page_title,
+            j.error_message, j.created_at, j.input_brief, p.title AS page_title,
             (SELECT COUNT(*) FROM growth_agent_feedback f WHERE f.job_id = j.id) AS feedback_count
        FROM growth_agent_jobs j
        LEFT JOIN pages p ON p.page_id = j.page_id
@@ -512,6 +512,23 @@ $jobsStmt = $pdo->query(
       LIMIT 25"
 );
 $jobs = $jobsStmt->fetchAll();
+
+// SEO-G0 Gate (GROWTH_AGENT_V2_PROPOSAL.md Fase A item 3) — warnings ride
+// along in input_brief.seo_g0_gate for 'gsc_article_idea'/'topic_gap_article'
+// jobs (see cms_growth_agent_seo_g0_gate() in growth-agent-service.php).
+// Decoded once here, not per-row, and only for the two job types that can
+// carry it — every other job type's input_brief is left completely alone.
+foreach ($jobs as &$jobForGate) {
+    $jobForGate['_g0_warnings'] = [];
+    if (!in_array($jobForGate['job_type'], ['gsc_article_idea', 'topic_gap_article'], true)) {
+        continue;
+    }
+    $briefDecoded = json_decode((string) $jobForGate['input_brief'], true);
+    if (is_array($briefDecoded) && is_array($briefDecoded['seo_g0_gate']['warnings'] ?? null)) {
+        $jobForGate['_g0_warnings'] = $briefDecoded['seo_g0_gate']['warnings'];
+    }
+}
+unset($jobForGate);
 
 // ── Style rules ──────────────────────────────────────────────────────
 $rulesStmt = $pdo->query(
@@ -1180,10 +1197,23 @@ require dirname(__DIR__) . '/includes/alerts.php';
         $canReviewIndexing = $job['_can_review_indexing'];
         $canReviewCannibalization = $job['_can_review_cannibalization'];
         ?>
+        <?php $g0Warnings = $job['_g0_warnings'] ?? []; ?>
         <tr>
             <td>
                 <strong><?= cms_esc((string) $job['job_type']) ?></strong><br>
                 <span class="muted">agent: <code><?= cms_esc((string) $job['agent_key']) ?></code></span>
+                <?php if ($g0Warnings !== []) : ?>
+                    <div style="margin-top:6px;">
+                        <span class="pill pill--warn" title="SEO-G0 Gate: usulan ini berpotensi tumpang tindih dengan sesuatu yang sudah ada — cek detail di bawah sebelum approve.">
+                            ⚠ SEO-G0: <?= count($g0Warnings) ?> peringatan
+                        </span>
+                        <div class="muted" style="font-size:11px;margin-top:4px;max-width:320px;">
+                            <?php foreach ($g0Warnings as $g0Warning) : ?>
+                                <div style="margin-top:2px;">• <?= cms_esc((string) ($g0Warning['message'] ?? '')) ?></div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
             </td>
             <td><?= $job['page_title'] ? cms_esc((string) $job['page_title']) : '<span class="muted">—</span>' ?></td>
             <td>
