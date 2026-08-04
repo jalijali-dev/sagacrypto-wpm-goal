@@ -125,6 +125,14 @@ $canonicalUrl = wpm_site_url(
         : ($leagueId > 0 ? wpm_url_kategori() . '?league=' . $leagueId : wpm_url_kategori($categorySlug !== '' ? $categorySlug : null))
 );
 
+/* ── Sidebar ad slot (right) — same pattern as artikel.php: rendered once
+ * here so the resulting HTML doubles as the "is an ad actually active"
+ * check and the markup to print. Empty slot => no <aside>, no reserved
+ * column (see .news-grid-layout variants in site.css). ── */
+$sidebarAdHtml = wpm_render_ad_slot($pdo, 'sidebar-right', 'category', $category['id'] ?? null);
+$hasSidebarAd = $sidebarAdHtml !== '';
+$newsGridLayoutClass = 'news-grid-layout' . ($hasSidebarAd ? ' news-grid-layout--right-only' : '');
+
 require __DIR__ . '/includes/site-header.php';
 ?>
 
@@ -156,28 +164,42 @@ require __DIR__ . '/includes/site-header.php';
     <div class="crypto-container">
         <?= wpm_render_ad_slot($pdo, 'above-article', 'category', $category['id'] ?? null) ?>
 
-        <?php if ($articles !== []) : ?>
-            <div class="crypto-grid crypto-grid--3">
-                <?php foreach ($articles as $i => $article) : ?>
-                    <?= wpm_article_card($article) ?>
-                    <?php if ($i === 4) : ?>
-                        </div><?= wpm_render_ad_slot($pdo, 'between-article-cards', 'category', $category['id'] ?? null) ?><div class="crypto-grid crypto-grid--3">
+        <div class="<?= wpm_esc($newsGridLayoutClass) ?>">
+            <div class="news-grid-layout__main">
+                <?php if ($articles !== []) : ?>
+                    <?php
+                    $betweenCardsAdHtml = wpm_render_ad_slot($pdo, 'between-article-cards', 'category', $category['id'] ?? null);
+                    $adInsertAfter = min(5, count($articles) - 1);
+                    ?>
+                    <div class="crypto-grid crypto-grid--3">
+                        <?php foreach ($articles as $i => $article) : ?>
+                            <?= wpm_article_card($article) ?>
+                            <?php if ($betweenCardsAdHtml !== '' && $i === $adInsertAfter) : ?>
+                                <div class="news-grid__ad"><?= $betweenCardsAdHtml ?></div>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <?php if ($totalPages > 1) : ?>
+                    <nav class="pagination" aria-label="Pagination">
+                        <a class="<?= $page <= 1 ? 'is-disabled' : '' ?>" href="<?= wpm_esc($paginateUrl(max(1, $page - 1))) ?>">&larr;</a>
+                        <?php for ($p = 1; $p <= $totalPages; $p++) : ?>
+                            <a class="<?= $p === $page ? 'is-current' : '' ?>" href="<?= wpm_esc($paginateUrl($p)) ?>"><?= $p ?></a>
+                        <?php endfor; ?>
+                        <a class="<?= $page >= $totalPages ? 'is-disabled' : '' ?>" href="<?= wpm_esc($paginateUrl(min($totalPages, $page + 1))) ?>">&rarr;</a>
+                    </nav>
                     <?php endif; ?>
-                <?php endforeach; ?>
+                <?php else : ?>
+                    <div class="empty-state"><?= wpm_icon('news') ?><p>Belum ada artikel untuk ditampilkan.</p></div>
+                <?php endif; ?>
             </div>
 
-            <?php if ($totalPages > 1) : ?>
-            <nav class="pagination" aria-label="Pagination">
-                <a class="<?= $page <= 1 ? 'is-disabled' : '' ?>" href="<?= wpm_esc($paginateUrl(max(1, $page - 1))) ?>">&larr;</a>
-                <?php for ($p = 1; $p <= $totalPages; $p++) : ?>
-                    <a class="<?= $p === $page ? 'is-current' : '' ?>" href="<?= wpm_esc($paginateUrl($p)) ?>"><?= $p ?></a>
-                <?php endfor; ?>
-                <a class="<?= $page >= $totalPages ? 'is-disabled' : '' ?>" href="<?= wpm_esc($paginateUrl(min($totalPages, $page + 1))) ?>">&rarr;</a>
-            </nav>
+            <?php if ($hasSidebarAd) : ?>
+            <aside class="news-grid-layout__sidebar">
+                <?= $sidebarAdHtml ?>
+            </aside>
             <?php endif; ?>
-        <?php else : ?>
-            <div class="empty-state"><?= wpm_icon('news') ?><p>Belum ada artikel untuk ditampilkan.</p></div>
-        <?php endif; ?>
+        </div>
     </div>
 </section>
 

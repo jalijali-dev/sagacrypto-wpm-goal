@@ -1299,10 +1299,16 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 .news-card__media img { width: 100%; height: 100%; object-fit: cover; }
 .news-card__media svg { width: 34px; height: 34px; color: var(--text-muted); }
 .news-card__body { padding: 20px; flex: 1; display: flex; flex-direction: column; }
-.news-card h3 { font-family: var(--font-display); font-size: 16px; line-height: 1.35; margin: 0 0 10px; }
+.news-card h3 {
+  font-family: var(--font-display); font-size: 16px; line-height: 1.35; margin: 0 0 10px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 .news-card h3 a { transition: color 0.16s ease; }
 .news-card h3 a:hover { color: var(--cyan); }
-.news-card p { font-size: 13.5px; color: var(--text-muted); line-height: 1.6; margin: 0 0 14px; flex: 1; }
+.news-card p {
+  font-size: 13.5px; color: var(--text-muted); line-height: 1.6; margin: 0 0 14px; flex: 1;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
 .news-card__meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-faint); margin-top: auto; }
 .news-card__meta svg { width: 13px; height: 13px; }
 .news-card__meta span { display: inline-flex; align-items: center; gap: 4px; }
@@ -1377,6 +1383,30 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 
 .article-layout__sidebar { position: sticky; top: 90px; display: flex; flex-direction: column; gap: 16px; }
 .article-layout__main { min-width: 0; }
+
+/* ============================================================
+   NEWS LISTING LAYOUT (kategori.php) — same "skip the <aside> entirely
+   when the slot is empty" pattern as .article-layout above.
+   ============================================================ */
+.news-grid-layout {
+  display: grid;
+  gap: 28px;
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+}
+.news-grid-layout--right-only { grid-template-columns: minmax(0, 1fr) 260px; }
+.news-grid-layout__sidebar { position: sticky; top: 90px; display: flex; flex-direction: column; gap: 16px; }
+.news-grid-layout__main { min-width: 0; }
+
+/* Sidebar active narrows the main column, so 3-up cards get cramped —
+   drop to 2 columns while the sidebar is present (desktop only; the
+   responsive rules below already collapse to 1/2 columns regardless). */
+.news-grid-layout--right-only .crypto-grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Ad rendered as a normal grid item that always spans the full row width,
+   so it can never leave a hole no matter how many columns the grid has
+   at the current breakpoint (see .crypto-grid--3 responsive overrides). */
+.news-grid__ad { grid-column: 1 / -1; }
 
 .article-head { margin-bottom: 24px; }
 .article-head__category {
@@ -1564,6 +1594,8 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 @media (max-width: 980px) {
   .article-layout { grid-template-columns: 1fr; }
   .article-layout__sidebar { position: static; flex-direction: row; overflow-x: auto; }
+  .news-grid-layout { grid-template-columns: 1fr; }
+  .news-grid-layout__sidebar { position: static; flex-direction: row; overflow-x: auto; }
   .news-card--row { flex-direction: column; }
   .news-card--row .news-card__media { width: 100%; height: 150px; }
 }
@@ -1571,6 +1603,12 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 @media (max-width: 640px) {
   .article-share { flex-wrap: wrap; }
   .crypto-nav__search-btn { display: none; }
+  /* Same specificity (0,2,0) as the desktop-only 2-col override above, but
+     declared later in the cascade so it wins the tie at this breakpoint —
+     without it the compound selector's specificity would beat the plain
+     .crypto-grid--3 mobile rule below the fold at line ~847, since media
+     queries don't add specificity of their own. */
+  .news-grid-layout--right-only .crypto-grid--3 { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 780px) {
