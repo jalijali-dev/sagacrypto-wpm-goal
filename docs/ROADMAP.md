@@ -197,6 +197,22 @@ Diketahui perlu dikerjakan suatu saat, tapi bukan prioritas sekarang.
   shared-hosting) ada di `docs/BACKUP_WORKFLOW.md`. Restore belum pernah
   dites sungguhan — dicatat eksplisit sebagai gap di dokumen itu.
 
+**5 Agu 2026:**
+- ✅ **Growth Agent v2 Fase B item 2 — Keyword Expansion Agent SELESAI.**
+  Job type `keyword_expansion_topic` di `growth_agent_jobs` (nol tabel/kolom
+  baru). Satu panggilan AI menganalisis 50 artikel published terbaru lalu
+  mengusulkan topik yang belum dicakup; tiap topik wajib lewat SEO-G0 Gate
+  sebelum jadi job; approve memakai ulang fungsi pembuat draft yang sudah
+  ada (selalu `status='draft'`). Tombol di `seo-intelligence.php`.
+  **Kontrol biaya struktural:** AI dipanggil tepat sekali per klik —
+  fungsi pemanggil AI dipisah dari loop per-topik yang nol panggilan AI —
+  plus cap ganda `max_topics_per_run` (di prompt DAN sebagai break keras).
+  Gate diperluas aditif supaya job type ini ikut di-dedup silang dengan
+  usulan dari pintu lain. **Belum teruji dengan AI sungguhan** (kredensial
+  lokal sengaja kosong, semua pengujian pakai mock) — kualitas topik baru
+  terukur setelah dicoba di production. Detail di
+  `docs/GROWTH_AGENT_V2_PROPOSAL.md` § Fase B.
+
 **4 Agu 2026:**
 - **Fix layout halaman listing berita + kolom iklan sidebar kanan** (commit
   `b454965`) — bug nyata: `kategori.php` memotong grid 3-kolom di TENGAH

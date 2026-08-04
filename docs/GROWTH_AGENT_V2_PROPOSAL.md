@@ -278,9 +278,62 @@ judgment manusia yang gak bisa digantikan AI dengan aman.
   bermakna.
 
   Rencana awal (arsip): **Internal Linking Agent** (lihat § 2).
-- **Keyword Expansion Agent** (lihat § 2) — ini yang paling nentuin bisa
-  gak nambah artikel yang nembus keyword sama sekali baru, bukan cuma
-  optimasi yang udah ranking.
+- ✅ **SELESAI 5 Agu 2026 — Keyword Expansion Agent.** Job type baru
+  `keyword_expansion_topic` (status `manual_action`) di `growth_agent_jobs`
+  — nol tabel/kolom baru.
+
+  ⚠️ **Koreksi terhadap § 2 dokumen ini:** § 2 menulis hasil agent ini
+  "masuk sebagai draft topic baru di Topic Cluster yang sudah ada". Itu
+  ditulis SEBELUM aturan § 1b ditetapkan dan bertentangan dengannya. Yang
+  berlaku: § 1b menang — semua usulan lewat `growth_agent_jobs`, tidak ada
+  tulisan langsung ke `growth_agent_topic_clusters`. Kalimat di § 2 sengaja
+  tidak dihapus (riwayat diskusi tidak dihapus, cuma dikoreksi di sini).
+
+  Alur: satu panggilan AI menganalisis 50 artikel published terbaru
+  (`context_articles_limit`) → mengusulkan topik yang relevan dengan niche
+  tapi belum dicakup → tiap topik **wajib lewat `cms_growth_agent_seo_g0_gate()`**
+  → jadi satu job per topik. Approve memakai ulang
+  `cms_growth_agent_create_article_draft_from_topic_gap()` persis (lewat
+  alias key `missing_topic` di `input_brief`), selalu `status='draft'`.
+  Tombol trigger di `seo-intelligence.php` — sebangun dengan "Generate
+  Cluster" yang sudah ada di situ karena sama-sama AI-driven (Internal
+  Linking Agent sengaja di `growth-agent.php` karena deterministik).
+
+  **Kontrol biaya — agent pertama yang memanggil AI di alur baru.** AI
+  dipanggil TEPAT SEKALI per klik, secara struktural: `scan_keyword_expansion()`
+  (memanggil AI, di luar loop mana pun) dipisah dari
+  `keyword_expansion_process_topics()` (loop per-topik, nol panggilan AI).
+  Pemisahan ini sekaligus membuat seluruh jalur bisa diuji tanpa kredensial.
+  Cap ganda: `max_topics_per_run` (default 5) dipakai di prompt DAN sebagai
+  `break` keras di loop, jadi model yang mengembalikan lebih banyak dari
+  yang diminta tetap terpotong. Keduanya tunable di
+  `opportunity_thresholds_json` key `keyword_expansion`.
+
+  Gate diperluas aditif: `keyword_expansion_topic` ditambahkan ke daftar
+  job type yang di-dedup silang di gate check A dan ke daftar badge-render
+  — jadi agent ini ikut saling-cek dengan usulan dari pintu lain, tidak
+  berdiri sendiri.
+
+  ⚠️ **Belum teruji dengan AI sungguhan.** Kredensial AI di DB lokal
+  sengaja dikosongkan, jadi seluruh pengujian memakai respons AI yang
+  di-mock. Yang SUDAH teruji: parsing respons (termasuk 4 mode rusak —
+  JSON invalid, bentuk salah, array kosong, topik string kosong), gate,
+  pembuatan job, badge UI, approve → draft, cap jumlah topik. Yang BELUM
+  teruji: panggilan HTTP nyata ke provider, dan — yang paling penting —
+  apakah prompt-nya benar-benar menghasilkan topik yang relevan dan tidak
+  generik di dunia nyata. Sama seperti kasus anchor "paling", kualitas ini
+  baru terukur di data asli. Saat pertama dipakai di production: klik
+  sekali, BACA topiknya dulu, jangan langsung approve.
+
+  Kompromi kecil yang diketahui: teks placeholder draft masih berbunyi
+  "topik yang belum tercover di sebuah topic cluster" meski asalnya dari
+  Keyword Expansion — sengaja dibiarkan supaya fungsi bersama
+  `create_article_draft_from_topic_gap()` tidak diubah. Perbaiki di task
+  terpisah kalau memang mengganggu.
+
+  Rencana awal (arsip): ini yang paling nentuin bisa gak nambah artikel
+  yang nembus keyword sama sekali baru, bukan cuma optimasi yang udah
+  ranking.
 - **Technical SEO Auditor** (lihat § 2).
 
 ### Fase C — Distribusi & closing the loop
