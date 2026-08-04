@@ -122,6 +122,84 @@ if ($ogImage !== null) {
 }
 
 $shareUrl = wpm_site_url(wpm_url_artikel($slug));
+$ogType = 'article';
+
+/* ── Structured data (schema.org JSON-LD): NewsArticle + BreadcrumbList ──
+ * GSC reports "URL has no enhancements" for articles — this site is a
+ * sports news portal, so NewsArticle is the practical requirement for Top
+ * Stories eligibility (plus richer date/thumbnail display in results).
+ * Built here (before site-header.php is required) and injected via
+ * $extraHead — see that file's own docblock for the convention. Separate
+ * from the FAQPage block further down in the body; that one is untouched.
+ */
+$wpmIso8601 = static function (?string $value): ?string {
+    if ($value === null || $value === '') {
+        return null;
+    }
+    $ts = strtotime($value);
+    return $ts !== false ? date(DATE_ATOM, $ts) : null;
+};
+
+$schemaSiteSettings = wpm_site_settings($pdo);
+$schemaSiteName = trim((string) ($schemaSiteSettings['site_name'] ?? '')) !== ''
+    ? (string) $schemaSiteSettings['site_name'] : 'Sagagoal';
+$schemaLogoUrl = wpm_image((string) ($schemaSiteSettings['logo_path'] ?? ''));
+if ($schemaLogoUrl !== null) {
+    $schemaLogoUrl = wpm_site_url(ltrim($schemaLogoUrl, '/'));
+}
+
+$newsArticleSchema = array_filter([
+    '@context' => 'https://schema.org',
+    '@type' => 'NewsArticle',
+    'headline' => mb_substr((string) $article['title'], 0, 110),
+    'description' => $pageDescription,
+    'datePublished' => $wpmIso8601($article['published_at'] ?? null),
+    'dateModified' => $wpmIso8601(!empty($article['updated_at']) ? (string) $article['updated_at'] : ($article['published_at'] ?? null)),
+    'mainEntityOfPage' => $canonicalUrl,
+    'author' => !empty($article['author_name'])
+        ? ['@type' => 'Person', 'name' => (string) $article['author_name']]
+        : ['@type' => 'Organization', 'name' => $schemaSiteName],
+    'publisher' => array_filter([
+        '@type' => 'Organization',
+        'name' => $schemaSiteName,
+        'logo' => $schemaLogoUrl !== null ? ['@type' => 'ImageObject', 'url' => $schemaLogoUrl] : null,
+    ]),
+], static fn ($value): bool => $value !== null);
+if ($ogImage !== null) {
+    $newsArticleSchema['image'] = [$ogImage];
+}
+
+// Mirrors the visual breadcrumb <nav> markup below exactly (Beranda →
+// Berita → category, category skipped when there isn't one).
+$breadcrumbItems = [
+    ['@type' => 'ListItem', 'position' => 1, 'name' => 'Beranda', 'item' => wpm_site_url('')],
+    ['@type' => 'ListItem', 'position' => 2, 'name' => 'Berita', 'item' => wpm_site_url(wpm_url_kategori())],
+];
+if (!empty($article['category_name'])) {
+    $breadcrumbItems[] = [
+        '@type' => 'ListItem',
+        'position' => 3,
+        'name' => (string) $article['category_name'],
+        'item' => wpm_site_url(wpm_url_kategori((string) $article['category_slug'])),
+    ];
+}
+$breadcrumbSchema = [
+    '@context' => 'https://schema.org',
+    '@type' => 'BreadcrumbList',
+    'itemListElement' => $breadcrumbItems,
+];
+
+// JSON_HEX_TAG escapes angle brackets as backslash-u-escaped hex
+// codepoints instead of leaving them literal — without it, a title
+// or description containing the substring "</script>" would close
+// this script block early and let the rest execute as JavaScript
+// (stored XSS via the editor role, the lowest-trust tier in the
+// 3-tier RBAC — see docs/DECISIONS.md 2026-07-15). Doesn't affect
+// JSON-LD validity: JSON parsers (Google's included) decode the
+// escaped codepoints back to the literal characters.
+$extraHead = ($extraHead ?? '')
+    . '<script type="application/ld+json">' . json_encode($newsArticleSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) . '</script>'
+    . '<script type="application/ld+json">' . json_encode($breadcrumbSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) . '</script>';
 
 /* ── Promo banners (cms-admin/pages/banners.php), placement="article" ── */
 $articleBanners = wpm_banners_active($pdo, 'article');
@@ -242,7 +320,7 @@ require __DIR__ . '/includes/site-header.php';
                         'name' => $i['question'],
                         'acceptedAnswer' => ['@type' => 'Answer', 'text' => $i['answer']],
                     ], $faqItems),
-                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?></script>
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?></script>
                 <?php endif; ?>
 
                 <?php if ($related !== []) : ?>

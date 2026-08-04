@@ -885,7 +885,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
 <?php require dirname(__DIR__) . '/includes/tinymce-media-picker.php'; ?>
 <script>
 (function () {
-    var PUBLIC_PREFIX = <?= json_encode(cms_public_base_prefix()) ?>;
+    var PUBLIC_PREFIX = <?= json_encode(cms_public_base_prefix(), JSON_HEX_TAG) ?>;
     var form = document.getElementById('ad-form');
     var typeSelect = document.getElementById('ad-type-select');
     var fieldGroups = {
@@ -916,8 +916,16 @@ require dirname(__DIR__) . '/includes/alerts.php';
     var categoryInput = document.getElementById('ad-target-category');
     var targetIdInput = document.getElementById('ad-target-id');
 
-    <?php echo 'var articleTitleToId = ' . json_encode(array_column($articleOptions, 'page_id', 'title')) . ';'; ?>
-    <?php echo 'var categoryNameToId = ' . json_encode(array_column($categoryOptions, 'id', 'name')) . ';'; ?>
+    <?php // JSON_HEX_TAG: article titles/category names come from user content
+    // (editor role can set article titles) and are printed straight into this
+    // <script> block — without it, a title containing "</script>" would close
+    // the block early and run as JavaScript in whichever admin has this page
+    // open (privilege escalation, not just self-XSS — see docs/DECISIONS.md
+    // 2026-07-15 on the 3-tier RBAC). \uXXXX-escaped angle brackets decode
+    // back to "<"/">" when the browser parses this object literal, so the
+    // articleTitleToId/categoryNameToId lookups below are unaffected. ?>
+    <?php echo 'var articleTitleToId = ' . json_encode(array_column($articleOptions, 'page_id', 'title'), JSON_HEX_TAG) . ';'; ?>
+    <?php echo 'var categoryNameToId = ' . json_encode(array_column($categoryOptions, 'id', 'name'), JSON_HEX_TAG) . ';'; ?>
 
     function syncScope() {
         var s = scopeSelect.value;

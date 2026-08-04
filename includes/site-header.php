@@ -14,6 +14,7 @@ if (!defined('WPM_BOOTSTRAPPED')) {
  *   $activeNav       (optional) — id from wpm_nav_menu() to highlight
  *   $canonicalUrl    (optional)
  *   $ogImage         (optional)
+ *   $ogType          (optional) — og:type value, defaults to "website"; artikel.php sets "article"
  *   $pageNoindex     (optional) — true emits <meta name="robots" content="noindex, nofollow">
  *   $extraHead       (optional) — raw HTML injected before </head>
  * Opens <main> at the end — the caller closes it and includes
@@ -81,7 +82,7 @@ $jsVer   = @filemtime($jsPath) ?: 1;
     <?php endif; ?>
     <meta property="og:title" content="<?= wpm_esc($pageTitle) ?>">
     <meta property="og:description" content="<?= wpm_esc($pageDescription) ?>">
-    <meta property="og:type" content="website">
+    <meta property="og:type" content="<?= wpm_esc($ogType ?? 'website') ?>">
     <?php if (!empty($ogImage)) : ?>
         <meta property="og:image" content="<?= wpm_esc($ogImage) ?>">
     <?php endif; ?>

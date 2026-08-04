@@ -230,7 +230,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
   // under the split-subdomain topology (wpm.sagagoal.com admin vs
   // sagagoal.com frontend), which is what silently hid the logo/favicon
   // preview in production while local dev (single-domain) looked fine.
-  var cmsBaseUrl = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : BASE_URL, JSON_UNESCAPED_SLASHES) ?>;
+  var cmsBaseUrl = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : BASE_URL, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?>;
   function previewUrl(path) {
     path = (path || '').trim();
     if (!path) return '';

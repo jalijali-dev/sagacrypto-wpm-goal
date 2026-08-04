@@ -304,7 +304,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
   // this script clobbers a correct preview with a stale BASE_URL-based one
   // that 404s under the split-subdomain topology (wpm.sagagoal.com admin
   // vs sagagoal.com frontend).
-  var cmsBaseUrl = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : BASE_URL, JSON_UNESCAPED_SLASHES) ?>;
+  var cmsBaseUrl = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : BASE_URL, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?>;
   function previewUrl(path) {
     path = (path || '').trim();
     if (!path) return '';

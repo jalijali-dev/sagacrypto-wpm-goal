@@ -1768,7 +1768,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
     // public-site base prefix the server used for the initial (edit-mode)
     // preview, so a manually-typed path resolves to the identical URL an
     // edit-mode reload would have produced.
-    var BASE_PREFIX = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : '', JSON_UNESCAPED_SLASHES) ?>;
+    var BASE_PREFIX = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : '', JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?>;
 
     function resolveUrl(path) {
         path = (path || '').trim();

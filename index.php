@@ -85,7 +85,7 @@ $tabUrl = static function (string $t) use ($activeSportKey): string {
 $pageTitle = 'Sagagoal — Livescore & Berita Bola Terkini';
 $pageDescription = 'Sagagoal adalah portal livescore dan berita sepak bola: jadwal pertandingan, skor live, klasemen liga, dan berita terkini.';
 $activeNav = 'beranda';
-$canonicalUrl = wpm_site_url('index.php');
+$canonicalUrl = wpm_site_url('');
 
 require __DIR__ . '/includes/site-header.php';
 ?>
