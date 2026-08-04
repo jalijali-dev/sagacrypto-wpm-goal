@@ -1038,6 +1038,33 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                 // published article), costlier per article scanned than
                 // the SEO recommendation scan.
                 'articles_scanned_per_run' => 10,
+
+                // Single-word anchor guardrails (added 4 Agu 2026 after a
+                // real production incident: the anchor "paling" — a bare
+                // Indonesian intensifier with zero topical meaning — was
+                // proposed and briefly applied live). A manual stopword
+                // list alone can never keep up with every generic
+                // Indonesian adverb/connector, so single-word anchors are
+                // instead gated on two independently-computed signals — see
+                // cms_growth_agent_il_candidate_phrases() in
+                // growth-agent-service.php:
+                //   1. Corpus document frequency: how large a fraction of
+                //      ALL published articles the word appears in. A word
+                //      that shows up across most of the site's articles is
+                //      generic BY DEFINITION, no matter what it is — this
+                //      self-adjusts as the article corpus grows, unlike a
+                //      fixed word list.
+                //   2. Mid-sentence capitalization in the SOURCE article's
+                //      own body text — a much stronger proper-noun signal
+                //      than title casing (most titles on this site are
+                //      Title Case, so capitalization THERE means nothing).
+                // A single word must pass BOTH to be eligible at all.
+                'single_word_max_df_ratio' => 0.2,
+                // Below this many published articles, document-frequency
+                // ratios are too noisy to trust (one article swings the
+                // percentage too much) — single-word anchors are disabled
+                // entirely rather than guessed at with unreliable stats.
+                'min_corpus_size_for_single_word' => 10,
             ],
         ];
     }

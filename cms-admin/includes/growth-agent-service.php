@@ -626,6 +626,17 @@ function cms_growth_agent_g0_tokenize(string $text): array
             'nilai', 'kontrak', 'gelar', 'trofi', 'turnamen', 'juara', 'pulang', 'datang', 'tampil',
             'sebagai', 'menjadi', 'menjadikannya', 'terbesar', 'jendela', 'winger', 'striker', 'gelandang',
             'bek', 'kiper', 'pemain', 'klub',
+            // Common Indonesian intensifiers/adverbs (added 4 Agu 2026
+            // after "paling" — a bare intensifier with zero topical
+            // meaning — was proposed and briefly applied as a live anchor
+            // in production). NOTE: this list is NOT the actual fix for
+            // that class of bug — see cms_growth_agent_il_candidate_
+            // phrases()'s corpus-document-frequency + mid-sentence-
+            // capitalization gating for the real, self-adjusting defense.
+            // This is just incidental cleanup so today's known offenders
+            // don't even reach that machinery.
+            'paling', 'sangat', 'lebih', 'sekali', 'bakal', 'makin', 'banget', 'cukup', 'agak',
+            'terlalu', 'amat', 'begitu', 'terus', 'masih', 'selalu', 'kembali', 'kian',
         ]);
     }
 
@@ -907,6 +918,7 @@ function cms_growth_agent_il_thresholds(PDO $pdo): array
     $fallback = [
         'similarity_threshold' => 0.5, 'min_overlap_tokens' => 2,
         'max_suggestions_per_article' => 3, 'articles_scanned_per_run' => 10,
+        'single_word_max_df_ratio' => 0.2, 'min_corpus_size_for_single_word' => 10,
     ];
     try {
         require_once __DIR__ . '/gsc-api.php';
@@ -920,18 +932,127 @@ function cms_growth_agent_il_thresholds(PDO $pdo): array
 }
 
 /**
- * Generates candidate anchor phrases from a target article's title, longest
- * first (up to 6 words, then single words >=5 chars as a last resort) —
- * every candidate is guaranteed to contain at least one non-stopword/
- * non-generic token (reuses cms_growth_agent_g0_tokenize() as the filter),
- * so a phrase built entirely of filler words (e.g. "yang paling") is never
- * proposed as an anchor. Longest-first means the most specific/natural
- * phrase wins if multiple candidates would match — "Piala Dunia 2026"
- * over just "Piala", for example.
+ * Corpus-wide token document-frequency, computed across every published
+ * article's title + plain-text content — this is the structural fix (not
+ * the stopword list) for single-word anchors like "paling" slipping
+ * through: a word that appears in a large fraction of ALL published
+ * articles is generic BY DEFINITION regardless of what the word actually
+ * is, and this self-adjusts as the site's article corpus grows, unlike a
+ * fixed manual list that can never enumerate every generic Indonesian
+ * adverb/connector in advance. See cms_growth_agent_il_candidate_phrases()
+ * for how this is used (gated behind a minimum corpus size — see that
+ * function's own note on why).
  *
+ * Never throws. Computed fresh per scan/apply call (not cached/persisted —
+ * no new table, and cheap at this site's current article volume; revisit
+ * if the corpus grows into the thousands).
+ *
+ * @return array{size: int, df: array<string, int>}
+ */
+function cms_growth_agent_il_corpus_stats(PDO $pdo): array
+{
+    try {
+        $rows = $pdo->query("SELECT title, content FROM pages WHERE status = 'published'")->fetchAll();
+    } catch (Throwable $e) {
+        return ['size' => 0, 'df' => []];
+    }
+
+    $df = [];
+    foreach ($rows as $row) {
+        try {
+            $plainText = trim(preg_replace('/\s+/u', ' ', strip_tags((string) $row['content'])) ?? '');
+            $tokens = array_unique(array_merge(
+                cms_growth_agent_g0_tokenize($plainText),
+                cms_growth_agent_g0_tokenize((string) $row['title'])
+            ));
+        } catch (Throwable $e) {
+            continue;
+        }
+        foreach ($tokens as $token) {
+            $df[$token] = ($df[$token] ?? 0) + 1;
+        }
+    }
+
+    return ['size' => count($rows), 'df' => $df];
+}
+
+/**
+ * Whether $word shows up ANYWHERE in $sourcePlainText capitalized AND in
+ * the middle of a sentence — a much stronger proper-noun signal than
+ * capitalization in a title, since most article titles on this site are
+ * Title Case (every word capitalized), so title casing alone says nothing
+ * about whether a specific word is actually a proper noun. A word
+ * appearing capitalized mid-sentence in real body prose (where only
+ * proper nouns and sentence-starts are normally capitalized in Indonesian)
+ * is a real, independent signal.
+ *
+ * "Mid-sentence" here means: the nearest non-whitespace character before
+ * the match, after trimming trailing whitespace, exists and is not a
+ * sentence-terminating '.', '!', or '?' — i.e. not the first word of the
+ * text and not the first word after a previous sentence ended.
+ *
+ * Never throws.
+ */
+function cms_growth_agent_il_is_proper_noun_candidate(string $word, string $sourcePlainText): bool
+{
+    $word = trim($word);
+    if ($word === '' || $sourcePlainText === '') {
+        return false;
+    }
+
+    try {
+        $pattern = '/(?<![\p{L}\p{N}])' . preg_quote($word, '/') . '(?![\p{L}\p{N}])/u';
+        if (!preg_match_all($pattern, $sourcePlainText, $matches, PREG_OFFSET_CAPTURE)) {
+            return false;
+        }
+
+        foreach ($matches[0] as [$matchText, $offset]) {
+            if ($matchText === '' || preg_match('/^\p{Lu}/u', $matchText) !== 1) {
+                continue; // this particular occurrence isn't capitalized
+            }
+            $before = rtrim(substr($sourcePlainText, 0, (int) $offset));
+            if ($before === '') {
+                continue; // very first word of the text — not a signal
+            }
+            $prevChar = mb_substr($before, -1);
+            if (in_array($prevChar, ['.', '!', '?'], true)) {
+                continue; // first word of a new sentence — not a signal
+            }
+            return true; // genuine mid-sentence capitalized occurrence
+        }
+        return false;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * Generates candidate anchor phrases from a target article's title, longest
+ * first (up to 6 words) — every multi-word candidate is guaranteed to
+ * contain at least 2 non-stopword/non-generic tokens (reuses
+ * cms_growth_agent_g0_tokenize() as the filter, trimmed off both edges
+ * first), so a phrase built mostly of filler words is never proposed.
+ * Longest-first means the most specific/natural phrase wins if multiple
+ * candidates would match — "Piala Dunia 2026" over just "Piala".
+ *
+ * Single-word candidates are the historically riskier case (a real
+ * production incident: the bare intensifier "paling" was proposed and
+ * briefly applied as an anchor — see this file's top note on the Internal
+ * Linking Agent). A single word is only ever offered as a candidate if it
+ * passes BOTH:
+ *   1. Corpus document frequency at or below 'single_word_max_df_ratio' —
+ *      see cms_growth_agent_il_corpus_stats(). Skipped entirely (no
+ *      single-word candidates at all) when the corpus is smaller than
+ *      'min_corpus_size_for_single_word', since document-frequency ratios
+ *      from a handful of articles are too noisy to trust.
+ *   2. Mid-sentence capitalized evidence in the SOURCE article's own body
+ *      text — see cms_growth_agent_il_is_proper_noun_candidate().
+ *
+ * @param array{size: int, df: array<string, int>} $corpusStats
+ * @param array<string, mixed> $thresholds
  * @return string[] ordered longest (most words) first
  */
-function cms_growth_agent_il_candidate_phrases(string $title): array
+function cms_growth_agent_il_candidate_phrases(string $title, array $corpusStats, string $sourcePlainText, array $thresholds): array
 {
     $words = preg_split('/\s+/u', trim($title)) ?: [];
     $words = array_values(array_filter($words, static fn ($w): bool => $w !== ''));
@@ -943,11 +1064,19 @@ function cms_growth_agent_il_candidate_phrases(string $title): array
     // A window can contain a meaningful word in the middle but a stopword
     // at either edge (e.g. a 4-word window ending in "di" or "trofi") —
     // that reads as an awkward, ungrammatical anchor even though the
-    // phrase as a whole "has a meaningful token" per
-    // cms_growth_agent_g0_tokenize(). Trim stopword words off both ends
-    // before accepting a candidate, so anchors always start and end on a
-    // real word.
+    // phrase as a whole "has a meaningful token". Trim stopword words off
+    // both ends before accepting a candidate, so anchors always start and
+    // end on a real word.
     $isStopword = static fn (string $word): bool => cms_growth_agent_g0_tokenize($word) === [];
+    // Titles carry their own punctuation attached to words ("2026,",
+    // "Dimulai!", "Leste:") — trimming only whole stopword words off the
+    // edges still leaves an edge word like "2026," dangling into the
+    // anchor as literal punctuation once matched against source text that
+    // also happens to have a comma there (a real anchor this produced:
+    // "Piala Dunia 2026," with a trailing comma). Strip leading/trailing
+    // punctuation from the edge words themselves, on top of the stopword
+    // trim, so an anchor never starts or ends on stray punctuation.
+    $stripEdgePunct = static fn (string $word): string => trim($word, "\"'“”‘’()[]{}«»,.;:!?…-");
 
     $phrases = [];
     $seen = [];
@@ -955,29 +1084,77 @@ function cms_growth_agent_il_candidate_phrases(string $title): array
     for ($len = $maxWords; $len >= 2; $len--) {
         for ($start = 0; $start + $len <= $n; $start++) {
             $slice = array_slice($words, $start, $len);
-            while ($slice !== [] && $isStopword($slice[0])) {
-                array_shift($slice);
+            while ($slice !== []) {
+                $clean = $stripEdgePunct($slice[0]);
+                if ($clean === '' || $isStopword($clean)) {
+                    array_shift($slice);
+                    continue;
+                }
+                $slice[0] = $clean;
+                break;
             }
-            while ($slice !== [] && $isStopword($slice[count($slice) - 1])) {
-                array_pop($slice);
+            while ($slice !== []) {
+                $lastIdx = count($slice) - 1;
+                $clean = $stripEdgePunct($slice[$lastIdx]);
+                if ($clean === '' || $isStopword($clean)) {
+                    array_pop($slice);
+                    continue;
+                }
+                $slice[$lastIdx] = $clean;
+                break;
             }
             if (count($slice) < 2) {
                 continue;
             }
             $phrase = implode(' ', $slice);
-            if (isset($seen[$phrase]) || cms_growth_agent_g0_tokenize($phrase) === []) {
+            // Requires >=2 MEANINGFUL tokens, not just >=2 words — a
+            // 2-word phrase like "yang penting" (if "yang" survived
+            // mid-phrase rather than at an edge) still only carries one
+            // real topical token and reads as vague, not identifying.
+            if (isset($seen[$phrase]) || count(cms_growth_agent_g0_tokenize($phrase)) < 2) {
                 continue;
             }
             $seen[$phrase] = true;
             $phrases[] = $phrase;
         }
     }
-    foreach ($words as $word) {
-        if (mb_strlen($word) >= 5 && !$isStopword($word) && !isset($seen[$word])) {
+
+    $corpusSize = (int) ($corpusStats['size'] ?? 0);
+    $minCorpusSize = (int) ($thresholds['min_corpus_size_for_single_word'] ?? 10);
+    $maxDfRatio = (float) ($thresholds['single_word_max_df_ratio'] ?? 0.2);
+    if ($corpusSize >= $minCorpusSize) {
+        foreach ($words as $rawWord) {
+            $word = $stripEdgePunct($rawWord);
+            if (mb_strlen($word) < 5 || $isStopword($word) || isset($seen[$word])) {
+                continue;
+            }
+            $tokenized = cms_growth_agent_g0_tokenize($word);
+            if ($tokenized === []) {
+                continue;
+            }
+            $df = (int) ($corpusStats['df'][$tokenized[0]] ?? 0);
+            if (($df / $corpusSize) > $maxDfRatio) {
+                continue; // too generic across the corpus — the "paling" case
+            }
+            if (!cms_growth_agent_il_is_proper_noun_candidate($word, $sourcePlainText)) {
+                continue; // no independent evidence this reads as a proper noun
+            }
             $seen[$word] = true;
             $phrases[] = $word;
         }
     }
+
+    // Stopword/punctuation trimming means how many REAL words survive a
+    // window varies unpredictably by starting position — a 6-word window
+    // that trims down to 3 words can end up earlier in $phrases than a
+    // different 6-word window (a few positions later) that trims down to
+    // 4, simply because it was generated first. Sort by actual surviving
+    // word count (descending) so "longest first" is genuinely true of the
+    // final list, not just of the raw windows that produced it — usort()
+    // is stable since PHP 8.0, so candidates with equal word counts keep
+    // their original relative order. Single-word candidates (0 spaces)
+    // naturally sort last without special-casing.
+    usort($phrases, static fn (string $a, string $b): int => substr_count($b, ' ') <=> substr_count($a, ' '));
 
     return $phrases;
 }
@@ -1097,13 +1274,14 @@ function cms_growth_agent_il_verify_safe(string $newHtml, int $expectedAnchorCou
  *
  * @return array{html: string, anchor_text: string, context: string}|null
  */
-function cms_growth_agent_il_insert_link(string $html, string $targetTitle, string $targetHref): ?array
+function cms_growth_agent_il_insert_link(string $html, string $targetTitle, string $targetHref, array $corpusStats, array $thresholds): ?array
 {
     if (trim($html) === '' || trim($targetTitle) === '' || trim($targetHref) === '') {
         return null;
     }
 
-    $phrases = cms_growth_agent_il_candidate_phrases($targetTitle);
+    $sourcePlainText = trim(preg_replace('/\s+/u', ' ', strip_tags($html)) ?? '');
+    $phrases = cms_growth_agent_il_candidate_phrases($targetTitle, $corpusStats, $sourcePlainText, $thresholds);
     if ($phrases === []) {
         return null;
     }
@@ -1231,6 +1409,10 @@ function cms_growth_agent_scan_internal_links(PDO $pdo): array
             return $stats;
         }
 
+        // Computed once per scan (not per candidate pair) — corpus size at
+        // this site's current volume makes recomputing per-pair wasteful.
+        $corpusStats = cms_growth_agent_il_corpus_stats($pdo);
+
         $sourceStmt = $pdo->prepare(
             "SELECT page_id, title, slug, content FROM pages WHERE status = 'published' ORDER BY updated_at ASC LIMIT " . $articlesLimit
         );
@@ -1298,7 +1480,7 @@ function cms_growth_agent_scan_internal_links(PDO $pdo): array
                 }
 
                 $targetHref = 'artikel/' . rawurlencode((string) $target['slug']);
-                $insertResult = cms_growth_agent_il_insert_link((string) $source['content'], (string) $target['title'], $targetHref);
+                $insertResult = cms_growth_agent_il_insert_link((string) $source['content'], (string) $target['title'], $targetHref, $corpusStats, $thresholds);
                 if ($insertResult === null) {
                     continue; // no safe anchor point — skip, do not force it
                 }
@@ -1393,7 +1575,9 @@ function cms_growth_agent_apply_internal_link(PDO $pdo, int $jobId): array
         }
 
         $targetHref = 'artikel/' . rawurlencode($targetSlug);
-        $result = cms_growth_agent_il_insert_link($currentContent, $targetTitle, $targetHref);
+        $corpusStats = cms_growth_agent_il_corpus_stats($pdo);
+        $thresholds = cms_growth_agent_il_thresholds($pdo);
+        $result = cms_growth_agent_il_insert_link($currentContent, $targetTitle, $targetHref, $corpusStats, $thresholds);
         if ($result === null) {
             return ['ok' => false, 'error' => 'Tidak ditemukan tempat penyisipan yang aman di konten SAAT INI — kemungkinan artikel sudah diedit sejak usulan ini dibuat. Tidak ada perubahan diterapkan.'];
         }
