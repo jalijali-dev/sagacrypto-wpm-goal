@@ -225,9 +225,50 @@ judgment manusia yang gak bisa digantikan AI dengan aman.
   `gsc_settings.opportunity_thresholds_json` key `internal_linking`,
   tunable tanpa migrasi.
 
-  ⚠️ **Keterbatasan yang diketahui:** sama seperti SEO-G0 Gate — pengujian
-  kualitas usulan hanya di 4 artikel (2 asli + 2 artikel uji) karena DB
-  lokal cuma punya 2 artikel published, sementara production punya 24.
+  **Perbaikan kualitas anchor (4 Agu 2026, setelah dipakai di production).**
+  Usulan pertama di data asli menghasilkan anchor **"paling"** — satu kata
+  keterangan generik yang sempat diterapkan ke artikel live lalu dihapus
+  manual operator. Penyebabnya dua: stopword belum mencakup kata
+  keterangan/penguat umum bahasa Indonesia, dan frasa satu kata boleh jadi
+  anchor tanpa syarat tambahan.
+
+  Perbaikannya **sengaja BUKAN sekadar menambah stopword** — itu jadi
+  kejar-kejaran tanpa akhir (besok "sangat", lusa "banget"). Yang dipakai
+  dua sinyal independen, keduanya WAJIB lolos untuk anchor satu-kata:
+  (1) **document frequency korpus** — token yang muncul di lebih dari
+  `single_word_max_df_ratio` (default 20%) artikel published otomatis
+  dianggap generik, tanpa peduli kata apa itu, dan ambangnya menyesuaikan
+  sendiri seiring korpus bertambah; (2) **kapitalisasi tengah kalimat di
+  body artikel sumber** — bukan di judul, karena judul di situs ini banyak
+  Title Case sehingga kapitalisasinya bukan sinyal. Fungsi pengeceknya
+  eksplisit melewati kemunculan di awal kalimat (setelah `.`/`!`/`?`) dan
+  kata pertama teks, jadi yang lolos benar-benar nama diri. Kalau artikel
+  published < `min_corpus_size_for_single_word` (default 10), anchor
+  satu-kata dimatikan total karena statistik korpus sekecil itu tidak bisa
+  dipercaya. Anchor multi-kata tetap wajib ≥2 token bermakna.
+
+  **Bukti solusinya struktural, bukan tambal sulam:** saat diuji di 24
+  artikel asli, aturan baru menahan anchor **"Akhir"** (`df = 5/24 = 21%`,
+  tepat di atas ambang) — kata yang tidak pernah didaftarkan ke stopword
+  mana pun dan tidak pernah disebut di brief. Kalau perbaikannya cuma
+  menambah "paling" ke stopword, kasus ini akan lolos.
+
+  Dua bug lain ditemukan devs sendiri saat pengujian dan ikut diperbaiki:
+  anchor bisa berakhir dengan tanda baca menggantung ("Piala Dunia 2026,"),
+  dan urutan "terpanjang duluan" ternyata tidak selalu benar setelah frasa
+  dipangkas (menghasilkan "Indonesia vs Timor" alih-alih "Indonesia vs
+  Timor Leste") — diperbaiki dengan sort berdasarkan panjang hasil akhir.
+
+  Hasil akhir di 24 artikel asli: 9 usulan — 7 bagus, 2 cukup, 0 jelek;
+  5 dari 9 identik dengan logika lama, jadi tidak ada regresi yang
+  mematikan usulan yang benar.
+
+  ⚠️ **Pelajaran proses:** dua masalah kualitas (ambang SEO-G0 tidak
+  tervalidasi, dan bug anchor ini) sama-sama lolos karena DB lokal cuma
+  punya 2 artikel published sementara production punya 24. Sejak 4 Agu 2026
+  DB production disalin ke lokal (dengan seluruh kredensial dikosongkan —
+  AI, GSC, dan API-Football) supaya pengujian berikutnya dilakukan di
+  volume data yang nyata. Riwayat keterbatasan lama:
   Kualitas anchor & relevansi target baru benar-benar terukur setelah
   dijalankan di data asli. Risiko rendah karena tidak ada yang berubah
   tanpa operator menekan Apply. Catatan proses: scan pertama menghasilkan

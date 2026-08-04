@@ -285,6 +285,25 @@ Diketahui perlu dikerjakan suatu saat, tapi bukan prioritas sekarang.
   seluruhnya dalam satu transaksi ber-rollback, plus guard anti-timpa kalau
   artikel sudah diedit sejak usulan dibuat. Detail lengkap di
   `docs/GROWTH_AGENT_V2_PROPOSAL.md` § Fase B.
+- **Perbaikan kualitas anchor Internal Linking Agent** — usulan pertama di
+  data production menghasilkan anchor "paling" (kata generik) yang sempat
+  diterapkan ke artikel live. Diperbaiki secara struktural, bukan dengan
+  menambah stopword: anchor satu-kata sekarang wajib lolos DUA sinyal —
+  document frequency korpus (≤20% artikel, self-adjusting) DAN kapitalisasi
+  tengah-kalimat di body artikel sumber. Terbukti menahan kasus kedua
+  ("Akhir", df 21%) yang tidak pernah didaftarkan manual. Sekalian
+  memperbaiki 2 bug yang ditemukan devs saat pengujian: tanda baca
+  menggantung di ujung anchor, dan urutan "terpanjang duluan" yang salah
+  setelah frasa dipangkas. Detail di `docs/GROWTH_AGENT_V2_PROPOSAL.md`
+  § Fase B.
+- **DB production disalin ke lokal untuk pengujian** — dua masalah kualitas
+  berturut-turut lolos karena DB lokal cuma punya 2 artikel published
+  sementara production punya 24. Dump di-import ke lokal dengan SELURUH
+  kredensial dikosongkan lebih dulu: AI (`ai_credentials`), GSC
+  (`gsc_settings`), dan API-Football (`sports_api_settings` — kategori ini
+  tidak ada di instruksi awal, ditemukan & dikonfirmasi devs sendiri;
+  tanpa itu cron sync lokal bisa menembak API production). Password admin
+  lokal di-set ulang, bukan dari hash production.
 - **Backup otomatis dipindah ke akun Google Drive baru** — remote rclone
   lama `gdrive` dihapus & dibuat ulang dengan nama `WPM-sagagoal` (ketemu
   bug: "Edit existing remote" + jawab "No" di prompt refresh token TIDAK
