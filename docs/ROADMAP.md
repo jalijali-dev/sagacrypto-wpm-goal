@@ -272,6 +272,19 @@ Diketahui perlu dikerjakan suatu saat, tapi bukan prioritas sekarang.
   belum tervalidasi di volume data asli (DB lokal cuma 2 artikel published,
   production 24) — perlu evaluasi & tuning setelah dipakai. Detail lengkap
   di `docs/GROWTH_AGENT_V2_PROPOSAL.md` § Fase A.
+- ✅ **Growth Agent v2 Fase B item 1 — Internal Linking Agent SELESAI.**
+  Job type `internal_link_suggestion` di `growth_agent_jobs` (nol tabel
+  baru), deteksi deterministik tanpa AI dengan memakai ulang tokenizer
+  SEO-G0. Tombol "Scan Internal Linking" di `growth-agent.php`, halaman
+  review baru `cms-admin/pages/internal-link-review.php`. Penyisipan link
+  lewat DOMDocument+XPath (atribut/`<a>`/`<script>` mustahil tersentuh),
+  UTF-8 aman, hanya kemunculan pertama, dengan verifikasi ulang HTML hasil
+  — kalau tidak aman, operasi dibatalkan total. Apply menulis ke
+  `pages.content` TAPI menyimpan snapshot isi lama ke `output_json` dulu
+  (CMS ini tidak punya sistem revisi, jadi itu satu-satunya jalan pulang),
+  seluruhnya dalam satu transaksi ber-rollback, plus guard anti-timpa kalau
+  artikel sudah diedit sejak usulan dibuat. Detail lengkap di
+  `docs/GROWTH_AGENT_V2_PROPOSAL.md` § Fase B.
 - **Backup otomatis dipindah ke akun Google Drive baru** — remote rclone
   lama `gdrive` dihapus & dibuat ulang dengan nama `WPM-sagagoal` (ketemu
   bug: "Edit existing remote" + jawab "No" di prompt refresh token TIDAK

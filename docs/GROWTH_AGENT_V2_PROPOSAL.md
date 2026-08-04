@@ -186,7 +186,57 @@ judgment manusia yang gak bisa digantikan AI dengan aman.
 
 ### Fase B — Akselerator ranking (dampak langsung ke posisi Google)
 
-- **Internal Linking Agent** (lihat § 2).
+- ✅ **SELESAI 4 Agu 2026 — Internal Linking Agent.** Job type baru
+  `internal_link_suggestion` (status `manual_action`) di `growth_agent_jobs`
+  yang sudah ada — nol tabel baru, sesuai § 1b. Deteksi **deterministik
+  tanpa AI**: memakai ulang `cms_growth_agent_g0_tokenize()`/
+  `cms_growth_agent_g0_overlap()` milik SEO-G0 Gate (bukan tokenizer kedua),
+  mencari artikel published A yang teksnya memuat frasa cocok dengan
+  judul/topik artikel B sementara A belum punya link menuju B. Trigger
+  manual lewat tombol "Scan Internal Linking" di `growth-agent.php`.
+  Halaman review sendiri `internal-link-review.php` (Apply/Reject) karena
+  operator wajib melihat anchor + kalimat sekitarnya sebelum memutuskan —
+  alasan yang sama dengan `seo-recommendation-review.php`.
+
+  **Penyisipan link aman secara struktural** (bukan `str_replace`/regex ke
+  HTML mentah): DOMDocument + XPath
+  `text()[not(ancestor::a) and not(ancestor::script) and not(ancestor::style)]`
+  — nilai atribut mustahil tersentuh karena XPath hanya menyisir text node.
+  Jebakan UTF-8 klasik DOMDocument ditangani lewat prefix
+  `<?xml encoding=...>`. Batas kata pakai regex Unicode-aware
+  `(?<![\p{L}\p{N}])`. Hanya kemunculan pertama yang valid yang ditautkan
+  (menautkan kata sama berkali-kali itu pola spam). Setelah penyisipan,
+  HTML hasil di-parse ulang & dihitung jumlah `<a>`-nya
+  (`cms_growth_agent_il_verify_safe()`) — kalau tidak sesuai, seluruh
+  operasi dibatalkan daripada menyimpan HTML rusak ke artikel live.
+
+  **Apply menulis ke `pages.content`, tapi snapshot isi lama WAJIB disimpan
+  dulu** ke `growth_agent_jobs.output_json` (`previous_content` + panjang +
+  waktu + anchor + target) — ini syarat mutlak karena **CMS ini tidak punya
+  sistem revisi artikel sama sekali**, jadi snapshot itu satu-satunya jalan
+  pulang kalau hasilnya keliru. Seluruh operasi (update konten + insert
+  feedback + update job) dibungkus satu transaksi dengan `rollBack()`, jadi
+  tidak mungkin ada kondisi setengah jadi. Ada guard tambahan: sebelum
+  apply, konten **saat ini** dicek ulang — kalau artikel sudah diedit orang
+  sejak usulan dibuat, apply ditolak dengan pesan jelas alih-alih menimpa
+  perubahan editor. `pages.status` tidak pernah disentuh.
+
+  Ambang & batas jumlah usulan per artikel di
+  `gsc_settings.opportunity_thresholds_json` key `internal_linking`,
+  tunable tanpa migrasi.
+
+  ⚠️ **Keterbatasan yang diketahui:** sama seperti SEO-G0 Gate — pengujian
+  kualitas usulan hanya di 4 artikel (2 asli + 2 artikel uji) karena DB
+  lokal cuma punya 2 artikel published, sementara production punya 24.
+  Kualitas anchor & relevansi target baru benar-benar terukur setelah
+  dijalankan di data asli. Risiko rendah karena tidak ada yang berubah
+  tanpa operator menekan Apply. Catatan proses: scan pertama menghasilkan
+  2 dari 6 usulan yang jelek (anchor berupa potongan kalimat tidak wajar);
+  diperbaiki dengan memperluas stopword istilah generik bursa-transfer +
+  memangkas tepi frasa supaya anchor selalu mulai/berakhir di kata
+  bermakna.
+
+  Rencana awal (arsip): **Internal Linking Agent** (lihat § 2).
 - **Keyword Expansion Agent** (lihat § 2) — ini yang paling nentuin bisa
   gak nambah artikel yang nembus keyword sama sekali baru, bukan cuma
   optimasi yang udah ranking.
