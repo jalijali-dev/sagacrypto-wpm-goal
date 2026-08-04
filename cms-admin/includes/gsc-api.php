@@ -482,9 +482,17 @@ if (!function_exists('cms_gsc_http_request')) {
      * (sites.list) all funnel through here.
      *
      * @param 'GET'|'POST' $method
+     * @param int $timeoutSeconds Default 20s matches every existing caller's
+     *            actual need (token exchange, searchAnalytics query,
+     *            sites.list) exactly — kept as the default so none of them
+     *            need to change. The Technical SEO Auditor's PageSpeed
+     *            Insights call (4 Agu 2026) is the first caller that needs
+     *            longer, since a single PSI run can legitimately take up to
+     *            ~30s — it passes its own value explicitly rather than this
+     *            default being raised for everyone.
      * @return array{ok:bool,status:int,body:string,error:?string}
      */
-    function cms_gsc_http_request(string $method, string $url, ?string $body = null, array $headers = []): array
+    function cms_gsc_http_request(string $method, string $url, ?string $body = null, array $headers = [], int $timeoutSeconds = 20): array
     {
         if (!function_exists('curl_init')) {
             return ['ok' => false, 'status' => 0, 'body' => '', 'error' => 'cURL extension is not available on this server.'];
@@ -494,7 +502,7 @@ if (!function_exists('cms_gsc_http_request')) {
         $opts = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_TIMEOUT        => 20,
+            CURLOPT_TIMEOUT        => $timeoutSeconds,
             CURLOPT_CONNECTTIMEOUT => 8,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_USERAGENT      => 'WPM-GrowthAgent-GSC/1.0',
@@ -1090,6 +1098,51 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                 // window — kept separately tunable since the two prompts
                 // serve different purposes even though the default matches.
                 'context_articles_limit' => 50,
+            ],
+
+            // Technical SEO Auditor (GROWTH_AGENT_V2_PROPOSAL.md Fase B
+            // item 3, 5 Agu 2026) — a read-only REPORT, not a proposal
+            // queue (see cms_growth_agent_tsa_run_content_checks()/
+            // cms_growth_agent_tsa_run_psi() in growth-agent-service.php).
+            // Its three checks have very different cost profiles, so each
+            // gets its own bound:
+            'technical_seo' => [
+                // Alt-text check: pure DB read (pages.content) + DOMDocument
+                // parse, no network at all — cheap enough to cover every
+                // published article in one click. 50 as a defensive
+                // ceiling, same order of magnitude as other "whole corpus"
+                // limits in this codebase (e.g. Topic Cluster's context).
+                'content_check_articles_per_run' => 50,
+                // Schema-markup check: fetches the article's OWN live URL
+                // over HTTP to confirm the NewsArticle/BreadcrumbList
+                // JSON-LD actually renders — fast per request (same
+                // server) but still a real network round trip 24+ times,
+                // so it's bounded too, just far more generously than PSI.
+                'schema_check_articles_per_run' => 24,
+                // Core Web Vitals via PageSpeed Insights: BY FAR the
+                // costliest check — a single PSI call can legitimately
+                // take up to ~30s, so this MUST stay small or PHP's
+                // execution time limit will kill the request before it
+                // finishes. Same "small per click" reasoning as
+                // cms_growth_agent_inspect_priority_urls()'s $limit
+                // (default 10) for the GSC URL Inspection API, just an
+                // even smaller default given PSI's much higher per-call
+                // cost (seconds vs tens of seconds).
+                'psi_urls_per_run' => 3,
+                // PSI's own responses can take up to ~30s to compute
+                // server-side — cms_gsc_http_request()'s normal 20s
+                // default (tuned for fast GSC endpoints) would cut that
+                // off mid-request. Passed explicitly by the PSI caller
+                // only; every other cms_gsc_http_request() caller keeps
+                // using the unchanged 20s default.
+                'psi_timeout_seconds' => 35,
+                // PSI performance score (0-100) at or below which a page
+                // counts as a "problem" worth surfacing in the report —
+                // matches Google's own public "poor" bucket boundary
+                // (0-49 poor, 50-89 needs improvement, 90-100 good), kept
+                // tunable rather than hardcoded in the report-filtering
+                // logic.
+                'psi_poor_score_threshold' => 50,
             ],
         ];
     }

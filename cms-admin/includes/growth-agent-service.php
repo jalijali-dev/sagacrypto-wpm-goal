@@ -1852,6 +1852,591 @@ function cms_growth_agent_scan_keyword_expansion(PDO $pdo): array
 }
 
 /**
+ * ── Technical SEO Auditor (GROWTH_AGENT_V2_PROPOSAL.md Fase B item 3,
+ *    5 Agu 2026) ──
+ *
+ * DIFFERENT IN KIND from every other agent in this file: this is a
+ * read-only REPORT, not a proposal that needs approve/reject. It never
+ * writes to growth_agent_jobs and never touches `pages` — confirmed
+ * precedent for this shape is the existing Feedback Loop / Before-After
+ * panel on growth-agent.php (cms_growth_agent_get_feedback_report()),
+ * which is also pure reporting with no approve/execute step. § 1b's "every
+ * proposal needs a job row" rule applies to things a human must DECIDE;
+ * there is no decision here, only information an operator acts on
+ * themselves in the article editor.
+ *
+ * Results persist in ONE new table, `growth_agent_technical_audits` —
+ * within § 1b's explicit allowance for "supporting tables that hold raw
+ * scan data" (as opposed to a second proposal queue, which is what's
+ * actually forbidden). One row per published article, upserted on every
+ * (re-)audit so an operator can see improvement after fixing something —
+ * same upsert-by-key shape as gsc_url_inspections.
+ *
+ * That same table ALSO holds exactly one extra row, keyed by page_id IS
+ * NULL, reserved for the optional PageSpeed Insights API key (encrypted
+ * via cms_ai_encrypt()/cms_ai_decrypt() — those two functions are
+ * generic AES-256-CBC helpers despite the "ai_" name, not intrinsically
+ * tied to ai_credentials). This is deliberate: the task budget was "at
+ * most ONE new table", and a second table just for one optional secret
+ * value isn't worth spending that budget on. page_id is NULLable and NOT
+ * part of a UNIQUE constraint specifically so this sentinel row can
+ * coexist with real per-article rows; single-settings-row enforcement
+ * happens in cms_growth_agent_tsa_save_psi_api_key() itself (check-then-
+ * write), not at the schema level.
+ *
+ * Three checks, deliberately very different in cost and therefore
+ * triggered/batched differently:
+ *   A. Alt text — cms_growth_agent_tsa_check_images(). Pure DB read +
+ *      DOMDocument parse, no network. Cheap enough to run on every
+ *      published article in one click.
+ *   B. Schema markup — cms_growth_agent_tsa_check_schema_markup(). Split
+ *      into a pure parser (testable with mock HTML, no network) and an
+ *      orchestrator that fetches the article's own live URL. See that
+ *      orchestrator's own docblock for why a real HTTP fetch is used
+ *      instead of a DB-only heuristic, and the real risk that decision
+ *      carries.
+ *   C. Core Web Vitals — cms_growth_agent_tsa_run_psi(). PageSpeed
+ *      Insights, 10-30s PER url. Hard-capped small
+ *      ('psi_urls_per_run', default 3) and run as its own separate
+ *      action, never bundled with A/B.
+ *
+ * Every check degrades independently and never throws — a PSI outage
+ * must never stop the alt-text/schema checks from running, and a broken
+ * article must never abort the whole batch.
+ */
+
+/**
+ * Creates growth_agent_technical_audits if missing — lazy self-healing via
+ * cms_ensure_table(), same convention as every other table in this file.
+ * See this section's top note for the page_id-NULL settings-row design.
+ */
+function cms_growth_agent_tsa_ensure_schema(PDO $pdo): void
+{
+    cms_ensure_table(
+        $pdo,
+        'growth_agent_technical_audits',
+        "id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+         page_id INT UNSIGNED DEFAULT NULL COMMENT 'NULL = reserved settings row holding psi_api_key_enc only',
+         url VARCHAR(500) DEFAULT NULL,
+         total_image_count INT UNSIGNED DEFAULT NULL,
+         missing_alt_count INT UNSIGNED DEFAULT NULL,
+         content_checked_at TIMESTAMP NULL DEFAULT NULL,
+         has_news_article_schema TINYINT(1) DEFAULT NULL COMMENT 'NULL = not yet verified (fetch never attempted or failed), not the same as 0/false',
+         has_breadcrumb_schema TINYINT(1) DEFAULT NULL COMMENT 'NULL = not yet verified, see has_news_article_schema',
+         schema_check_error VARCHAR(255) DEFAULT NULL,
+         schema_checked_at TIMESTAMP NULL DEFAULT NULL,
+         psi_mobile_score TINYINT UNSIGNED DEFAULT NULL,
+         psi_lcp_ms INT UNSIGNED DEFAULT NULL,
+         psi_cls DECIMAL(4,3) DEFAULT NULL,
+         psi_error VARCHAR(255) DEFAULT NULL,
+         psi_checked_at TIMESTAMP NULL DEFAULT NULL,
+         psi_api_key_enc TEXT DEFAULT NULL COMMENT 'Only ever set on the page_id IS NULL settings row',
+         created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+         updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+         KEY idx_gata_page (page_id)"
+    );
+}
+
+/**
+ * Reads 'technical_seo' thresholds from opportunity_thresholds_json — same
+ * array_replace_recursive-over-defaults pattern as every other threshold
+ * getter in this file. Never throws.
+ */
+function cms_growth_agent_tsa_thresholds(PDO $pdo): array
+{
+    $fallback = [
+        'content_check_articles_per_run' => 50, 'schema_check_articles_per_run' => 24,
+        'psi_urls_per_run' => 3, 'psi_timeout_seconds' => 35, 'psi_poor_score_threshold' => 50,
+    ];
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $defaults = cms_gsc_default_opportunity_thresholds()['technical_seo'] ?? $fallback;
+        $configured = cms_gsc_get_opportunity_thresholds($pdo)['technical_seo'] ?? [];
+
+        return array_replace_recursive($defaults, is_array($configured) ? $configured : []);
+    } catch (Throwable $e) {
+        return $fallback;
+    }
+}
+
+/**
+ * Upsert-by-page_id into growth_agent_technical_audits — SELECT-then-
+ * INSERT/UPDATE, same convention as cms_gsc_upsert_url_inspection().
+ * $pageId === null targets the one reserved settings row (see this
+ * section's top note); any other value targets/creates that article's row.
+ * $fields is merged over the existing row's values (only keys present in
+ * $fields are touched) so the alt-text pass and the schema-check pass
+ * (which may run separately) never clobber each other's columns.
+ *
+ * Never throws — a failed audit write must not break the batch it's part
+ * of.
+ */
+function cms_growth_agent_tsa_upsert(PDO $pdo, ?int $pageId, array $fields): void
+{
+    try {
+        cms_growth_agent_tsa_ensure_schema($pdo);
+
+        if ($pageId === null) {
+            $existing = $pdo->query('SELECT id FROM growth_agent_technical_audits WHERE page_id IS NULL LIMIT 1')->fetchColumn();
+        } else {
+            $stmt = $pdo->prepare('SELECT id FROM growth_agent_technical_audits WHERE page_id = :page_id LIMIT 1');
+            $stmt->execute(['page_id' => $pageId]);
+            $existing = $stmt->fetchColumn();
+        }
+
+        $allowedColumns = [
+            'url', 'total_image_count', 'missing_alt_count', 'content_checked_at',
+            'has_news_article_schema', 'has_breadcrumb_schema', 'schema_check_error', 'schema_checked_at',
+            'psi_mobile_score', 'psi_lcp_ms', 'psi_cls', 'psi_error', 'psi_checked_at', 'psi_api_key_enc',
+        ];
+        $fields = array_intersect_key($fields, array_flip($allowedColumns));
+        if ($fields === []) {
+            return;
+        }
+
+        if ($existing !== false) {
+            $setSql = implode(', ', array_map(static fn (string $col): string => "{$col} = :{$col}", array_keys($fields)));
+            $fields['id'] = $existing;
+            $pdo->prepare("UPDATE growth_agent_technical_audits SET {$setSql}, updated_at = NOW() WHERE id = :id")->execute($fields);
+        } else {
+            $fields['page_id'] = $pageId;
+            $cols = implode(', ', array_keys($fields));
+            $placeholders = implode(', ', array_map(static fn (string $col): string => ":{$col}", array_keys($fields)));
+            $pdo->prepare("INSERT INTO growth_agent_technical_audits ({$cols}, created_at) VALUES ({$placeholders}, NOW())")->execute($fields);
+        }
+    } catch (Throwable $e) {
+        // A failed audit-row write must not break the batch it's part of.
+    }
+}
+
+/**
+ * Check A — alt text. Parses $html with DOMDocument (the SAME UTF-8-safe
+ * loadHTML pattern as cms_growth_agent_il_insert_link() — the
+ * "<?xml encoding=...>" prefix trick, without which non-ASCII characters
+ * get silently mangled) and counts <img> tags with a missing or
+ * whitespace-only alt attribute. DOMDocument (not regex) means an <img>
+ * that happens to appear inside a <script>/<style> block, or text that
+ * merely LOOKS like an img tag inside an attribute value, can never be
+ * miscounted — only real element nodes are ever inspected.
+ *
+ * Never throws. 'ok' is false only when the HTML couldn't be parsed at
+ * all (distinct from 'ok' true + total_images 0, a genuinely image-free
+ * article).
+ *
+ * @return array{ok: bool, total_images: int, missing_alt: int}
+ */
+function cms_growth_agent_tsa_check_images(string $html): array
+{
+    if (trim($html) === '') {
+        return ['ok' => true, 'total_images' => 0, 'missing_alt' => 0];
+    }
+
+    try {
+        libxml_use_internal_errors(true);
+        $dom = new DOMDocument('1.0', 'UTF-8');
+        $loaded = $dom->loadHTML(
+            '<?xml encoding="UTF-8"><div id="wpm-tsa-root">' . $html . '</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        libxml_clear_errors();
+        if (!$loaded) {
+            return ['ok' => false, 'total_images' => 0, 'missing_alt' => 0];
+        }
+
+        $root = $dom->getElementById('wpm-tsa-root');
+        if ($root === null) {
+            return ['ok' => false, 'total_images' => 0, 'missing_alt' => 0];
+        }
+
+        $images = (new DOMXPath($dom))->query('.//img', $root);
+        $total = $images->length;
+        $missing = 0;
+        foreach ($images as $img) {
+            $alt = trim((string) $img->getAttribute('alt'));
+            if ($alt === '') {
+                $missing++;
+            }
+        }
+
+        return ['ok' => true, 'total_images' => $total, 'missing_alt' => $missing];
+    } catch (Throwable $e) {
+        return ['ok' => false, 'total_images' => 0, 'missing_alt' => 0];
+    }
+}
+
+/**
+ * Runs Check A across up to 'content_check_articles_per_run' published
+ * articles (least-recently content-checked first) and upserts the result.
+ * Pure DB read + DOM parse — no network, so no per-article failure mode
+ * beyond "couldn't parse this one article's HTML", which is handled by
+ * cms_growth_agent_tsa_check_images()'s own 'ok' flag and simply skips
+ * writing that row rather than writing a false "0 missing" result.
+ *
+ * Never throws. Returns ['checked' => int, 'errors' => int].
+ */
+function cms_growth_agent_tsa_run_content_checks(PDO $pdo): array
+{
+    $stats = ['checked' => 0, 'errors' => 0];
+
+    try {
+        cms_growth_agent_tsa_ensure_schema($pdo);
+        $limit = max(1, min(200, (int) (cms_growth_agent_tsa_thresholds($pdo)['content_check_articles_per_run'] ?? 50)));
+
+        $stmt = $pdo->prepare(
+            "SELECT p.page_id, p.content
+               FROM pages p
+               LEFT JOIN growth_agent_technical_audits a ON a.page_id = p.page_id
+              WHERE p.status = 'published'
+              ORDER BY (a.content_checked_at IS NULL) DESC, a.content_checked_at ASC
+              LIMIT " . $limit
+        );
+        $stmt->execute();
+        $pages = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return $stats;
+    }
+
+    foreach ($pages as $page) {
+        try {
+            $result = cms_growth_agent_tsa_check_images((string) $page['content']);
+            if (!$result['ok']) {
+                $stats['errors']++;
+                continue;
+            }
+            cms_growth_agent_tsa_upsert($pdo, (int) $page['page_id'], [
+                'total_image_count' => $result['total_images'],
+                'missing_alt_count' => $result['missing_alt'],
+                'content_checked_at' => date('Y-m-d H:i:s'),
+            ]);
+            $stats['checked']++;
+        } catch (Throwable $e) {
+            $stats['errors']++;
+        }
+    }
+
+    return $stats;
+}
+
+/**
+ * Check B, pure parser half — given ALREADY-FETCHED page HTML, looks for
+ * <script type="application/ld+json"> blocks and checks whether any of
+ * them decode to a NewsArticle / BreadcrumbList (or an array containing
+ * one — @graph-style multi-type blocks are not used by this codebase, but
+ * a bare array of objects is tolerated defensively). No network, no DB —
+ * deliberately separated from cms_growth_agent_tsa_check_schema_markup()
+ * so it can be unit-tested with hand-written HTML strings, malformed or
+ * not, without ever touching the network.
+ *
+ * Never throws.
+ *
+ * @return array{has_news_article: bool, has_breadcrumb: bool}
+ */
+function cms_growth_agent_tsa_parse_schema_markup(string $html): array
+{
+    $result = ['has_news_article' => false, 'has_breadcrumb' => false];
+    if (trim($html) === '') {
+        return $result;
+    }
+
+    try {
+        if (!preg_match_all('#<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>#is', $html, $matches)) {
+            return $result;
+        }
+        foreach ($matches[1] as $jsonText) {
+            $decoded = json_decode(trim($jsonText), true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+            // Normalize to a flat list of "objects with an @type" so both
+            // a single {"@type":"..."} block and an array of such blocks
+            // are handled the same way.
+            $candidates = array_is_list($decoded) ? $decoded : [$decoded];
+            foreach ($candidates as $candidate) {
+                if (!is_array($candidate)) {
+                    continue;
+                }
+                $type = (string) ($candidate['@type'] ?? '');
+                if ($type === 'NewsArticle') {
+                    $result['has_news_article'] = true;
+                }
+                if ($type === 'BreadcrumbList') {
+                    $result['has_breadcrumb'] = true;
+                }
+            }
+        }
+        return $result;
+    } catch (Throwable $e) {
+        return $result;
+    }
+}
+
+/**
+ * Check B, fetch orchestrator. Deliberately fetches the article's REAL
+ * public URL over HTTP rather than inferring schema presence from DB
+ * state alone — a DB-only check (e.g. "this is a published article, and
+ * artikel.php unconditionally emits the JSON-LD block, so it must be
+ * fine") would be circular: it would just re-confirm routing, never catch
+ * an actual regression (a future conditional that suppresses the block
+ * for some articles, a PHP error specific to one article's data shape,
+ * caching serving stale pre-schema HTML, etc.) — which is exactly the
+ * "verify it's actually working, not just spot-checked" value this check
+ * exists for.
+ *
+ * This is a real, accepted trade-off: the server ends up requesting its
+ * own public URL over the network. Mitigated three ways:
+ *   1. Small, explicit per-run cap ('schema_check_articles_per_run') —
+ *      unlike PSI this is fast per-request (same-server), but still a
+ *      real round trip repeated per article, so it stays bounded.
+ *   2. A fetch FAILURE is recorded as "not yet verified" (NULL in
+ *      has_news_article_schema/has_breadcrumb_schema), never as "schema
+ *      missing" — a network hiccup or a host firewall blocking loopback
+ *      self-requests must never be misreported as a content defect.
+ *   3. Same public-URL construction already trusted elsewhere in this
+ *      file (cms_sitemap_absolute_url(cms_sitemap_path_for(...)) — see
+ *      cms_growth_agent_inspect_priority_urls()) rather than inventing a
+ *      new one.
+ *
+ * Never throws. Returns ['checked' => int, 'errors' => int].
+ */
+function cms_growth_agent_tsa_run_schema_checks(PDO $pdo): array
+{
+    $stats = ['checked' => 0, 'errors' => 0];
+
+    try {
+        cms_growth_agent_tsa_ensure_schema($pdo);
+        require_once __DIR__ . '/gsc-api.php';
+        require_once __DIR__ . '/sitemap-service.php';
+        $limit = max(1, min(50, (int) (cms_growth_agent_tsa_thresholds($pdo)['schema_check_articles_per_run'] ?? 24)));
+
+        $stmt = $pdo->prepare(
+            "SELECT p.page_id, p.slug, p.canonical_url
+               FROM pages p
+               LEFT JOIN growth_agent_technical_audits a ON a.page_id = p.page_id
+              WHERE p.status = 'published'
+              ORDER BY (a.schema_checked_at IS NULL) DESC, a.schema_checked_at ASC
+              LIMIT " . $limit
+        );
+        $stmt->execute();
+        $pages = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return $stats;
+    }
+
+    foreach ($pages as $page) {
+        try {
+            $canonical = trim((string) ($page['canonical_url'] ?? ''));
+            $url = $canonical !== '' ? $canonical : cms_sitemap_absolute_url(cms_sitemap_path_for('article', (string) $page['slug']));
+
+            $response = cms_gsc_http_request('GET', $url);
+            if (!$response['ok']) {
+                cms_growth_agent_tsa_upsert($pdo, (int) $page['page_id'], [
+                    'url' => $url,
+                    'has_news_article_schema' => null,
+                    'has_breadcrumb_schema' => null,
+                    'schema_check_error' => 'Gagal mengambil halaman: ' . ($response['error'] ?? ('HTTP ' . $response['status'])),
+                    'schema_checked_at' => date('Y-m-d H:i:s'),
+                ]);
+                $stats['errors']++;
+                continue;
+            }
+
+            $parsed = cms_growth_agent_tsa_parse_schema_markup($response['body']);
+            cms_growth_agent_tsa_upsert($pdo, (int) $page['page_id'], [
+                'url' => $url,
+                'has_news_article_schema' => $parsed['has_news_article'] ? 1 : 0,
+                'has_breadcrumb_schema' => $parsed['has_breadcrumb'] ? 1 : 0,
+                'schema_check_error' => null,
+                'schema_checked_at' => date('Y-m-d H:i:s'),
+            ]);
+            $stats['checked']++;
+        } catch (Throwable $e) {
+            $stats['errors']++;
+        }
+    }
+
+    return $stats;
+}
+
+/**
+ * Check C, pure parser half — given an ALREADY-json_decode()'d PageSpeed
+ * Insights response (or null, simulating unparseable JSON), extracts the
+ * performance score (0-100, PSI reports 0-1), Largest Contentful Paint
+ * (ms), and Cumulative Layout Shift. Deliberately separated from
+ * cms_growth_agent_tsa_run_psi() so this can be tested against hand-built
+ * response shapes — including every malformed variant — without ever
+ * calling the real API.
+ *
+ * Never throws.
+ *
+ * @return array{ok: bool, mobile_score: ?int, lcp_ms: ?int, cls: ?float, error: string}
+ */
+function cms_growth_agent_tsa_parse_psi_response(?array $decoded): array
+{
+    $fail = static fn (string $message): array => ['ok' => false, 'mobile_score' => null, 'lcp_ms' => null, 'cls' => null, 'error' => $message];
+
+    if (!is_array($decoded)) {
+        return $fail('Respons PSI bukan JSON yang valid.');
+    }
+
+    try {
+        $lighthouse = $decoded['lighthouseResult'] ?? null;
+        if (!is_array($lighthouse)) {
+            return $fail('Respons PSI tidak berisi lighthouseResult — kemungkinan URL gagal dianalisis PSI.');
+        }
+
+        $scoreRaw = $lighthouse['categories']['performance']['score'] ?? null;
+        $mobileScore = is_numeric($scoreRaw) ? (int) round(((float) $scoreRaw) * 100) : null;
+
+        $lcpRaw = $lighthouse['audits']['largest-contentful-paint']['numericValue'] ?? null;
+        $lcpMs = is_numeric($lcpRaw) ? (int) round((float) $lcpRaw) : null;
+
+        $clsRaw = $lighthouse['audits']['cumulative-layout-shift']['numericValue'] ?? null;
+        $cls = is_numeric($clsRaw) ? round((float) $clsRaw, 3) : null;
+
+        if ($mobileScore === null && $lcpMs === null && $cls === null) {
+            return $fail('Respons PSI tidak berisi metrik yang diharapkan (score/LCP/CLS semuanya kosong).');
+        }
+
+        return ['ok' => true, 'mobile_score' => $mobileScore, 'lcp_ms' => $lcpMs, 'cls' => $cls, 'error' => ''];
+    } catch (Throwable $e) {
+        return $fail($e->getMessage());
+    }
+}
+
+/**
+ * Check C, API-calling orchestrator. Calls PageSpeed Insights
+ * (pagespeedonline/v5/runPagespeed, strategy=mobile — mobile-first
+ * indexing makes this the metric that actually matters for ranking) for
+ * up to 'psi_urls_per_run' published articles (least-recently PSI-checked
+ * first), via cms_gsc_http_request() reused as-is (no new cURL wrapper),
+ * with an explicit longer timeout ('psi_timeout_seconds', default 35s —
+ * PSI itself can take up to ~30s to compute). The API key is optional
+ * (PSI works keyless, just under a shared-IP rate limit that matters on
+ * shared hosting) — see cms_growth_agent_tsa_get_psi_api_key().
+ *
+ * Every per-URL failure (HTTP error, timeout, invalid JSON, unexpected
+ * shape) is handled by cms_growth_agent_tsa_parse_psi_response() and
+ * recorded as psi_error on that article's row rather than thrown —
+ * Check A/B must be able to run independently of whether PSI is
+ * reachable at all.
+ *
+ * Never throws. Returns ['checked' => int, 'errors' => int].
+ */
+function cms_growth_agent_tsa_run_psi(PDO $pdo): array
+{
+    $stats = ['checked' => 0, 'errors' => 0];
+
+    try {
+        cms_growth_agent_tsa_ensure_schema($pdo);
+        require_once __DIR__ . '/gsc-api.php';
+        require_once __DIR__ . '/sitemap-service.php';
+        $thresholds = cms_growth_agent_tsa_thresholds($pdo);
+        $limit = max(1, min(10, (int) ($thresholds['psi_urls_per_run'] ?? 3)));
+        $timeout = max(20, min(60, (int) ($thresholds['psi_timeout_seconds'] ?? 35)));
+        $apiKey = cms_growth_agent_tsa_get_psi_api_key($pdo);
+
+        // Best-effort: some shared hosts cap max_execution_time low enough
+        // that even a small PSI batch could get killed mid-request.
+        // set_time_limit() is a no-op (silently ignored) when the host
+        // disables runtime overrides, so this is purely additive safety,
+        // never relied on as the sole mitigation — the small $limit above
+        // is the real bound.
+        @set_time_limit(max(60, $limit * ((int) $timeout + 5)));
+
+        $stmt = $pdo->prepare(
+            "SELECT p.page_id, p.slug, p.canonical_url
+               FROM pages p
+               LEFT JOIN growth_agent_technical_audits a ON a.page_id = p.page_id
+              WHERE p.status = 'published'
+              ORDER BY (a.psi_checked_at IS NULL) DESC, a.psi_checked_at ASC
+              LIMIT " . $limit
+        );
+        $stmt->execute();
+        $pages = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return $stats;
+    }
+
+    foreach ($pages as $page) {
+        try {
+            $canonical = trim((string) ($page['canonical_url'] ?? ''));
+            $url = $canonical !== '' ? $canonical : cms_sitemap_absolute_url(cms_sitemap_path_for('article', (string) $page['slug']));
+
+            $psiUrl = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed?' . http_build_query(array_filter([
+                'url' => $url,
+                'strategy' => 'mobile',
+                'category' => 'performance',
+                'key' => $apiKey !== '' ? $apiKey : null,
+            ]));
+
+            $response = cms_gsc_http_request('GET', $psiUrl, null, [], $timeout);
+            $decoded = $response['ok'] ? json_decode($response['body'], true) : null;
+            $parsed = cms_growth_agent_tsa_parse_psi_response(is_array($decoded) ? $decoded : null);
+
+            if (!$parsed['ok']) {
+                $errorMessage = !$response['ok'] ? ('Gagal memanggil PSI: ' . ($response['error'] ?? ('HTTP ' . $response['status']))) : $parsed['error'];
+                cms_growth_agent_tsa_upsert($pdo, (int) $page['page_id'], [
+                    'psi_mobile_score' => null, 'psi_lcp_ms' => null, 'psi_cls' => null,
+                    'psi_error' => mb_substr($errorMessage, 0, 255), 'psi_checked_at' => date('Y-m-d H:i:s'),
+                ]);
+                $stats['errors']++;
+                continue;
+            }
+
+            cms_growth_agent_tsa_upsert($pdo, (int) $page['page_id'], [
+                'psi_mobile_score' => $parsed['mobile_score'], 'psi_lcp_ms' => $parsed['lcp_ms'], 'psi_cls' => $parsed['cls'],
+                'psi_error' => null, 'psi_checked_at' => date('Y-m-d H:i:s'),
+            ]);
+            $stats['checked']++;
+        } catch (Throwable $e) {
+            $stats['errors']++;
+        }
+    }
+
+    return $stats;
+}
+
+/**
+ * Reads the optional PSI API key from the reserved settings row
+ * (page_id IS NULL), decrypting via cms_ai_decrypt(). Returns '' if none
+ * is set or on any failure — callers treat '' as "call PSI keyless".
+ * Never throws.
+ */
+function cms_growth_agent_tsa_get_psi_api_key(PDO $pdo): string
+{
+    try {
+        require_once __DIR__ . '/ai-helpers.php';
+        cms_growth_agent_tsa_ensure_schema($pdo);
+        $enc = $pdo->query('SELECT psi_api_key_enc FROM growth_agent_technical_audits WHERE page_id IS NULL LIMIT 1')->fetchColumn();
+        if (!is_string($enc) || $enc === '') {
+            return '';
+        }
+        return cms_ai_decrypt($enc);
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
+/**
+ * Sets (or, given an empty string, clears) the optional PSI API key on
+ * the reserved settings row — encrypted via cms_ai_encrypt(), same
+ * encrypted-at-rest convention as ai_credentials.api_key_enc. Never
+ * throws. Returns true on success.
+ */
+function cms_growth_agent_tsa_save_psi_api_key(PDO $pdo, string $apiKey): bool
+{
+    try {
+        require_once __DIR__ . '/ai-helpers.php';
+        cms_growth_agent_tsa_upsert($pdo, null, [
+            'psi_api_key_enc' => $apiKey !== '' ? cms_ai_encrypt($apiKey) : null,
+        ]);
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
  * Logs a 'topic_gap_article' manual_action job — clicking "Generate Saran
  * Artikel" on a missing topic never calls the AI itself, it only queues a
  * review row (same "click just surfaces a job, approve does the real

@@ -286,6 +286,45 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $redirect('Scan selesai (' . $ilStats['scanned'] . ' artikel) tapi tidak ada usulan link baru yang ditemukan — kemungkinan besar semua pasangan relevan sudah pernah diusulkan/di-link, atau memang belum ada topik yang cukup tumpang tindih.', 'error');
     }
 
+    // ── Technical SEO Auditor (Fase B item 3, 5 Agu 2026) — pure REPORT,
+    // no job/approve involved (see this feature's own top note in
+    // growth-agent-service.php on why that's still compliant with § 1b).
+    // Alt-text + schema checks are bundled into one button since both are
+    // cheap (no network / fast same-server fetch); Core Web Vitals (PSI)
+    // is its own separate action because a single PSI call can take up to
+    // ~30s — bundling it with the others risks a PHP timeout.
+    if ($action === 'tsa_check_content') {
+        $contentStats = cms_growth_agent_tsa_run_content_checks($pdo);
+        $schemaStats = cms_growth_agent_tsa_run_schema_checks($pdo);
+        $redirect(
+            'Cek konten selesai — ' . $contentStats['checked'] . ' artikel dicek alt text, '
+            . $schemaStats['checked'] . ' artikel dicek schema markup'
+            . (($contentStats['errors'] + $schemaStats['errors']) > 0 ? ' (' . ($contentStats['errors'] + $schemaStats['errors']) . ' gagal, lihat detail di tabel).' : '.')
+        );
+    }
+
+    if ($action === 'tsa_check_psi') {
+        $psiStats = cms_growth_agent_tsa_run_psi($pdo);
+        if ($psiStats['checked'] === 0 && $psiStats['errors'] === 0) {
+            $redirect('Tidak ada artikel untuk dicek Core Web Vitals.', 'error');
+        }
+        $redirect('Core Web Vitals dicek untuk ' . ($psiStats['checked'] + $psiStats['errors']) . ' artikel (' . $psiStats['checked'] . ' berhasil, ' . $psiStats['errors'] . ' gagal).');
+    }
+
+    if ($action === 'tsa_save_psi_key') {
+        $psiKeyInput = trim((string) ($_POST['psi_api_key'] ?? ''));
+        if ($psiKeyInput === '') {
+            $redirect('API key kosong — tidak ada yang disimpan. Gunakan "Hapus API Key" kalau memang ingin menghapus key yang sudah tersimpan.', 'error');
+        }
+        $saved = cms_growth_agent_tsa_save_psi_api_key($pdo, $psiKeyInput);
+        $redirect($saved ? 'API key PageSpeed Insights berhasil disimpan (terenkripsi).' : 'Gagal menyimpan API key.', $saved ? 'success' : 'error');
+    }
+
+    if ($action === 'tsa_clear_psi_key') {
+        $cleared = cms_growth_agent_tsa_save_psi_api_key($pdo, '');
+        $redirect($cleared ? 'API key PageSpeed Insights dihapus — PSI akan dipanggil tanpa key (limit publik per-IP berlaku).' : 'Gagal menghapus API key.', $cleared ? 'success' : 'error');
+    }
+
     // ── Manual cleanup — same rules as the lazy auto-cleanup above, just
     // on-demand with a chosen retention window. Never removes 'ready',
     // 'running', or 'manual_action' jobs, and never removes a 'succeeded'
@@ -731,6 +770,55 @@ if ($gscConnected) {
 }
 $feedbackActionLabel = ['seo_recommendation' => 'Rekomendasi SEO (Diterapkan)', 'gsc_article_idea' => 'Ide Artikel (Terbit)'];
 
+// ── Technical SEO Auditor report (Fase B item 3) — pure read, joined
+// against every published article so articles never-yet-audited still
+// show up (as "belum diperiksa"), not just ones with a row already.
+// "Bermasalah" (missing alt text, schema confirmed missing, or a poor PSI
+// score) sorts first so the operator never has to scroll past clean
+// articles to find what needs attention.
+$tsaThresholds = cms_growth_agent_tsa_thresholds($pdo);
+$tsaPoorScore = (int) ($tsaThresholds['psi_poor_score_threshold'] ?? 50);
+$tsaRows = [];
+try {
+    cms_growth_agent_tsa_ensure_schema($pdo);
+    $tsaStmt = $pdo->prepare(
+        "SELECT p.page_id, p.title,
+                a.total_image_count, a.missing_alt_count, a.content_checked_at,
+                a.has_news_article_schema, a.has_breadcrumb_schema, a.schema_check_error, a.schema_checked_at,
+                a.psi_mobile_score, a.psi_lcp_ms, a.psi_cls, a.psi_error, a.psi_checked_at
+           FROM pages p
+           LEFT JOIN growth_agent_technical_audits a ON a.page_id = p.page_id
+          WHERE p.status = 'published'"
+    );
+    $tsaStmt->execute();
+    $tsaAll = $tsaStmt->fetchAll();
+
+    $tsaHasIssue = static function (array $row) use ($tsaPoorScore): bool {
+        if ((int) ($row['missing_alt_count'] ?? 0) > 0) {
+            return true;
+        }
+        if ($row['has_news_article_schema'] !== null && (int) $row['has_news_article_schema'] === 0) {
+            return true;
+        }
+        if ($row['has_breadcrumb_schema'] !== null && (int) $row['has_breadcrumb_schema'] === 0) {
+            return true;
+        }
+        if ($row['psi_mobile_score'] !== null && (int) $row['psi_mobile_score'] <= $tsaPoorScore) {
+            return true;
+        }
+        return false;
+    };
+
+    $tsaIssues = array_values(array_filter($tsaAll, $tsaHasIssue));
+    $tsaCleanCount = count($tsaAll) - count($tsaIssues);
+    $tsaRows = $tsaIssues;
+} catch (Throwable $e) {
+    $tsaAll = [];
+    $tsaCleanCount = 0;
+}
+
+$tsaPsiKeyConfigured = cms_growth_agent_tsa_get_psi_api_key($pdo) !== '';
+
 // Summary cards first (higher-level "how are things going" numbers), then
 // the existing granular per-status breakdown — same .admin-grid--stats
 // grid, just more cards in it.
@@ -784,10 +872,16 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <input type="hidden" name="action" value="scan_internal_linking">
                 <button type="submit" class="admin-btn admin-btn--secondary">Scan Internal Linking</button>
             </form>
+            <form method="post" action="<?= cms_esc($selfUrl) ?>">
+                <?= cms_csrf_field() ?>
+                <input type="hidden" name="action" value="tsa_check_content">
+                <button type="submit" class="admin-btn admin-btn--secondary">Cek Konten (Alt Text &amp; Schema)</button>
+            </form>
         </div>
     </div>
     <p class="section-lead" style="margin-top:-8px;">Scan mengecek artikel published yang belum pernah di-scan (maks. 5 per klik) dan mengusulkan meta title/description yang lebih baik untuk masing-masing — tidak ada yang berubah sampai Anda review dan apply.</p>
     <p class="section-lead" style="margin-top:-8px;">Scan Internal Linking mencari pasangan artikel yang topiknya relevan tapi belum saling link (maks. 10 artikel sumber per klik, maks. 3 usulan per artikel) — murni pencocokan teks, tanpa AI. Tidak ada yang berubah sampai Anda review dan apply di halaman Review Link Internal.</p>
+    <p class="section-lead" style="margin-top:-8px;">Cek Konten memeriksa alt text gambar &amp; schema markup (murni laporan, TIDAK PERNAH mengubah artikel) — hasilnya di panel "Technical SEO Auditor" di bawah. Core Web Vitals (PageSpeed Insights) dicek terpisah karena jauh lebih lambat, lihat tombolnya sendiri di panel itu.</p>
 
     <div class="panel">
         <div class="panel__head">
@@ -1167,6 +1261,111 @@ require dirname(__DIR__) . '/includes/alerts.php';
         </div>
     </div>
     <?php endif; ?>
+
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Technical SEO Auditor</h3>
+            <span class="panel__meta"><?= count($tsaRows) ?> bermasalah &middot; <?= $tsaCleanCount ?> bersih</span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Laporan read-only: alt text gambar, schema markup (NewsArticle/BreadcrumbList), dan Core Web Vitals
+            (PageSpeed Insights). Tidak ada approve/execute di sini — agent ini TIDAK PERNAH mengubah artikel,
+            perbaiki sendiri lewat editor artikel. Artikel yang bersih tidak ditampilkan di tabel supaya tidak
+            menenggelamkan yang perlu perhatian.
+        </p>
+        <div class="toolbar" style="padding:0 20px 16px;">
+            <div class="toolbar__left">
+                <p class="muted" style="margin:0;font-size:13px;">
+                    PageSpeed Insights API Key: <span class="pill pill--<?= $tsaPsiKeyConfigured ? 'ok' : 'muted' ?>"><?= $tsaPsiKeyConfigured ? 'Terpasang' : 'Tidak terpasang (pakai limit publik per-IP)' ?></span>
+                </p>
+            </div>
+            <div class="toolbar__right" style="gap:8px;">
+                <form method="post" action="<?= cms_esc($selfUrl) ?>" style="display:flex;gap:6px;align-items:center;">
+                    <?= cms_csrf_field() ?>
+                    <input type="hidden" name="action" value="tsa_save_psi_key">
+                    <input type="password" name="psi_api_key" placeholder="PSI API key (opsional)" autocomplete="off" style="width:220px;">
+                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Simpan</button>
+                </form>
+                <?php if ($tsaPsiKeyConfigured) : ?>
+                <form method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Hapus API key PSI? PSI akan dipanggil tanpa key setelah ini.');">
+                    <?= cms_csrf_field() ?>
+                    <input type="hidden" name="action" value="tsa_clear_psi_key">
+                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Hapus API Key</button>
+                </form>
+                <?php endif; ?>
+                <form method="post" action="<?= cms_esc($selfUrl) ?>">
+                    <?= cms_csrf_field() ?>
+                    <input type="hidden" name="action" value="tsa_check_psi">
+                    <button type="submit" class="admin-btn admin-btn--secondary" title="Lambat — bisa sampai 30 detik per artikel, dibatasi beberapa artikel per klik.">Cek Core Web Vitals (maks. beberapa artikel/klik)</button>
+                </form>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Artikel</th>
+                        <th>Alt Text</th>
+                        <th>Schema Markup</th>
+                        <th>Core Web Vitals</th>
+                        <th>Terakhir Diperiksa</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($tsaRows === []) : ?>
+                        <tr><td colspan="5" class="muted"><?= $tsaCleanCount > 0 ? 'Semua artikel yang sudah diperiksa dalam kondisi bersih.' : 'Belum ada artikel yang diperiksa — klik "Cek Konten" di atas untuk mulai.' ?></td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($tsaRows as $tsaRow) : ?>
+                        <tr>
+                            <td><a href="pages.php?edit=<?= (int) $tsaRow['page_id'] ?>"><?= cms_esc((string) $tsaRow['title']) ?></a></td>
+                            <td>
+                                <?php if ($tsaRow['content_checked_at'] === null) : ?>
+                                    <span class="pill pill--muted">Belum diperiksa</span>
+                                <?php elseif ((int) $tsaRow['missing_alt_count'] > 0) : ?>
+                                    <span class="pill pill--warn"><?= (int) $tsaRow['missing_alt_count'] ?> dari <?= (int) $tsaRow['total_image_count'] ?> gambar tanpa alt</span>
+                                <?php else : ?>
+                                    <span class="pill pill--ok">Lengkap (<?= (int) $tsaRow['total_image_count'] ?> gambar)</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($tsaRow['schema_checked_at'] === null) : ?>
+                                    <span class="pill pill--muted">Belum diperiksa</span>
+                                <?php elseif ($tsaRow['has_news_article_schema'] === null) : ?>
+                                    <span class="pill pill--muted" title="<?= cms_esc((string) $tsaRow['schema_check_error']) ?>">Gagal diperiksa</span>
+                                <?php elseif (!(int) $tsaRow['has_news_article_schema'] || !(int) $tsaRow['has_breadcrumb_schema']) : ?>
+                                    <span class="pill pill--warn">
+                                        <?= !(int) $tsaRow['has_news_article_schema'] ? 'NewsArticle hilang' : '' ?>
+                                        <?= (!(int) $tsaRow['has_news_article_schema'] && !(int) $tsaRow['has_breadcrumb_schema']) ? ' &amp; ' : '' ?>
+                                        <?= !(int) $tsaRow['has_breadcrumb_schema'] ? 'BreadcrumbList hilang' : '' ?>
+                                    </span>
+                                <?php else : ?>
+                                    <span class="pill pill--ok">Lengkap</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($tsaRow['psi_checked_at'] === null) : ?>
+                                    <span class="pill pill--muted">Belum diperiksa</span>
+                                <?php elseif ($tsaRow['psi_mobile_score'] === null) : ?>
+                                    <span class="pill pill--muted" title="<?= cms_esc((string) $tsaRow['psi_error']) ?>">Gagal diperiksa</span>
+                                <?php else : ?>
+                                    <span class="pill pill--<?= (int) $tsaRow['psi_mobile_score'] <= $tsaPoorScore ? 'warn' : 'ok' ?>">Skor Mobile: <?= (int) $tsaRow['psi_mobile_score'] ?></span>
+                                    <?php if ($tsaRow['psi_lcp_ms'] !== null) : ?>
+                                        <span class="muted" style="font-size:11px;display:block;">LCP <?= round((int) $tsaRow['psi_lcp_ms'] / 1000, 1) ?>s &middot; CLS <?= $tsaRow['psi_cls'] !== null ? rtrim(rtrim(number_format((float) $tsaRow['psi_cls'], 3), '0'), '.') : '—' ?></span>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </td>
+                            <td class="muted" style="font-size:12px;">
+                                <?php
+                                $lastChecks = array_filter([$tsaRow['content_checked_at'], $tsaRow['schema_checked_at'], $tsaRow['psi_checked_at']]);
+                                echo $lastChecks !== [] ? cms_esc((string) max($lastChecks)) : '—';
+                                ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
 
     <div class="panel">
         <div class="panel__head">
