@@ -759,9 +759,16 @@ function cms_growth_agent_seo_g0_gate(PDO $pdo, string $jobType, string $topicTe
 
         // ── A. Duplicate pending proposal ───────────────────────────────
         try {
+            // 'keyword_expansion_topic' (Fase B item 2, 4 Agu 2026) added to
+            // this list so it's cross-deduped against the other two
+            // new-article proposal types too — it stores its topic under
+            // the same 'missing_topic' key as 'topic_gap_article' (see
+            // cms_growth_agent_keyword_expansion_process_topics()), so the
+            // existing ternary below already reads it correctly with no
+            // further change needed.
             $pendingStmt = $pdo->query(
                 "SELECT id, job_type, status, input_brief FROM growth_agent_jobs
-                  WHERE job_type IN ('gsc_article_idea', 'topic_gap_article')
+                  WHERE job_type IN ('gsc_article_idea', 'topic_gap_article', 'keyword_expansion_topic')
                     AND status IN ('manual_action', 'ready', 'running')"
             );
             foreach ($pendingStmt->fetchAll() as $row) {
@@ -1623,6 +1630,225 @@ function cms_growth_agent_apply_internal_link(PDO $pdo, int $jobId): array
     } catch (Throwable $e) {
         return ['ok' => false, 'error' => $e->getMessage()];
     }
+}
+
+/**
+ * ── Keyword Expansion Agent (GROWTH_AGENT_V2_PROPOSAL.md Fase B item 2,
+ *    4 Agu 2026) ──
+ *
+ * Fills the gap the Opportunity Engine structurally can't: that engine only
+ * ever sees queries the site ALREADY has GSC impressions for, so it can
+ * optimize existing reach but never discover a topic the site has never
+ * touched at all. This agent instead looks at what the site HAS published
+ * (title + short description of the 50 most recent articles, same context
+ * shape as cms_growth_agent_generate_topic_clusters()) and asks AI for new,
+ * niche-appropriate topic ideas not yet covered.
+ *
+ * NOTE on GROWTH_AGENT_V2_PROPOSAL.md § 2: that section's original text
+ * ("hasilnya masuk sebagai draft topic baru di Topic Cluster yang sudah
+ * ada") pre-dates § 1b and is superseded by it — confirmed with the user
+ * before implementing. This agent writes ONLY to growth_agent_jobs
+ * (job_type 'keyword_expansion_topic'), never directly into
+ * growth_agent_topic_clusters. No new table, no new column.
+ *
+ * Cost control: this is the first agent in the new Fase B/C wave that
+ * calls a paid AI API, so unlike the deterministic SEO-G0 Gate/Internal
+ * Linking Agent, it needs an explicit spend bound — see
+ * 'keyword_expansion' in cms_gsc_default_opportunity_thresholds()
+ * (gsc-api.php): AI is called EXACTLY ONCE per click (one prompt, one
+ * response containing up to N topics), never once per topic, and the
+ * result is hard-capped to max_topics_per_run regardless of how many the
+ * model returns.
+ *
+ * Split into two functions specifically so the parsing/validation/gate/
+ * job-creation logic (cms_growth_agent_keyword_expansion_process_topics())
+ * can be exercised directly with a hand-built response array in tests —
+ * without an AI credential configured or any network call — the same way
+ * a real malformed AI response would be handled. This function
+ * (cms_growth_agent_scan_keyword_expansion()) is the thin wrapper that
+ * actually resolves the agent and calls AI.
+ */
+
+/**
+ * Validates/persists an (already-parsed) AI response for keyword
+ * expansion — the testable half, see this section's top note. Never
+ * assumes $parsed came from a real AI call; a caller can pass any shape
+ * here, malformed or not, and it degrades the same way either way.
+ *
+ * For every topic that survives shape validation (non-empty string after
+ * trim, capped to max_topics_per_run even if the model returned more):
+ * runs the SEO-G0 Gate against it (same pattern as
+ * cms_growth_agent_generate_article_idea()/
+ * cms_growth_agent_request_topic_gap_article() — see
+ * cms_growth_agent_seo_g0_gate()'s own docblock) and logs one
+ * 'keyword_expansion_topic' manual_action job. Advisory only: a gate
+ * warning never prevents the job from being logged, it just rides along
+ * in input_brief.seo_g0_gate for the operator to see during review.
+ *
+ * input_brief stores the topic under BOTH 'topic' (this agent's own,
+ * clearer field name) AND 'missing_topic' (so
+ * cms_growth_agent_create_article_draft_from_topic_gap() — written for
+ * 'topic_gap_article' — can be reused UNCHANGED for this job type's
+ * Approve action too; see growth-agent.php's approve handler).
+ *
+ * Never throws. Returns ['ok' => bool, 'topics_proposed' => int, 'error' => string].
+ */
+function cms_growth_agent_keyword_expansion_process_topics(PDO $pdo, ?array $parsed, ?string $modelUsed): array
+{
+    try {
+        if (!is_array($parsed) || !is_array($parsed['topics'] ?? null)) {
+            return ['ok' => false, 'topics_proposed' => 0, 'error' => 'AI response was not in the expected format'];
+        }
+
+        $maxTopics = max(1, (int) (cms_growth_agent_keyword_expansion_thresholds($pdo)['max_topics_per_run'] ?? 5));
+
+        $created = 0;
+        foreach ($parsed['topics'] as $entry) {
+            if ($created >= $maxTopics) {
+                break; // hard cap even if the model returned more than asked
+            }
+            $topic = is_array($entry) ? trim((string) ($entry['topic'] ?? '')) : trim((string) $entry);
+            if ($topic === '') {
+                continue;
+            }
+            $rationale = is_array($entry) ? trim((string) ($entry['rationale'] ?? '')) : '';
+
+            $gateResult = cms_growth_agent_seo_g0_gate($pdo, 'keyword_expansion_topic', $topic);
+
+            $inputBrief = [
+                'topic' => $topic,
+                'missing_topic' => $topic, // alias — lets the Approve handler reuse cms_growth_agent_create_article_draft_from_topic_gap() unchanged
+                'rationale' => $rationale,
+                'model_used' => $modelUsed,
+                'seo_g0_gate' => $gateResult,
+            ];
+
+            $jobId = cms_growth_agent_log_job(
+                $pdo, 'keyword_expansion_topic', 'growth_agent', null, 'manual_action', $inputBrief, null,
+                $modelUsed, null, null, null, '', 'medium'
+            );
+            if ($jobId > 0) {
+                $created++;
+            }
+        }
+
+        if ($created === 0) {
+            return ['ok' => false, 'topics_proposed' => 0, 'error' => 'AI tidak menghasilkan topik baru yang valid (semua kosong, atau sudah pernah diusulkan).'];
+        }
+
+        return ['ok' => true, 'topics_proposed' => $created, 'error' => ''];
+    } catch (Throwable $e) {
+        return ['ok' => false, 'topics_proposed' => 0, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Reads 'keyword_expansion' thresholds from opportunity_thresholds_json —
+ * same array_replace_recursive-over-defaults pattern as
+ * cms_growth_agent_il_thresholds()/cms_growth_agent_g0_gate_thresholds().
+ * Never throws.
+ *
+ * @return array{max_topics_per_run: int, context_articles_limit: int}
+ */
+function cms_growth_agent_keyword_expansion_thresholds(PDO $pdo): array
+{
+    $fallback = ['max_topics_per_run' => 5, 'context_articles_limit' => 50];
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $defaults = cms_gsc_default_opportunity_thresholds()['keyword_expansion'] ?? $fallback;
+        $configured = cms_gsc_get_opportunity_thresholds($pdo)['keyword_expansion'] ?? [];
+
+        return array_replace_recursive($defaults, is_array($configured) ? $configured : []);
+    } catch (Throwable $e) {
+        return $fallback;
+    }
+}
+
+/**
+ * The AI-calling half — thin on purpose, see this section's top note.
+ * Builds the "already covered" context (same shape/limit convention as
+ * cms_growth_agent_generate_topic_clusters()'s 50-article prompt), calls
+ * AI exactly once, and hands the parsed (or unparseable) result to
+ * cms_growth_agent_keyword_expansion_process_topics() to validate and log.
+ *
+ * Never throws. Returns ['ok' => bool, 'topics_proposed' => int, 'error' => string].
+ */
+function cms_growth_agent_scan_keyword_expansion(PDO $pdo): array
+{
+    try {
+        cms_growth_agent_ensure_schema($pdo);
+        require_once __DIR__ . '/ai-helpers.php';
+    } catch (Throwable $e) {
+        return ['ok' => false, 'topics_proposed' => 0, 'error' => $e->getMessage()];
+    }
+
+    $contextLimit = max(10, min(100, (int) (cms_growth_agent_keyword_expansion_thresholds($pdo)['context_articles_limit'] ?? 50)));
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT title, meta_description, excerpt
+               FROM pages
+              WHERE status = 'published'
+              ORDER BY created_at DESC
+              LIMIT " . $contextLimit
+        );
+        $stmt->execute();
+        $pages = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return ['ok' => false, 'topics_proposed' => 0, 'error' => $e->getMessage()];
+    }
+
+    if ($pages === []) {
+        return ['ok' => false, 'topics_proposed' => 0, 'error' => 'Tidak ada artikel published untuk dijadikan konteks.'];
+    }
+
+    $promptLines = [];
+    foreach ($pages as $page) {
+        $desc = trim((string) ($page['meta_description'] ?? ''));
+        if ($desc === '') {
+            $desc = trim((string) ($page['excerpt'] ?? ''));
+        }
+        $promptLines[] = '- ' . $page['title'] . ($desc !== '' ? ' | ' . $desc : '');
+    }
+
+    $maxTopics = max(1, (int) (cms_growth_agent_keyword_expansion_thresholds($pdo)['max_topics_per_run'] ?? 5));
+
+    $defaultSystemPrompt =
+        'You are the Growth Agent content strategist for Sagagoal, an Indonesian-language sports news & ' .
+        'livescore portal covering football (Timnas Indonesia, Liga 1, major European leagues), ' .
+        'basketball/NBA, and Formula 1. You are given a list of articles the site has ALREADY published. ' .
+        'Propose ' . $maxTopics . ' NEW article topic ideas that are realistic for this specific site\'s ' .
+        'niche and audience, and that are NOT already covered (even partially) by anything in the given ' .
+        'list. Do not propose generic listicles or topics outside football/basketball/F1. Each topic must ' .
+        'be phrased as a concrete, specific article title in Bahasa Indonesia (the site\'s language), not a ' .
+        'vague keyword. Respond with ONLY a raw JSON object, no markdown, no code fences, no commentary, ' .
+        'in exactly this shape: {"topics": [{"topic": "...", "rationale": "..."}]}';
+
+    $agent = cms_ai_resolve_agent($pdo, 'growth_agent', $defaultSystemPrompt);
+    if (!$agent['ok']) {
+        return ['ok' => false, 'topics_proposed' => 0, 'error' => $agent['error']];
+    }
+
+    $userPrompt = "Articles already published (most recent first, max {$contextLimit}):\n" . implode("\n", $promptLines);
+
+    try {
+        // Exactly ONE AI call per click, regardless of how many topics come
+        // back — see this section's top note on cost control.
+        $result = cms_ai_call_provider(
+            $agent['provider'], $agent['api_key'], $agent['model'],
+            $userPrompt, $agent['system_prompt'], max($agent['max_tokens'], 800), $agent['temperature']
+        );
+    } catch (Throwable $e) {
+        return ['ok' => false, 'topics_proposed' => 0, 'error' => $e->getMessage()];
+    }
+
+    if (!$result['success']) {
+        return ['ok' => false, 'topics_proposed' => 0, 'error' => 'AI request failed: ' . $result['error']];
+    }
+
+    $parsed = cms_ai_extract_json($result['text']);
+
+    return cms_growth_agent_keyword_expansion_process_topics($pdo, $parsed, $agent['model']);
 }
 
 /**

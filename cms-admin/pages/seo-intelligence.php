@@ -62,6 +62,27 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $redirect('Gagal mengajukan saran artikel.', 'error');
     }
 
+    // Keyword Expansion Agent (GROWTH_AGENT_V2_PROPOSAL.md Fase B item 2,
+    // 4 Agu 2026) — lives on THIS page, not growth-agent.php, because it's
+    // the same shape as "Generate Cluster" right above: one AI call over
+    // the site's recently-published articles, manual trigger only. This
+    // is the one AI-driven discovery surface on this page that ISN'T tied
+    // to an existing topic cluster — it proposes brand-new topics the site
+    // hasn't touched at all, using GSC history for nothing (unlike the
+    // Opportunity Engine on growth-agent.php, which only ever sees queries
+    // the site already has impressions for). Each proposed topic becomes
+    // one 'keyword_expansion_topic' manual_action job (see
+    // cms_growth_agent_scan_keyword_expansion() in growth-agent-service.php),
+    // reviewed via the generic Approve/Reject buttons on growth-agent.php —
+    // approving one creates a draft article, exactly like topic_gap_article.
+    if ($action === 'generate_keyword_expansion') {
+        $result = cms_growth_agent_scan_keyword_expansion($pdo);
+        if ($result['ok']) {
+            $redirect($result['topics_proposed'] . ' topik artikel baru diusulkan — cek di "Job Terbaru" pada Growth Agent untuk approve.');
+        }
+        $redirect('Gagal generate keyword expansion: ' . $result['error'], 'error');
+    }
+
     $redirect('Aksi tidak dikenal.', 'error');
 }
 
@@ -119,6 +140,11 @@ require dirname(__DIR__) . '/includes/alerts.php';
         </div>
         <div class="toolbar__right">
             <a class="admin-btn admin-btn--ghost" href="content-conflict-detection.php">Content Conflict Detection &rarr;</a>
+            <form method="post" action="seo-intelligence.php">
+                <?= cms_csrf_field() ?>
+                <input type="hidden" name="action" value="generate_keyword_expansion">
+                <button type="submit" class="admin-btn admin-btn--secondary">Keyword Expansion</button>
+            </form>
             <form method="post" action="seo-intelligence.php" onsubmit="return confirm('Generate ulang topic cluster? Hasil generate sebelumnya akan diganti seluruhnya.');">
                 <?= cms_csrf_field() ?>
                 <input type="hidden" name="action" value="generate_clusters">
@@ -126,6 +152,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </form>
         </div>
     </div>
+    <p class="section-lead" style="margin-top:-8px;">Keyword Expansion mengusulkan topik artikel BARU yang belum pernah ditulis situs ini (maks. 5 topik per klik, satu panggilan AI) — beda dari Topic Cluster yang menganalisis cakupan artikel yang sudah ada. Tiap topik lewat SEO-G0 Gate dulu sebelum jadi usulan, dan tidak ada yang dibuat/dipublish sampai Anda approve di Growth Agent.</p>
 
     <div class="panel">
         <div class="panel__head">

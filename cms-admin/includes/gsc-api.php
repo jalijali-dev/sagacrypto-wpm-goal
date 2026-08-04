@@ -1066,6 +1066,31 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                 // entirely rather than guessed at with unreliable stats.
                 'min_corpus_size_for_single_word' => 10,
             ],
+
+            // Keyword Expansion Agent (GROWTH_AGENT_V2_PROPOSAL.md Fase B
+            // item 2, 4 Agu 2026) — this is the first agent in this new
+            // wave that calls AI, so unlike the deterministic gates above,
+            // its knobs are about bounding COST per click rather than
+            // matching precision. See
+            // cms_growth_agent_scan_keyword_expansion() in
+            // growth-agent-service.php.
+            'keyword_expansion' => [
+                // Hard cap on new-topic jobs created per click. Kept
+                // deliberately small — these are genuinely new article
+                // ideas (each one becomes a full draft an editor has to
+                // write from scratch if approved), not small metadata
+                // tweaks, so reviewing more than a handful at once isn't
+                // realistic. Same "5 per click" order of magnitude as
+                // cms_growth_agent_scan_seo_recommendations()'s $limit.
+                'max_topics_per_run' => 5,
+                // How many recent published articles are given to the AI
+                // as "already covered" context, so it doesn't re-propose
+                // an existing topic. Same limit/ordering as
+                // cms_growth_agent_generate_topic_clusters()'s own context
+                // window — kept separately tunable since the two prompts
+                // serve different purposes even though the default matches.
+                'context_articles_limit' => 50,
+            ],
         ];
     }
 }

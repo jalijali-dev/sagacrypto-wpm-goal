@@ -133,6 +133,36 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $redirect('Draft artikel berhasil dibuat — klik "Edit draft" di Job Terbaru untuk melengkapi & publish.');
         }
 
+        // Keyword Expansion Agent (Fase B item 2, 4 Agu 2026) —
+        // 'keyword_expansion_topic' reuses
+        // cms_growth_agent_create_article_draft_from_topic_gap() UNCHANGED:
+        // its input_brief stores the topic under 'missing_topic' (aliased
+        // alongside this agent's own clearer 'topic' key specifically so
+        // this reuse works) — see
+        // cms_growth_agent_keyword_expansion_process_topics(). Same
+        // "Approve IS the execution step" exception as gsc_article_idea/
+        // topic_gap_article above.
+        if ($action === 'approve' && $jobRow['job_type'] === 'keyword_expansion_topic' && empty($jobRow['page_id'])) {
+            $draftResult = cms_growth_agent_create_article_draft_from_topic_gap($pdo, $jobRow, $currentAdminId);
+
+            if (!$draftResult['ok']) {
+                $failUpd = $pdo->prepare("UPDATE growth_agent_jobs SET status = 'failed', error_message = :error, updated_at = NOW() WHERE id = :id");
+                $failUpd->execute(['error' => $draftResult['error'], 'id' => $jobId]);
+                $redirect('Gagal membuat draft artikel: ' . $draftResult['error'], 'error');
+            }
+
+            $ins = $pdo->prepare(
+                'INSERT INTO growth_agent_feedback (job_id, action, reviewed_by, created_at)
+                 VALUES (:job_id, :action, :reviewed_by, NOW())'
+            );
+            $ins->execute(['job_id' => $jobId, 'action' => 'approved_as_is', 'reviewed_by' => $currentAdminId]);
+
+            $upd = $pdo->prepare('UPDATE growth_agent_jobs SET status = :status, page_id = :page_id, updated_at = NOW() WHERE id = :id');
+            $upd->execute(['status' => 'succeeded', 'page_id' => $draftResult['page_id'], 'id' => $jobId]);
+
+            $redirect('Draft artikel berhasil dibuat — klik "Edit draft" di Job Terbaru untuk melengkapi & publish.');
+        }
+
         // SEO Intelligence — content_conflict_proposal: approve is NEVER an
         // execution step here, "Recommendation only" guardrail — this just
         // falls through to the generic feedback+status-flip logic below,
@@ -536,13 +566,14 @@ $jobsStmt = $pdo->query(
 $jobs = $jobsStmt->fetchAll();
 
 // SEO-G0 Gate (GROWTH_AGENT_V2_PROPOSAL.md Fase A item 3) — warnings ride
-// along in input_brief.seo_g0_gate for 'gsc_article_idea'/'topic_gap_article'
-// jobs (see cms_growth_agent_seo_g0_gate() in growth-agent-service.php).
-// Decoded once here, not per-row, and only for the two job types that can
-// carry it — every other job type's input_brief is left completely alone.
+// along in input_brief.seo_g0_gate for 'gsc_article_idea'/'topic_gap_article'/
+// 'keyword_expansion_topic' jobs (see cms_growth_agent_seo_g0_gate() in
+// growth-agent-service.php). Decoded once here, not per-row, and only for
+// the job types that can carry it — every other job type's input_brief is
+// left completely alone.
 foreach ($jobs as &$jobForGate) {
     $jobForGate['_g0_warnings'] = [];
-    if (!in_array($jobForGate['job_type'], ['gsc_article_idea', 'topic_gap_article'], true)) {
+    if (!in_array($jobForGate['job_type'], ['gsc_article_idea', 'topic_gap_article', 'keyword_expansion_topic'], true)) {
         continue;
     }
     $briefDecoded = json_decode((string) $jobForGate['input_brief'], true);
