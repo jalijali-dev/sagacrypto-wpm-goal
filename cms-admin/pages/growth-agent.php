@@ -13,18 +13,21 @@ cms_require_role(['superadmin', 'admin']);
 
 cms_growth_agent_ensure_schema($pdo);
 
-// Lazy auto-cleanup — no cron in this codebase (see sitemap-service.php's
-// own note on that), so this runs quietly on every page load instead,
-// same "self-maintaining on request" spirit as cms_ensure_table(). Only
-// removes already-resolved jobs (failed, or succeeded-and-never-approved)
-// older than 90 days; see cms_growth_agent_cleanup_old_jobs() for exactly
-// what's protected from deletion. A manual "Bersihkan job lama" button
-// further down runs the same function on demand with a chosen window.
+// Lazy auto-cleanup — safety net that runs alongside
+// cron/growth_agent_maintenance.php (added 4 Aug 2026), not instead of it:
+// if the cron hasn't run yet or is misconfigured, opening this page still
+// keeps things maintained, same "self-maintaining on request" spirit as
+// cms_ensure_table(). Only removes already-resolved jobs (failed, or
+// succeeded-and-never-approved) older than 90 days; see
+// cms_growth_agent_cleanup_old_jobs() for exactly what's protected from
+// deletion. A manual "Bersihkan job lama" button further down runs the
+// same function on demand with a chosen window.
 cms_growth_agent_cleanup_old_jobs($pdo, 90);
 
-// Lazy GSC fetch — same "no cron, self-maintaining on request" spirit as
-// the cleanup call above. Re-fetches only if GSC is connected AND the
-// last fetch is more than 24h old; a no-op otherwise. Never throws.
+// Lazy GSC fetch — safety net alongside cron/growth_agent_maintenance.php,
+// same spirit as the cleanup call above. Re-fetches only if GSC is
+// connected AND the last fetch is more than 24h old; a no-op otherwise.
+// Never throws.
 cms_gsc_fetch_if_stale($pdo, 24);
 
 // Lazy Agent Memory detection (ROADMAP.md gap #3) — same pattern again,

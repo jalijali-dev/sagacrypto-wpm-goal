@@ -1,0 +1,116 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+/**
+ * Cron: run Growth Agent's five maintenance/collection steps on a schedule,
+ * instead of only "lazily" whenever an admin happens to open
+ * cms-admin/pages/growth-agent.php.
+ *
+ * Thin CLI wrapper — no logic lives here. It calls the exact same shared
+ * functions (with the exact same parameters) as growth-agent.php's page
+ * load: cms_growth_agent_ensure_schema(), cms_growth_agent_cleanup_old_jobs(),
+ * cms_gsc_fetch_if_stale(), cms_growth_agent_detect_memory_if_stale(),
+ * cms_growth_agent_snapshot_performance_if_stale() — all in
+ * cms-admin/includes/growth-agent-service.php and gsc-api.php. Both callers
+ * run identical code, same as sync_fixtures.php vs the admin "Sync Sekarang"
+ * button.
+ *
+ * The lazy page-load calls in growth-agent.php are NOT removed by this
+ * script's existence — they stay as a safety net for whenever this cron
+ * hasn't run yet or is misconfigured. The two are meant to coexist.
+ *
+ * No script-level kill-switch based on GSC's on/off state: unlike
+ * cms_gsc_fetch_if_stale() (which already no-ops internally when GSC isn't
+ * connected/active — see gsc-api.php's own is_active/site_url guard),
+ * ensure_schema and cleanup_old_jobs don't depend on GSC at all. Gating the
+ * whole script on GSC being active would wrongly skip schema upkeep and job
+ * cleanup on installs that don't use GSC yet.
+ *
+ *   php cron/growth_agent_maintenance.php
+ */
+
+require_once __DIR__ . '/../cms-admin/config/database.php';
+require_once __DIR__ . '/../cms-admin/includes/schema-guard.php';
+require_once __DIR__ . '/../cms-admin/includes/growth-agent-service.php';
+require_once __DIR__ . '/../cms-admin/includes/gsc-api.php';
+
+$exitCode = 0;
+
+// ── 1. Schema upkeep ────────────────────────────────────────────────────
+// Not documented "never throws" like the four functions below (it calls
+// cms_ensure_table(), which has no internal try/catch), so it's the one
+// step wrapped here rather than trusted bare — a schema hiccup shouldn't
+// abort the rest of this script, but it IS a real failure worth a non-zero
+// exit so cPanel's cron failure email actually fires.
+try {
+    cms_growth_agent_ensure_schema($pdo);
+    echo "[growth_agent_maintenance] ensure_schema: OK.\n";
+} catch (Throwable $e) {
+    echo "[growth_agent_maintenance] ensure_schema: FAILED — {$e->getMessage()}\n";
+    $exitCode = 1;
+}
+
+// ── 2. Cleanup old jobs (90 days, same window as the lazy call) ────────
+// Documented "never throws" — returns 0 on internal failure instead.
+$deleted = cms_growth_agent_cleanup_old_jobs($pdo, 90);
+echo "[growth_agent_maintenance] cleanup_old_jobs: {$deleted} job(s) deleted (retention 90 hari).\n";
+
+// ── 3–5. The three *_if_stale() steps ───────────────────────────────────
+// These return void, so the only way to report "did it actually run or was
+// it skipped" is reading gsc_settings' own timestamp columns before/after —
+// cms_gsc_fetch_if_stale() etc. only touch them when they actually ran.
+//
+// The before/after timestamp diff alone can't tell "skipped, not stale yet"
+// apart from "attempted because it WAS stale, but failed silently inside"
+// (e.g. the Google API being unreachable) — both leave the timestamp
+// unchanged, since these functions never throw and only write the
+// timestamp on success. So staleness is also computed here independently,
+// using the same formula as the underlying functions, to report which of
+// those two actually happened instead of guessing.
+$isStale = static function (?string $lastRun, int $maxAgeHours): bool {
+    return $lastRun === null || (time() - strtotime($lastRun)) >= ($maxAgeHours * 3600);
+};
+
+$before = cms_gsc_get_settings($pdo);
+$wasConfigured = (int) ($before['is_active'] ?? 0) === 1 && !empty($before['site_url'] ?? null);
+$wasStale = $isStale($before['last_fetch_at'] ?? null, 24);
+
+cms_gsc_fetch_if_stale($pdo, 24);
+$after = cms_gsc_get_settings($pdo);
+if (!$wasConfigured) {
+    echo "[growth_agent_maintenance] gsc_fetch: Skipped — GSC belum dikonfigurasi/nonaktif (gsc_settings.is_active != 1 atau site_url kosong).\n";
+} elseif (($after['last_fetch_at'] ?? null) !== ($before['last_fetch_at'] ?? null)) {
+    echo "[growth_agent_maintenance] gsc_fetch: Ran — last_fetch_at diperbarui ke {$after['last_fetch_at']}.\n";
+} elseif ($wasStale) {
+    echo "[growth_agent_maintenance] gsc_fetch: Dicoba (data stale, last_fetch_at: " . ($before['last_fetch_at'] ?? 'null') . ") tapi last_fetch_at tidak berubah — kemungkinan gagal diam-diam di dalam (mis. Google API tidak terjangkau). Cek PHP error log.\n";
+} else {
+    echo "[growth_agent_maintenance] gsc_fetch: Skipped — belum stale (last_fetch_at: " . ($before['last_fetch_at'] ?? 'null') . ", ambang 24 jam).\n";
+}
+
+$before = $after;
+$wasStale = $isStale($before['last_memory_detection_at'] ?? null, 24 * (int) (cms_gsc_get_memory_thresholds($pdo)['detection_interval_days'] ?? 1));
+cms_growth_agent_detect_memory_if_stale($pdo);
+$after = cms_gsc_get_settings($pdo);
+if (($after['last_memory_detection_at'] ?? null) !== ($before['last_memory_detection_at'] ?? null)) {
+    echo "[growth_agent_maintenance] memory_detect: Ran — last_memory_detection_at diperbarui ke {$after['last_memory_detection_at']}.\n";
+} elseif ($wasStale) {
+    echo "[growth_agent_maintenance] memory_detect: Dicoba (data stale, last_memory_detection_at: " . ($before['last_memory_detection_at'] ?? 'null') . ") tapi timestamp tidak berubah — kemungkinan gagal diam-diam di dalam. Cek PHP error log.\n";
+} else {
+    echo "[growth_agent_maintenance] memory_detect: Skipped — belum stale (last_memory_detection_at: " . ($before['last_memory_detection_at'] ?? 'null') . ").\n";
+}
+
+$before = $after;
+$wasStale = $isStale($before['last_performance_snapshot_at'] ?? null, 24);
+cms_growth_agent_snapshot_performance_if_stale($pdo, 24);
+$after = cms_gsc_get_settings($pdo);
+if (($after['last_performance_snapshot_at'] ?? null) !== ($before['last_performance_snapshot_at'] ?? null)) {
+    echo "[growth_agent_maintenance] perf_snapshot: Ran — last_performance_snapshot_at diperbarui ke {$after['last_performance_snapshot_at']}.\n";
+} elseif ($wasStale) {
+    echo "[growth_agent_maintenance] perf_snapshot: Dicoba (data stale, last_performance_snapshot_at: " . ($before['last_performance_snapshot_at'] ?? 'null') . ") tapi timestamp tidak berubah — kemungkinan gagal diam-diam di dalam. Cek PHP error log.\n";
+} else {
+    echo "[growth_agent_maintenance] perf_snapshot: Skipped — belum stale (last_performance_snapshot_at: " . ($before['last_performance_snapshot_at'] ?? 'null') . ", ambang 24 jam).\n";
+}
+
+echo "[growth_agent_maintenance] Done.\n";
+exit($exitCode);
