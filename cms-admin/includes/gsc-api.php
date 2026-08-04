@@ -1014,6 +1014,31 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                 // when one side only has 1-2 tokens after stopword removal.
                 'min_overlap_tokens' => 2,
             ],
+
+            // Internal Linking Agent (GROWTH_AGENT_V2_PROPOSAL.md Fase B
+            // item 1, 4 Agu 2026) — deterministic topic-overlap threshold
+            // for proposing A -> B internal links. See
+            // cms_growth_agent_scan_internal_links() in
+            // growth-agent-service.php. Deliberately a LOWER
+            // similarity_threshold than seo_g0_gate's 0.6: that gate wants
+            // near-DUPLICATE topics (a reason to warn), this wants
+            // topically-RELATED-but-distinct articles (a reason to link) —
+            // a much looser bar is correct here, not a bug/inconsistency.
+            'internal_linking' => [
+                'similarity_threshold' => 0.5,
+                'min_overlap_tokens' => 2,
+                // Hard cap per source article per scan — more than this
+                // reads as link-spamming, not genuine internal linking.
+                'max_suggestions_per_article' => 3,
+                // Same "bounded batch per click" pattern as
+                // cms_growth_agent_scan_seo_recommendations()'s $limit (5)
+                // and Topic Cluster's 50-article cap — kept separately
+                // tunable since this scan is O(articles²) in the worst
+                // case (every source compared against every other
+                // published article), costlier per article scanned than
+                // the SEO recommendation scan.
+                'articles_scanned_per_run' => 10,
+            ],
         ];
     }
 }

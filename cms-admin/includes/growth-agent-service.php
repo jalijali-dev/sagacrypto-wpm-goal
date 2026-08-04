@@ -610,6 +610,22 @@ function cms_growth_agent_g0_tokenize(string $text): array
             'wib', 'babak', 'pertandingan', 'main', 'bermain', 'laga', 'duel', 'partai', 'leg',
             'matchday', 'preview', 'recap', 'ringkasan', 'terkini', 'terkait', 'klasemen', 'statistik',
             'info', 'cara', 'h2h',
+            // Generic transfer-window/match-report vocabulary (added after
+            // Internal Linking Agent testing surfaced it, 4 Agu 2026) — words
+            // like "transfer"/"musim"/"panas"/"trofi"/"juara" recur across
+            // almost every transfer or match-result article regardless of
+            // which players/clubs/tournament are actually involved, so
+            // without these two problems showed up: (1) topic-overlap
+            // matches on nothing but this generic vocabulary between
+            // otherwise-unrelated articles, (2) anchor phrases built from
+            // title fragments that happened to include one of these words
+            // at the edge, reading as awkward/ungrammatical link text (e.g.
+            // "pulang tanpa trofi di" — a real anchor this produced before
+            // 'trofi'/'pulang' were added here).
+            'bursa', 'transfer', 'musim', 'panas', 'dingin', 'resmi', 'rp', 'triliun', 'juta', 'banderol',
+            'nilai', 'kontrak', 'gelar', 'trofi', 'turnamen', 'juara', 'pulang', 'datang', 'tampil',
+            'sebagai', 'menjadi', 'menjadikannya', 'terbesar', 'jendela', 'winger', 'striker', 'gelandang',
+            'bek', 'kiper', 'pemain', 'klub',
         ]);
     }
 
@@ -849,6 +865,580 @@ function cms_growth_agent_seo_g0_gate(PDO $pdo, string $jobType, string $topicTe
     }
 
     return ['warnings' => $warnings];
+}
+
+/**
+ * ── Internal Linking Agent (GROWTH_AGENT_V2_PROPOSAL.md Fase B item 1,
+ *    4 Agu 2026) ──
+ *
+ * Scans published articles for pairs (A -> B) that are topically related
+ * (reusing the SEO-G0 Gate's own tokenizer/overlap metric —
+ * cms_growth_agent_g0_tokenize()/cms_growth_agent_g0_overlap() — same
+ * reasoning applies: needs Indonesian stopword + site-generic-term
+ * filtering or nearly every article pair would register as "related")
+ * where A's content doesn't yet link to B, and proposes adding one link.
+ *
+ * Detection is 100% deterministic (plain token-overlap + DOM text search),
+ * same "must be consistent/auditable, no AI, no per-run cost" reasoning as
+ * the Opportunity Engine and the SEO-G0 Gate.
+ *
+ * Logs one job_type='internal_link_suggestion' row per proposed pair,
+ * status='manual_action' — same Action Queue as everything else (§ 1b).
+ * The scan itself NEVER touches `pages.content`; only approving the
+ * resulting job on internal-link-review.php does, and even then only
+ * after re-deriving the insertion fresh against the article's CURRENT
+ * content (not a stale scan-time snapshot) and taking a full snapshot of
+ * the old content into that same job's output_json first — this CMS has
+ * no article revision history at all, so that snapshot is the only way
+ * back if a link insertion goes wrong.
+ */
+
+/**
+ * Reads similarity_threshold/min_overlap_tokens/max_suggestions_per_article/
+ * articles_scanned_per_run, nested under opportunity_thresholds_json's
+ * 'internal_linking' key (see cms_gsc_default_opportunity_thresholds() in
+ * gsc-api.php) — same array_replace_recursive-over-defaults pattern as
+ * cms_growth_agent_g0_gate_thresholds(). Never throws.
+ *
+ * @return array{similarity_threshold: float, min_overlap_tokens: int, max_suggestions_per_article: int, articles_scanned_per_run: int}
+ */
+function cms_growth_agent_il_thresholds(PDO $pdo): array
+{
+    $fallback = [
+        'similarity_threshold' => 0.5, 'min_overlap_tokens' => 2,
+        'max_suggestions_per_article' => 3, 'articles_scanned_per_run' => 10,
+    ];
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $defaults = cms_gsc_default_opportunity_thresholds()['internal_linking'] ?? $fallback;
+        $configured = cms_gsc_get_opportunity_thresholds($pdo)['internal_linking'] ?? [];
+
+        return array_replace_recursive($defaults, is_array($configured) ? $configured : []);
+    } catch (Throwable $e) {
+        return $fallback;
+    }
+}
+
+/**
+ * Generates candidate anchor phrases from a target article's title, longest
+ * first (up to 6 words, then single words >=5 chars as a last resort) —
+ * every candidate is guaranteed to contain at least one non-stopword/
+ * non-generic token (reuses cms_growth_agent_g0_tokenize() as the filter),
+ * so a phrase built entirely of filler words (e.g. "yang paling") is never
+ * proposed as an anchor. Longest-first means the most specific/natural
+ * phrase wins if multiple candidates would match — "Piala Dunia 2026"
+ * over just "Piala", for example.
+ *
+ * @return string[] ordered longest (most words) first
+ */
+function cms_growth_agent_il_candidate_phrases(string $title): array
+{
+    $words = preg_split('/\s+/u', trim($title)) ?: [];
+    $words = array_values(array_filter($words, static fn ($w): bool => $w !== ''));
+    $n = count($words);
+    if ($n === 0) {
+        return [];
+    }
+
+    // A window can contain a meaningful word in the middle but a stopword
+    // at either edge (e.g. a 4-word window ending in "di" or "trofi") —
+    // that reads as an awkward, ungrammatical anchor even though the
+    // phrase as a whole "has a meaningful token" per
+    // cms_growth_agent_g0_tokenize(). Trim stopword words off both ends
+    // before accepting a candidate, so anchors always start and end on a
+    // real word.
+    $isStopword = static fn (string $word): bool => cms_growth_agent_g0_tokenize($word) === [];
+
+    $phrases = [];
+    $seen = [];
+    $maxWords = min($n, 6);
+    for ($len = $maxWords; $len >= 2; $len--) {
+        for ($start = 0; $start + $len <= $n; $start++) {
+            $slice = array_slice($words, $start, $len);
+            while ($slice !== [] && $isStopword($slice[0])) {
+                array_shift($slice);
+            }
+            while ($slice !== [] && $isStopword($slice[count($slice) - 1])) {
+                array_pop($slice);
+            }
+            if (count($slice) < 2) {
+                continue;
+            }
+            $phrase = implode(' ', $slice);
+            if (isset($seen[$phrase]) || cms_growth_agent_g0_tokenize($phrase) === []) {
+                continue;
+            }
+            $seen[$phrase] = true;
+            $phrases[] = $phrase;
+        }
+    }
+    foreach ($words as $word) {
+        if (mb_strlen($word) >= 5 && !$isStopword($word) && !isset($seen[$word])) {
+            $seen[$word] = true;
+            $phrases[] = $word;
+        }
+    }
+
+    return $phrases;
+}
+
+/**
+ * Whether $html already contains a link to the article at $targetSlug —
+ * checked via DOMDocument (not a raw string search) so an href that merely
+ * happens to contain the slug as a text coincidence elsewhere doesn't
+ * false-positive... though in practice this is a straightforward
+ * substring check against real <a href> values, which is safe precisely
+ * because DOMDocument guarantees we're only ever looking at genuine href
+ * attribute values, never arbitrary text. Never throws — a parse failure
+ * is treated as "not linked" (the insertion step re-parses the same HTML
+ * anyway and will itself abort safely if the HTML can't be trusted).
+ */
+function cms_growth_agent_il_already_linked(string $html, string $targetSlug): bool
+{
+    if (trim($html) === '' || $targetSlug === '') {
+        return false;
+    }
+    try {
+        libxml_use_internal_errors(true);
+        $dom = new DOMDocument('1.0', 'UTF-8');
+        $loaded = $dom->loadHTML(
+            '<?xml encoding="UTF-8"><div id="wpm-il-check">' . $html . '</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        libxml_clear_errors();
+        if (!$loaded) {
+            return false;
+        }
+        $needle = 'artikel/' . rawurlencode($targetSlug);
+        $xpath = new DOMXPath($dom);
+        foreach ($xpath->query('//a[@href]') as $anchor) {
+            $href = $anchor->getAttribute('href');
+            if ($href !== '' && (str_contains($href, $needle) || str_contains($href, $targetSlug))) {
+                return true;
+            }
+        }
+        return false;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * Re-parses $newHtml and confirms it's safe to persist: parses without a
+ * FATAL libxml error, has exactly $expectedAnchorCount total <a> tags (the
+ * original count + 1 — never more, never fewer), and has zero nested
+ * anchors (<a> inside another <a>). Belt-and-suspenders on top of
+ * cms_growth_agent_il_insert_link()'s own careful DOM surgery — if this
+ * returns false, the caller must discard the result entirely rather than
+ * save it, per the "abort rather than risk a broken article" rule.
+ */
+function cms_growth_agent_il_verify_safe(string $newHtml, int $expectedAnchorCount): bool
+{
+    try {
+        libxml_use_internal_errors(true);
+        $check = new DOMDocument('1.0', 'UTF-8');
+        $loaded = $check->loadHTML(
+            '<?xml encoding="UTF-8"><div id="wpm-il-verify">' . $newHtml . '</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        $errors = libxml_get_errors();
+        libxml_clear_errors();
+        if (!$loaded) {
+            return false;
+        }
+        foreach ($errors as $error) {
+            if ($error->level === LIBXML_ERR_FATAL) {
+                return false;
+            }
+        }
+        $xpath = new DOMXPath($check);
+        if ($xpath->query('//a//a')->length > 0) {
+            return false;
+        }
+        return $xpath->query('//a')->length === $expectedAnchorCount;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * The DOM-safe link insertion itself — the core of this whole feature's
+ * safety story. Never uses str_replace()/raw regex-on-HTML (which could
+ * insert into an attribute value, inside <script>/<style>, or nest inside
+ * an existing <a>). Instead:
+ *
+ *   1. Parses $html with DOMDocument (UTF-8 explicitly declared via the
+ *      "<?xml encoding=...>" prefix trick — WITHOUT this, DOMDocument
+ *      silently mis-decodes UTF-8 as Latin-1 and mangles every non-ASCII
+ *      character, the classic PHP DOMDocument/UTF-8 trap).
+ *   2. Selects ONLY text() nodes that are NOT already inside <a>, <script>,
+ *      or <style> (an XPath ancestor:: check — attribute VALUES are never
+ *      even visible to this query, since DOMAttr nodes aren't text()
+ *      nodes, so "inside an attribute" is structurally impossible to hit
+ *      here at all, not just filtered out).
+ *   3. Tries each candidate anchor phrase (longest first, see
+ *      cms_growth_agent_il_candidate_phrases()), and within a phrase,
+ *      each eligible text node in document order — stops at the FIRST
+ *      whole-phrase (word-boundary-safe, Unicode-aware) match found,
+ *      never inserts more than once.
+ *   4. Splits that one text node into before/anchor/after DOM nodes
+ *      (byte-offset split from PREG_OFFSET_CAPTURE with the 'u' modifier
+ *      is safe here — those offsets always land on UTF-8 character
+ *      boundaries) and inserts a real <a> element via createElement/
+ *      createTextNode, which handles HTML-entity escaping correctly on
+ *      its own.
+ *   5. Re-serializes ONLY the wrapper's children (never the wrapper
+ *      itself) via saveHTML(), then hands the result to
+ *      cms_growth_agent_il_verify_safe() as a final safety re-check.
+ *
+ * Returns null (never partially applies) if: the HTML can't be parsed
+ * safely, no candidate phrase has any safe occurrence, or the post-
+ * insertion safety re-check fails for any reason.
+ *
+ * @return array{html: string, anchor_text: string, context: string}|null
+ */
+function cms_growth_agent_il_insert_link(string $html, string $targetTitle, string $targetHref): ?array
+{
+    if (trim($html) === '' || trim($targetTitle) === '' || trim($targetHref) === '') {
+        return null;
+    }
+
+    $phrases = cms_growth_agent_il_candidate_phrases($targetTitle);
+    if ($phrases === []) {
+        return null;
+    }
+
+    try {
+        libxml_use_internal_errors(true);
+        $dom = new DOMDocument('1.0', 'UTF-8');
+        $loaded = $dom->loadHTML(
+            '<?xml encoding="UTF-8"><div id="wpm-il-root">' . $html . '</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        $parseErrors = libxml_get_errors();
+        libxml_clear_errors();
+        if (!$loaded) {
+            return null;
+        }
+        foreach ($parseErrors as $error) {
+            if ($error->level === LIBXML_ERR_FATAL) {
+                return null; // source HTML too broken to safely round-trip
+            }
+        }
+
+        $root = $dom->getElementById('wpm-il-root');
+        if ($root === null) {
+            return null;
+        }
+
+        $xpath = new DOMXPath($dom);
+        $originalAnchorCount = $xpath->query('//a')->length;
+
+        foreach ($phrases as $phrase) {
+            $pattern = '/(?<![\p{L}\p{N}])(' . preg_quote($phrase, '/') . ')(?![\p{L}\p{N}])/ui';
+            $textNodes = $xpath->query('.//text()[not(ancestor::a) and not(ancestor::script) and not(ancestor::style)]', $root);
+
+            foreach ($textNodes as $node) {
+                $nodeText = $node->nodeValue;
+                if ($nodeText === null || trim($nodeText) === '') {
+                    continue;
+                }
+                if (!preg_match($pattern, $nodeText, $m, PREG_OFFSET_CAPTURE)) {
+                    continue;
+                }
+
+                $matchText = $m[1][0];
+                $offset = $m[1][1];
+                $before = substr($nodeText, 0, $offset);
+                $after = substr($nodeText, $offset + strlen($matchText));
+
+                $parent = $node->parentNode;
+                if ($parent === null) {
+                    continue;
+                }
+
+                $anchor = $dom->createElement('a');
+                $anchor->setAttribute('href', $targetHref);
+                $anchor->appendChild($dom->createTextNode($matchText));
+
+                if ($before !== '') {
+                    $parent->insertBefore($dom->createTextNode($before), $node);
+                }
+                $parent->insertBefore($anchor, $node);
+                if ($after !== '') {
+                    $parent->insertBefore($dom->createTextNode($after), $node);
+                }
+                $parent->removeChild($node);
+
+                $context = trim(preg_replace('/\s+/u', ' ', (string) $parent->textContent) ?? '');
+                if (mb_strlen($context) > 220) {
+                    $pos = mb_stripos($context, $matchText);
+                    $start = max(0, ($pos === false ? 0 : $pos) - 80);
+                    $context = ($start > 0 ? '…' : '') . mb_substr($context, $start, 220) . '…';
+                }
+
+                $newHtml = '';
+                foreach ($root->childNodes as $child) {
+                    $newHtml .= $dom->saveHTML($child);
+                }
+
+                if (!cms_growth_agent_il_verify_safe($newHtml, $originalAnchorCount + 1)) {
+                    return null; // abort entirely rather than risk a broken save
+                }
+
+                return ['html' => $newHtml, 'anchor_text' => $matchText, 'context' => $context];
+            }
+        }
+
+        return null; // no safe occurrence found for any candidate phrase
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * The scan itself — triggered manually (button on growth-agent.php, see
+ * that page's own comment on why it lives there and not
+ * seo-intelligence.php). For up to $articlesLimit published articles
+ * (least-recently-updated first, same convention as
+ * cms_growth_agent_scan_seo_recommendations()), compares against every
+ * OTHER published article by topic-token overlap, and for each relevant,
+ * not-yet-linked, not-yet-proposed pair where a safe anchor insertion
+ * point actually exists, logs one manual_action job. Caps proposals per
+ * source article (max_suggestions_per_article) so one heavily-connected
+ * article doesn't dominate a scan with a wall of suggestions.
+ *
+ * Never modifies `pages.content` — that only happens in
+ * cms_growth_agent_apply_internal_link(), on explicit operator approval.
+ * Never throws.
+ *
+ * @return array{scanned: int, created: int, errors: int}
+ */
+function cms_growth_agent_scan_internal_links(PDO $pdo): array
+{
+    $stats = ['scanned' => 0, 'created' => 0, 'errors' => 0];
+
+    try {
+        cms_growth_agent_ensure_schema($pdo);
+        $thresholds = cms_growth_agent_il_thresholds($pdo);
+        $simThreshold = (float) $thresholds['similarity_threshold'];
+        $minOverlap = (int) $thresholds['min_overlap_tokens'];
+        $maxPerArticle = max(1, (int) $thresholds['max_suggestions_per_article']);
+        $articlesLimit = max(1, min(30, (int) $thresholds['articles_scanned_per_run']));
+
+        $allPages = $pdo->query("SELECT page_id, title, slug, content FROM pages WHERE status = 'published'")->fetchAll();
+        if (count($allPages) < 2) {
+            return $stats;
+        }
+
+        $sourceStmt = $pdo->prepare(
+            "SELECT page_id, title, slug, content FROM pages WHERE status = 'published' ORDER BY updated_at ASC LIMIT " . $articlesLimit
+        );
+        $sourceStmt->execute();
+        $sources = $sourceStmt->fetchAll();
+
+        // Existing pending/applied pairs — decoded in PHP rather than a
+        // JSON_EXTRACT() SQL condition, same convention as the SEO-G0
+        // Gate's duplicate-pending check (this codebase's established
+        // pattern for scanning growth_agent_jobs.input_brief).
+        $existingPairs = [];
+        $jobRows = $pdo->query(
+            "SELECT input_brief FROM growth_agent_jobs
+              WHERE job_type = 'internal_link_suggestion' AND status IN ('manual_action', 'succeeded')"
+        )->fetchAll();
+        foreach ($jobRows as $row) {
+            $brief = json_decode((string) $row['input_brief'], true);
+            if (is_array($brief) && isset($brief['source_page_id'], $brief['target_page_id'])) {
+                $existingPairs[$brief['source_page_id'] . ':' . $brief['target_page_id']] = true;
+            }
+        }
+    } catch (Throwable $e) {
+        return $stats;
+    }
+
+    foreach ($sources as $source) {
+        $stats['scanned']++;
+        $sourceId = (int) $source['page_id'];
+
+        try {
+            $plainText = trim(preg_replace('/\s+/u', ' ', strip_tags((string) $source['content'])) ?? '');
+            $sourceTokens = cms_growth_agent_g0_tokenize($plainText);
+        } catch (Throwable $e) {
+            continue;
+        }
+        if ($sourceTokens === []) {
+            continue;
+        }
+
+        $suggestionsForThisArticle = 0;
+        foreach ($allPages as $target) {
+            if ($suggestionsForThisArticle >= $maxPerArticle) {
+                break;
+            }
+            $targetId = (int) $target['page_id'];
+            if ($targetId === $sourceId) {
+                continue;
+            }
+            if (isset($existingPairs[$sourceId . ':' . $targetId])) {
+                continue;
+            }
+
+            try {
+                $targetTokens = cms_growth_agent_g0_tokenize((string) $target['title']);
+                if ($targetTokens === []) {
+                    continue;
+                }
+                $overlap = cms_growth_agent_g0_overlap($targetTokens, $sourceTokens);
+                if ($overlap['coefficient'] < $simThreshold || count($overlap['intersection']) < $minOverlap) {
+                    continue;
+                }
+
+                if (cms_growth_agent_il_already_linked((string) $source['content'], (string) $target['slug'])) {
+                    continue;
+                }
+
+                $targetHref = 'artikel/' . rawurlencode((string) $target['slug']);
+                $insertResult = cms_growth_agent_il_insert_link((string) $source['content'], (string) $target['title'], $targetHref);
+                if ($insertResult === null) {
+                    continue; // no safe anchor point — skip, do not force it
+                }
+
+                $inputBrief = [
+                    'source_page_id' => $sourceId,
+                    'source_title' => (string) $source['title'],
+                    'target_page_id' => $targetId,
+                    'target_title' => (string) $target['title'],
+                    'target_slug' => (string) $target['slug'],
+                    'anchor_text' => $insertResult['anchor_text'],
+                    'context' => $insertResult['context'],
+                    'similarity' => round($overlap['coefficient'], 2),
+                ];
+
+                $jobId = cms_growth_agent_log_job(
+                    $pdo, 'internal_link_suggestion', 'growth_agent', $sourceId, 'manual_action',
+                    $inputBrief, null, null, null, null, null, '', 'medium'
+                );
+                if ($jobId > 0) {
+                    $stats['created']++;
+                    $suggestionsForThisArticle++;
+                    $existingPairs[$sourceId . ':' . $targetId] = true;
+                } else {
+                    $stats['errors']++;
+                }
+            } catch (Throwable $e) {
+                $stats['errors']++;
+            }
+        }
+    }
+
+    return $stats;
+}
+
+/**
+ * Approve half of the Internal Linking Agent flow — the ONLY place
+ * `pages.content` is ever written by this feature, called exclusively
+ * from internal-link-review.php's "Apply" action (never generic
+ * Approve/Reject: writing to `pages` needs the dedicated snapshot-first
+ * handling below, same reasoning as why 'seo_recommendation' has its own
+ * review page instead of the generic buttons).
+ *
+ * Re-derives the insertion fresh against the article's CURRENT content
+ * (never trusts the scan-time input_brief.context as still accurate — the
+ * article may have been edited since) via
+ * cms_growth_agent_il_insert_link(), and if (and only if) that succeeds:
+ * snapshots the OLD content in full into this job's own output_json
+ * (mandatory — see this file's own top note on there being no revision
+ * history at all), then overwrites `pages.content` (and ONLY content —
+ * `pages.status` is never touched, published stays published).
+ *
+ * Never throws. Returns ['ok' => bool, 'error' => string].
+ */
+function cms_growth_agent_apply_internal_link(PDO $pdo, int $jobId): array
+{
+    try {
+        $jobStmt = $pdo->prepare(
+            "SELECT id, status, page_id, input_brief FROM growth_agent_jobs
+              WHERE id = :id AND job_type = 'internal_link_suggestion' LIMIT 1"
+        );
+        $jobStmt->execute(['id' => $jobId]);
+        $job = $jobStmt->fetch();
+        if (!$job) {
+            return ['ok' => false, 'error' => 'Job usulan link tidak ditemukan.'];
+        }
+        if ($job['status'] !== 'manual_action') {
+            return ['ok' => false, 'error' => 'Usulan ini sudah pernah diproses sebelumnya.'];
+        }
+
+        $brief = json_decode((string) $job['input_brief'], true);
+        if (!is_array($brief)) {
+            return ['ok' => false, 'error' => 'Data usulan (input_brief) rusak.'];
+        }
+        $sourceId = (int) ($brief['source_page_id'] ?? 0);
+        $targetSlug = trim((string) ($brief['target_slug'] ?? ''));
+        $targetTitle = trim((string) ($brief['target_title'] ?? ''));
+        if ($sourceId <= 0 || $targetSlug === '' || $targetTitle === '') {
+            return ['ok' => false, 'error' => 'Data usulan tidak lengkap.'];
+        }
+
+        $pageStmt = $pdo->prepare('SELECT page_id, content FROM pages WHERE page_id = :id LIMIT 1');
+        $pageStmt->execute(['id' => $sourceId]);
+        $page = $pageStmt->fetch();
+        if (!$page) {
+            return ['ok' => false, 'error' => 'Artikel sumber tidak ditemukan — mungkin sudah dihapus.'];
+        }
+
+        $currentContent = (string) $page['content'];
+        if (cms_growth_agent_il_already_linked($currentContent, $targetSlug)) {
+            return ['ok' => false, 'error' => 'Artikel ini sudah punya link ke artikel tujuan — tidak ada perubahan yang diterapkan.'];
+        }
+
+        $targetHref = 'artikel/' . rawurlencode($targetSlug);
+        $result = cms_growth_agent_il_insert_link($currentContent, $targetTitle, $targetHref);
+        if ($result === null) {
+            return ['ok' => false, 'error' => 'Tidak ditemukan tempat penyisipan yang aman di konten SAAT INI — kemungkinan artikel sudah diedit sejak usulan ini dibuat. Tidak ada perubahan diterapkan.'];
+        }
+
+        $currentAdminId = (int) ($_SESSION['cms_admin_id'] ?? 0) ?: null;
+
+        $pdo->beginTransaction();
+        try {
+            // Mandatory content snapshot — see this section's own top note:
+            // this CMS has no revision history, so this is the only way an
+            // operator can recover the previous wording if this insertion
+            // turns out to be wrong after the fact.
+            $snapshot = [
+                'page_id' => $sourceId,
+                'previous_content' => $currentContent,
+                'previous_content_length' => mb_strlen($currentContent),
+                'applied_at' => date(DATE_ATOM),
+                'anchor_text' => $result['anchor_text'],
+                'target_page_id' => (int) ($brief['target_page_id'] ?? 0),
+                'target_href' => $targetHref,
+            ];
+
+            $pdo->prepare('UPDATE pages SET content = :content, updated_at = NOW() WHERE page_id = :id')
+                ->execute(['content' => $result['html'], 'id' => $sourceId]);
+
+            $pdo->prepare(
+                'INSERT INTO growth_agent_feedback (job_id, action, reviewed_by, created_at) VALUES (:job_id, :action, :reviewed_by, NOW())'
+            )->execute(['job_id' => $jobId, 'action' => 'approved_as_is', 'reviewed_by' => $currentAdminId]);
+
+            $pdo->prepare(
+                "UPDATE growth_agent_jobs SET status = 'succeeded', output_json = :output, updated_at = NOW() WHERE id = :id"
+            )->execute(['output' => json_encode($snapshot, JSON_UNESCAPED_UNICODE), 'id' => $jobId]);
+
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+
+        return ['ok' => true, 'error' => ''];
+    } catch (Throwable $e) {
+        return ['ok' => false, 'error' => $e->getMessage()];
+    }
 }
 
 /**

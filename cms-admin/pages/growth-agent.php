@@ -234,6 +234,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $redirect('Scan selesai (' . $scanStats['scanned'] . ' artikel) tapi tidak ada rekomendasi yang berhasil dibuat. Coba lagi nanti.', 'error');
     }
 
+    // ── Internal Linking Agent — manual scan trigger ─────────────────────
+    // Lives here (not seo-intelligence.php) because it's the same
+    // "deterministic content scan across published articles, bounded batch
+    // per click" shape as the SEO recommendation scan right above — no AI,
+    // pure token-overlap + DOM text search (see
+    // cms_growth_agent_scan_internal_links() in growth-agent-service.php).
+    // seo-intelligence.php is specifically the AI-driven Topic Cluster
+    // surface; this doesn't belong there. Each proposed pair becomes one
+    // manual_action job, reviewed on internal-link-review.php (not the
+    // generic Approve/Reject buttons) since "Apply" here writes directly
+    // into pages.content.
+    if ($action === 'scan_internal_linking') {
+        $ilStats = cms_growth_agent_scan_internal_links($pdo);
+        if ($ilStats['created'] > 0) {
+            $redirect($ilStats['created'] . ' usulan link internal baru dari ' . $ilStats['scanned'] . ' artikel yang di-scan. Cek di tabel "Job Terbaru" di bawah.');
+        }
+        if ($ilStats['scanned'] === 0) {
+            $redirect('Tidak cukup artikel published untuk di-scan (butuh minimal 2).', 'error');
+        }
+        $redirect('Scan selesai (' . $ilStats['scanned'] . ' artikel) tapi tidak ada usulan link baru yang ditemukan — kemungkinan besar semua pasangan relevan sudah pernah diusulkan/di-link, atau memang belum ada topik yang cukup tumpang tindih.', 'error');
+    }
+
     // ── Manual cleanup — same rules as the lazy auto-cleanup above, just
     // on-demand with a chosen retention window. Never removes 'ready',
     // 'running', or 'manual_action' jobs, and never removes a 'succeeded'
@@ -720,15 +742,21 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </h2>
             <p class="section-lead">Pipeline SEO &amp; konten — bikin draft, jalanin proses, lalu kembalikan ke operator buat di-approve.</p>
         </div>
-        <div class="toolbar__right">
+        <div class="toolbar__right" style="gap:8px;">
             <form method="post" action="<?= cms_esc($selfUrl) ?>">
                 <?= cms_csrf_field() ?>
                 <input type="hidden" name="action" value="scan_seo">
                 <button type="submit" class="admin-btn admin-btn--primary">Scan untuk perbaikan SEO</button>
             </form>
+            <form method="post" action="<?= cms_esc($selfUrl) ?>">
+                <?= cms_csrf_field() ?>
+                <input type="hidden" name="action" value="scan_internal_linking">
+                <button type="submit" class="admin-btn admin-btn--secondary">Scan Internal Linking</button>
+            </form>
         </div>
     </div>
     <p class="section-lead" style="margin-top:-8px;">Scan mengecek artikel published yang belum pernah di-scan (maks. 5 per klik) dan mengusulkan meta title/description yang lebih baik untuk masing-masing — tidak ada yang berubah sampai Anda review dan apply.</p>
+    <p class="section-lead" style="margin-top:-8px;">Scan Internal Linking mencari pasangan artikel yang topiknya relevan tapi belum saling link (maks. 10 artikel sumber per klik, maks. 3 usulan per artikel) — murni pencocokan teks, tanpa AI. Tidak ada yang berubah sampai Anda review dan apply di halaman Review Link Internal.</p>
 
     <div class="panel">
         <div class="panel__head">
@@ -1159,6 +1187,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         $isSeoRecommendation = $job['job_type'] === 'seo_recommendation';
         $isIndexingIssue = $job['job_type'] === 'review_indexing_issue';
         $isCannibalization = $job['job_type'] === 'cannibalization_review';
+        $isInternalLink = $job['job_type'] === 'internal_link_suggestion';
         // seo_recommendation jobs get their own review page (Apply writes
         // straight into pages.meta_title/meta_description), so they never
         // use the generic Approve/Reject buttons — Close as Legacy is
@@ -1170,17 +1199,24 @@ require dirname(__DIR__) . '/includes/alerts.php';
         // dedicated page frames the 2 real actions as "Tandai Sudah
         // Ditinjau" / "Tutup sebagai Legacy" instead. cannibalization_review
         // (ROADMAP.md gap #5) gets the same treatment for the same reason —
-        // cannibalization-review.php.
-        $canReviewGeneric = !$isSeoRecommendation && !$isIndexingIssue && !$isCannibalization && (int) $job['feedback_count'] === 0 && in_array($job['status'], ['succeeded', 'failed', 'manual_action'], true);
+        // cannibalization-review.php. internal_link_suggestion (Fase B item
+        // 1) gets the same treatment too — its own review page
+        // (internal-link-review.php), because Apply here writes directly
+        // into pages.content and the operator needs to see the anchor text
+        // + surrounding sentence before deciding, which the generic
+        // Approve/Reject buttons have no room to show.
+        $canReviewGeneric = !$isSeoRecommendation && !$isIndexingIssue && !$isCannibalization && !$isInternalLink && (int) $job['feedback_count'] === 0 && in_array($job['status'], ['succeeded', 'failed', 'manual_action'], true);
         $canReviewSeo = $isSeoRecommendation && $job['status'] === 'manual_action';
         $canReviewIndexing = $isIndexingIssue && $job['status'] === 'manual_action';
         $canReviewCannibalization = $isCannibalization && $job['status'] === 'manual_action';
+        $canReviewInternalLink = $isInternalLink && $job['status'] === 'manual_action';
         $job['_can_review_generic'] = $canReviewGeneric;
         $job['_can_review_seo'] = $canReviewSeo;
         $job['_can_review_indexing'] = $canReviewIndexing;
         $job['_can_review_cannibalization'] = $canReviewCannibalization;
+        $job['_can_review_internal_link'] = $canReviewInternalLink;
 
-        if ($canReviewGeneric || $canReviewSeo || $canReviewIndexing || $canReviewCannibalization) {
+        if ($canReviewGeneric || $canReviewSeo || $canReviewIndexing || $canReviewCannibalization || $canReviewInternalLink) {
             $jobsByTab['need-review'][] = $job;
         } elseif (in_array($job['status'], ['ready', 'running'], true)) {
             $jobsByTab['ready-to-run'][] = $job;
@@ -1196,6 +1232,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         $canReviewSeo = $job['_can_review_seo'];
         $canReviewIndexing = $job['_can_review_indexing'];
         $canReviewCannibalization = $job['_can_review_cannibalization'];
+        $canReviewInternalLink = $job['_can_review_internal_link'];
         ?>
         <?php $g0Warnings = $job['_g0_warnings'] ?? []; ?>
         <tr>
@@ -1240,6 +1277,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <a class="admin-btn admin-btn--sm admin-btn--primary" href="indexing-issue-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
                 <?php elseif ($canReviewCannibalization) : ?>
                     <a class="admin-btn admin-btn--sm admin-btn--primary" href="cannibalization-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
+                <?php elseif ($canReviewInternalLink) : ?>
+                    <a class="admin-btn admin-btn--sm admin-btn--primary" href="internal-link-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
                 <?php elseif ($canReviewGeneric) : ?>
                     <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>">
                         <?= cms_csrf_field() ?>
@@ -1256,7 +1295,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <?php else : ?>
                     <span class="muted">—</span>
                 <?php endif; ?>
-                <?php if ($canReviewGeneric || $canReviewSeo || $canReviewIndexing || $canReviewCannibalization) : ?>
+                <?php if ($canReviewGeneric || $canReviewSeo || $canReviewIndexing || $canReviewCannibalization || $canReviewInternalLink) : ?>
                     <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Tandai job ini sebagai legacy? Ini BUKAN reject — cuma menandai sudah tidak relevan lagi (mis. data GSC-nya sudah basi), tidak dihitung sebagai penolakan aktif.');">
                         <?= cms_csrf_field() ?>
                         <input type="hidden" name="action" value="close_as_legacy">
