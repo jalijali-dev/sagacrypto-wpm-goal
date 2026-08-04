@@ -29,9 +29,12 @@ Cron cPanel (tiap Minggu 02:00)
 - **rclone** (`~/bin/rclone`, v1.74.4) — binary standalone, tidak butuh
   root, di-download manual dari `downloads.rclone.org` (bukan lewat
   package manager, karena akses cPanel shared hosting tidak punya `sudo`).
-- Remote rclone bernama **`gdrive`**, scope OAuth **`drive.file`** (cuma
-  akses file yang dibuat rclone sendiri — sengaja dipilih scope paling
-  sempit, bukan full Drive access).
+- Remote rclone bernama **`WPM-sagagoal`** (sebelumnya sempat bernama
+  `gdrive`, di-rename total — bukan cuma ganti nama, tapi hapus+bikin
+  ulang remote — saat pindah akun Google tujuan backup, lihat § "Riwayat
+  ganti akun Drive" di bawah), scope OAuth **`drive.file`** (cuma akses
+  file yang dibuat rclone sendiri — sengaja dipilih scope paling sempit,
+  bukan full Drive access).
 - Config token rclone tersimpan di `~/.config/rclone/rclone.conf` di
   server (bukan di repo, bukan di git — murni lokal server).
 - Script backup: `~/backup-weekly.sh` (home dir server, **bukan** bagian
@@ -59,8 +62,8 @@ mysqldump --defaults-extra-file=~/.my.cnf.tmp sagagoal_cms | gzip > ~/backups/sa
 tar -czf ~/backups/sagagoal_files_$DATE.tar.gz -C ~/public_html .
 rm -f ~/.my.cnf.tmp
 
-~/bin/rclone copy ~/backups/sagagoal_db_$DATE.sql.gz gdrive:SagagoalBackups
-~/bin/rclone copy ~/backups/sagagoal_files_$DATE.tar.gz gdrive:SagagoalBackups
+~/bin/rclone copy ~/backups/sagagoal_db_$DATE.sql.gz WPM-sagagoal:SagagoalBackups
+~/bin/rclone copy ~/backups/sagagoal_files_$DATE.tar.gz WPM-sagagoal:SagagoalBackups
 
 find ~/backups -type f -mtime +14 -delete
 echo "Backup selesai: $DATE"
@@ -108,11 +111,36 @@ cat ~/backups/backup.log
 ls -lh ~/backups
 
 # Cek isi folder Drive langsung dari server
-~/bin/rclone lsl gdrive:SagagoalBackups
+~/bin/rclone lsl WPM-sagagoal:SagagoalBackups
 
 # Jalanin manual di luar jadwal cron kalau perlu backup dadakan
 bash ~/backup-weekly.sh
 ```
+
+## Riwayat ganti akun Drive tujuan (31 Jul 2026)
+
+Tujuan backup dipindah dari akun Google `ragaraja2201@gmail.com` (remote
+lama `gdrive`) ke akun Google baru (remote baru **`WPM-sagagoal`**).
+
+- **2 backup pertama (31 Jul dini hari, sebelum pindah) sengaja
+  dibiarkan** di Drive akun lama, folder `SagagoalBackups` — tidak
+  di-migrasi/copy ke akun baru (keputusan eksplisit, bukan kelupaan).
+  Kalau perlu file itu lagi, harus dicari manual di akun lama.
+- Rename remote **bukan** sekadar `rclone config rename` — remote lama
+  `gdrive` dihapus total dan dibuat ulang dengan nama `WPM-sagagoal`,
+  supaya re-autentikasi OAuth beneran jalan (ketemu bug: memilih "Edit
+  existing remote" lalu jawab "No" di prompt "Already have a token -
+  refresh?" **tidak** memicu browser-auth baru — rclone diam-diam
+  menyimpan ulang token lama tanpa re-auth. Fix: `d` untuk delete remote,
+  baru `n` untuk New remote dari nol — ini yang benar-benar memicu alur
+  `rclone authorize` baru).
+- Setelah remote baru dibuat, `~/backup-weekly.sh` di-update (`sed`)
+  supaya kedua baris `rclone copy` menunjuk ke `WPM-sagagoal:...`,
+  bukan `gdrive:...` lagi. Cron job (`0 2 * * 0`) tidak perlu diubah —
+  tetap manggil script yang sama, cuma isinya yang berubah.
+- Diverifikasi end-to-end: `bash ~/backup-weekly.sh` dijalankan manual
+  setelah perubahan, kedua file baru muncul di folder `SagagoalBackups`
+  akun Google yang baru.
 
 ## Cara restore (belum pernah dites end-to-end — catat di sini kalau nanti dites)
 

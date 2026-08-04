@@ -124,6 +124,52 @@ Belum masuk prioritas sama sekali (sesuai bagian "Tidak diperlukan" di
 CRM/lead agent, competitor scraping, autonomous publishing, embeddings/vector
 DB.
 
+### Growth Agent v2 — hasil analisis gap (disetujui 1 Agu 2026)
+
+Dipicu dari perbandingan alur Growth Agent Sagagoal sama diagram
+referensi eksternal ("Val's Cake") + pertanyaan: workflow apa yang
+paling efektif buat naikin artikel & SEO ke page 1 Google. Detail
+teknis lengkap (skema DB, alasan tiap item, urutan prioritas) ada di
+`docs/GROWTH_AGENT_V2_PROPOSAL.md` — ringkasan di bawah ini cuma index,
+jangan diedit terpisah dari dokumen aslinya.
+
+**Belum ada satu item pun yang mulai dikerjakan** — status "disetujui"
+di sini artinya masuk antrian resmi, prioritas urutan fase A → D.
+
+- **Fase A — Fondasi:** scheduler mandiri (Cron Job cPanel, pola sama
+  kayak backup mingguan di `docs/BACKUP_WORKFLOW.md`, gantikan trigger
+  "lazy" yang sekarang cuma jalan pas admin buka halaman), notifikasi
+  digest mingguan (Telegram/email), SEO-G0 Gate diformalkan (Content
+  Conflict Detection yang sudah ada dipindah jadi pre-check sebelum
+  agent lain bikin usulan, bukan kategori opportunity terpisah).
+- **Fase B — Akselerator ranking:** 3 karakter baru — **Internal Linking
+  Agent** (saran link antar artikel, approve → masuk draft revisi),
+  **Keyword Expansion Agent** (usulan topik/keyword di luar histori GSC,
+  nyambung ke Topic Cluster yang sudah ada), **Technical SEO Auditor**
+  (Core Web Vitals via PageSpeed Insights API, schema markup, alt text
+  — laporan doang, gak auto-fix).
+- **Fase C — Distribusi & closing the loop:** **Social Specialist**
+  (siapin draft caption sosmed setelah artikel dipublish manual, gak
+  pernah auto-post), auto re-trigger measurement loop (jadwal otomatis
+  cek ulang performa 28 hari setelah sebuah rekomendasi di-Apply).
+- **Fase D — Perlu keputusan lanjutan sebelum dikerjakan:** **Backlink
+  Monitor** (read-only, lewat GSC Links report yang udah gratis diakses
+  — sengaja gak ada outreach otomatis), riset keyword pakai API
+  berbayar (trade-off biaya vs akurasi, belum diputuskan).
+
+Prinsip yang tetap dijaga di semua fase: AI cuma menyarankan, gak ada
+publish/posting/outreach otomatis — sama persis kayak guardrail Growth
+Agent v1 yang sudah berjalan.
+
+**Aturan arsitektur wajib (ditetapkan 2 Agu 2026):** semua agent — lama
+maupun baru — cuma boleh menulis usulan ke Action Queue
+(`growth_agent_jobs`), dibedakan lewat `job_type`/`agent_key`. Dilarang
+bikin tabel antrian sendiri per-agent, dilarang ada aksi yang jalan tanpa
+row di antrian + approval manusia, dan hasil setelah di-approve dicatat
+balik ke baris yang sama (`output_json` + `growth_agent_feedback`).
+Detail lengkap + alasannya di `docs/GROWTH_AGENT_V2_PROPOSAL.md` § 1b —
+**wajib dibaca sebelum mengerjakan agent baru mana pun.**
+
 ## Later / Backlog
 
 Diketahui perlu dikerjakan suatu saat, tapi bukan prioritas sekarang.
@@ -150,6 +196,88 @@ Diketahui perlu dikerjakan suatu saat, tapi bukan prioritas sekarang.
   peringatan non-fatal `PROCESS privilege` dari `mysqldump` di
   shared-hosting) ada di `docs/BACKUP_WORKFLOW.md`. Restore belum pernah
   dites sungguhan — dicatat eksplisit sebagai gap di dokumen itu.
+
+**4 Agu 2026:**
+- **Fix layout halaman listing berita + kolom iklan sidebar kanan** (commit
+  `b454965`) — bug nyata: `kategori.php` memotong grid 3-kolom di TENGAH
+  baris (`$i === 4`) untuk menyisipkan iklan, menyisakan sel kosong yang
+  terlihat di production; pemotongan itu bahkan terjadi saat slot iklannya
+  kosong, jadi layout rusak tanpa dapat apa-apa. Diganti: iklan jadi grid
+  item biasa dengan `grid-column: 1 / -1` (selalu jadi baris utuh di jumlah
+  kolom berapa pun, jadi mustahil menyisakan lubang di breakpoint mana pun).
+  Plus layout `.news-grid-layout` untuk sidebar kanan, mengikuti pola
+  `.article-layout` yang sudah ada (aside tidak dirender sama sekali kalau
+  slot kosong, bukan disembunyikan CSS). Ditemukan 1 bug specificity saat
+  review: override 2-kolom `.news-grid-layout--right-only .crypto-grid--3`
+  (0,2,0) mengalahkan rule mobile `.crypto-grid--3` (0,1,0) di `@media
+  max-width 640px` — media query tidak menambah specificity — sehingga kartu
+  tidak collapse ke 1 kolom di HP saat iklan sidebar aktif; diperbaiki
+  dengan rule tandingan di dalam media query yang sama.
+- **Structured data NewsArticle + BreadcrumbList di halaman artikel**
+  (commit `e238083`) — GSC melaporkan "URL has no enhancements"; sebelumnya
+  `artikel.php` cuma punya schema FAQPage (itu pun hanya bila artikel punya
+  FAQ). Ditambah NewsArticle (headline dipotong 110 char pakai `mb_substr`,
+  field `image` dihilangkan sepenuhnya bila tidak ada gambar) dan
+  BreadcrumbList yang mencerminkan breadcrumb visual persis termasuk kasus
+  artikel tanpa kategori. `og:type` di `includes/site-header.php` yang dulu
+  hardcode `"website"` sekarang bisa di-override lewat `$ogType` opsional
+  (default tetap `website`, jadi halaman lain tidak berubah). Sekalian
+  `index.php` canonical diselaraskan dari `.../index.php` ke `.../` —
+  ternyata selama ini bertentangan dengan sitemap, yang di
+  `cms_sitemap_path_for()` sudah lama memakai `'homepage' => ''`.
+- **Perbaikan XSS pada semua JSON yang dicetak ke dalam `<script>`** (bagian
+  dari commit `e238083`) — ditemukan saat review structured data: blok
+  JSON-LD memakai `JSON_UNESCAPED_SLASHES` tanpa `JSON_HEX_TAG`, sehingga
+  judul artikel berisi `</script>` bisa menutup blok lebih awal dan
+  dieksekusi sebagai JavaScript. Yang lebih serius, grep menemukan pola sama
+  di `cms-admin/pages/ads.php` (`articleTitleToId`/`categoryNameToId`,
+  judul artikel jadi key JS object, tanpa flag apa pun) — ini jalur
+  **eskalasi hak akses**: role `editor` (tier terendah RBAC, lihat
+  `docs/DECISIONS.md` 2026-07-15) bisa menanam payload lewat judul artikel
+  yang kemudian tereksekusi di browser superadmin saat membuka halaman Ads.
+  `JSON_HEX_TAG` ditambahkan di semua titik: 3 blok JSON-LD di `artikel.php`
+  (termasuk FAQPage lama), `ads.php` (3 titik), `banners.php`,
+  `site-settings.php`, `pages.php`. Diverifikasi dengan payload nyata di
+  browser sungguhan — tidak ada tag script yang tertutup prematur, dan
+  picker artikel/kategori di halaman Ads dikonfirmasi masih berfungsi
+  (lookup tetap cocok karena `\uXXXX` di-decode balik oleh parser JS).
+- ✅ **Growth Agent v2 Fase A item 1 — scheduler mandiri SELESAI** (commit
+  `1396389`). File baru `cron/growth_agent_maintenance.php`: thin CLI
+  wrapper yang memanggil 5 fungsi maintenance yang sama persis dengan yang
+  dipanggil `growth-agent.php` saat page load (`ensure_schema`,
+  `cleanup_old_jobs` 90 hari, `gsc_fetch_if_stale` 24 jam,
+  `detect_memory_if_stale`, `snapshot_performance_if_stale` 24 jam) —
+  mengikuti pola 5 cron yang sudah ada di folder `cron/`. Tidak require
+  `auth.php` (di CLI itu akan redirect+exit sebelum apa pun jalan). Tidak
+  ada kill-switch level-script berbasis status GSC, karena `ensure_schema`
+  dan `cleanup_old_jobs` tidak bergantung GSC sama sekali. Guardrail
+  `GROWTH_AGENT_V2_PROPOSAL.md` § 1b diverifikasi baris-per-baris: nol job
+  siap-eksekusi dibuat, nol panggilan AI, nol tulisan ke tabel `pages`.
+  5 pemanggilan lazy di `growth-agent.php` **sengaja dipertahankan** sebagai
+  safety net (pola sama dengan auto-migration PHP vs migrasi SQL, lihat
+  `docs/DECISIONS.md` 2026-07-13). Terdaftar di cPanel Cron Jobs
+  `0 4 * * *` (sengaja bukan jam 3, itu sudah dipakai `sync_f1_races.php`),
+  log ke `~/logs/cron/growth_agent_maintenance.log`.
+- ✅ **Growth Agent v2 Fase A item 3 — SEO-G0 Gate SELESAI.** Pre-check
+  deterministik (tanpa AI) sebelum usulan artikel baru dibuat, bersifat
+  **peringatan bukan blokir** atas keputusan eksplisit user. Tiga cek:
+  usulan kembar yang masih pending, topik sudah dicakup artikel published,
+  dan topik yang sudah tercatat di content-conflict/cannibalization.
+  Dipanggil dari `cms_growth_agent_generate_article_idea()` (sebelum
+  panggilan AI) dan `cms_growth_agent_request_topic_gap_article()`. Nol
+  tabel/kolom baru — hasil gate di `growth_agent_jobs.input_brief`, ambang
+  di `gsc_settings.opportunity_thresholds_json`. UI: badge ⚠ SEO-G0 di
+  panel "Job Terbaru" yang hanya muncul saat ada peringatan; tidak ada
+  menu/halaman/modul baru. Keterbatasan yang diketahui: ambang kemiripan
+  belum tervalidasi di volume data asli (DB lokal cuma 2 artikel published,
+  production 24) — perlu evaluasi & tuning setelah dipakai. Detail lengkap
+  di `docs/GROWTH_AGENT_V2_PROPOSAL.md` § Fase A.
+- **Backup otomatis dipindah ke akun Google Drive baru** — remote rclone
+  lama `gdrive` dihapus & dibuat ulang dengan nama `WPM-sagagoal` (ketemu
+  bug: "Edit existing remote" + jawab "No" di prompt refresh token TIDAK
+  memicu browser-auth baru, rclone diam-diam menyimpan ulang token lama;
+  harus delete + create baru). 2 backup lama sengaja ditinggal di akun
+  lama. Detail di `docs/BACKUP_WORKFLOW.md`.
 
 ## Done (arsip ringkas)
 
