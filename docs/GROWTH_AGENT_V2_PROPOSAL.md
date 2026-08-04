@@ -334,7 +334,64 @@ judgment manusia yang gak bisa digantikan AI dengan aman.
   Rencana awal (arsip): ini yang paling nentuin bisa gak nambah artikel
   yang nembus keyword sama sekali baru, bukan cuma optimasi yang udah
   ranking.
-- **Technical SEO Auditor** (lihat § 2).
+- ✅ **SELESAI 5 Agu 2026 — Technical SEO Auditor.** Sifatnya **laporan,
+  bukan antrian usulan**: tidak membuat job, tidak butuh approve, tidak
+  pernah mengubah apa pun (nol `UPDATE pages` — diverifikasi lewat grep).
+  Ini tidak melanggar § 1b: aturan itu mewajibkan *usulan yang perlu
+  diputuskan manusia* masuk `growth_agent_jobs`; laporan teknis bukan
+  usulan, dia informasi. Presedennya panel "Feedback / Before-After" yang
+  juga murni laporan. Sengaja TIDAK bikin job per temuan — kalau tiap
+  gambar tanpa alt text jadi job, antrian banjir dan usulan yang benar-benar
+  butuh keputusan tenggelam.
+
+  Tiga pengecekan dengan karakter berbeda:
+  (A) **Alt text kosong** — murni parse `pages.content` pakai DOMDocument
+  (pola UTF-8 sama dengan `il_insert_link()`), cepat & gratis;
+  (B) **Schema markup** — fetch HTML halaman sungguhan, BUKAN cek DB.
+  Devs berargumen (dan saya setuju) bahwa cek berbasis DB itu sirkuler:
+  cuma mengonfirmasi "artikel published pasti lewat `artikel.php`", bukan
+  mengonfirmasi schema-nya benar-benar ter-render — padahal itu justru
+  nilai pengecekannya;
+  (C) **Core Web Vitals** via PageSpeed Insights API, reuse
+  `cms_gsc_http_request()` dengan parameter `$timeoutSeconds` baru
+  (default tetap 20 detik, jadi semua pemanggil lama tidak berubah).
+
+  **Keputusan devs yang lebih baik dari brief:** kegagalan fetch dicatat
+  sebagai `NULL` ("belum terverifikasi") bukan `false` ("terbukti hilang")
+  — tanpa ini, gangguan jaringan sesaat akan dilaporkan sebagai cacat
+  konten. Dan `psi_urls_per_run` default **3**, bukan 10 seperti preseden
+  "Inspect prioritas": PSI makan 10-30 detik per URL, jadi 10 URL berisiko
+  melewati `max_execution_time` PHP di shared hosting.
+
+  Satu tabel data baru `growth_agent_technical_audits` (lazy
+  `cms_ensure_table()`, bukan file migrasi) — diizinkan § 1b karena ini
+  tabel DATA hasil scan, bukan tabel antrian per-agent; presedennya
+  `gsc_url_inspections`. Baris `page_id IS NULL` dipakai menyimpan API key
+  PSI opsional (terenkripsi via `cms_ai_encrypt()`), supaya tidak perlu
+  tabel kedua hanya untuk satu nilai. Panel laporan di `growth-agent.php`;
+  artikel bersih disembunyikan dari tabel, cuma diringkas di header.
+
+  **Bug yang devs temukan & perbaiki sendiri:** `$empty + ['error' => ...]`
+  — operator union array PHP mempertahankan sisi kiri saat key bentrok,
+  jadi semua pesan error diam-diam jadi string kosong. Ketahuan lewat
+  pengujian mock, bukan pembacaan kode.
+
+  **Temuan data asli:** dari 24 artikel published, **nol `<img>` di dalam
+  `pages.content`** — situs ini hanya memakai kolom `featured_image` yang
+  dirender template. Jadi pengecekan alt text belum menemukan apa pun
+  sekarang, dan itu benar (checker-nya sendiri diverifikasi lewat kasus
+  sulit: img di dalam atribut, di dalam `<script>`, HTML rusak, karakter
+  non-ASCII). Baru relevan kalau nanti gambar mulai disisipkan di body.
+
+  ⚠️ **Perlu dicek sekali di production:** Check B gagal 404 di lokal
+  karena Docker memakai subfolder, sementara `cms_sitemap_absolute_url()`
+  membangun URL root-domain. Ini quirk lingkungan lokal (helper yang sama
+  sudah lama dipakai GSC URL Inspector), bukan bug — pipeline fetch+parse
+  dibuktikan benar lewat 2 artikel dengan URL lokal yang disesuaikan, dan
+  keduanya mengonfirmasi schema NewsArticle + BreadcrumbList memang
+  ter-render. Di production seharusnya normal, tapi jangan diasumsikan.
+
+  Rencana awal (arsip): **Technical SEO Auditor** (lihat § 2).
 
 ### Fase C — Distribusi & closing the loop
 
