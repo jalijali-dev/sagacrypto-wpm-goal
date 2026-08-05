@@ -198,6 +198,26 @@ Diketahui perlu dikerjakan suatu saat, tapi bukan prioritas sekarang.
   dites sungguhan — dicatat eksplisit sebagai gap di dokumen itu.
 
 **5 Agu 2026:**
+- **Dua perbaikan UI di `growth-agent.php`** (murni penyajian, nol perubahan
+  DB/logika agent). (1) Panel Technical SEO Auditor tadinya mengklaim
+  "24 bersih" padahal tabel audit masih kosong — penyebabnya `LEFT JOIN`
+  membuat artikel yang belum pernah diaudit ikut terambil dengan kolom audit
+  `NULL`, lalu lolos cek "bermasalah" sehingga dihitung bersih. Diganti jadi
+  klasifikasi **3 keadaan** (bermasalah / bersih / belum diperiksa), plus
+  membedakan **"gagal diperiksa"** dari "belum diperiksa" lewat kombinasi
+  `*_checked_at` terisi tapi hasilnya `NULL` — dua kondisi itu artinya beda
+  buat operator. Laporan yang bilang "bersih" untuk sesuatu yang belum
+  pernah dicek lebih buruk daripada tidak melapor sama sekali. (2) Tabel
+  "Job Terbaru" tadinya menyempitkan kolom Artikel sampai judul pecah satu
+  kata per baris dan tombol "Tutup sebagai Legacy" terpotong — diperbaiki
+  dengan `table-layout: fixed` + lebar kolom eksplisit, **scoped ke class
+  baru `.jobs-table`** supaya tabel lain yang memakai `.admin-table` di
+  halaman yang sama tidak ikut berubah. Kolom Model+Latensi digabung (mayoritas
+  job non-AI menampilkan "—" di keduanya) dan disembunyikan di ≤900px.
+  Judul dipotong dengan ellipsis CSS + `title` attribute — teks lengkap tetap
+  ada di HTML, tidak dipotong di sisi PHP. Diverifikasi dengan pengukuran JS
+  presisi di 1400/1000/600px (sempat ketemu overflow 7px di 1000px pada
+  percobaan pertama, diperbaiki lalu diukur ulang sampai nol).
 - ✅ **Growth Agent v2 Fase B item 3 — Technical SEO Auditor SELESAI.**
   Dengan ini **seluruh Fase B tuntas.** Sifatnya laporan murni: nol job,
   nol approve, nol `UPDATE pages`. Tiga cek: alt text kosong (parse
