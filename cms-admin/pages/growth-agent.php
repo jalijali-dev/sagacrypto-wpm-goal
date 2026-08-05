@@ -772,10 +772,28 @@ $feedbackActionLabel = ['seo_recommendation' => 'Rekomendasi SEO (Diterapkan)', 
 
 // ── Technical SEO Auditor report (Fase B item 3) — pure read, joined
 // against every published article so articles never-yet-audited still
-// show up (as "belum diperiksa"), not just ones with a row already.
-// "Bermasalah" (missing alt text, schema confirmed missing, or a poor PSI
-// score) sorts first so the operator never has to scroll past clean
-// articles to find what needs attention.
+// show up. THREE overall states, not two (fixed 5 Agu 2026 — the previous
+// two-state version silently counted "never audited at all" as "clean",
+// which is actively misleading: a report claiming an unaudited article is
+// fine is worse than no report at all):
+//   'issue'     — checked in at least one dimension, and either a real
+//                 problem was found (missing alt, schema confirmed
+//                 missing, poor PSI score) OR a check that WAS attempted
+//                 failed to complete (schema/PSI fetch error) — a failed
+//                 check is itself something worth following up on, not
+//                 nothing.
+//   'unchecked' — ALL THREE dimensions (content/schema/PSI) have never
+//                 been run at all.
+//   'clean'     — checked in at least one dimension, nothing wrong and no
+//                 check failures found in whatever WAS checked. Per-cell
+//                 pills below still show "Belum diperiksa" for any
+//                 individual dimension that hasn't run yet on this
+//                 article — bucketing the row as 'clean' overall never
+//                 hides that per-dimension gap, it only means "nothing
+//                 checked so far found a problem".
+// Both 'issue' and 'unchecked' rows are shown in the table (only 'clean'
+// rows are hidden) — "never audited" is exactly as actionable as "found a
+// problem", so it must not disappear into a clean-looking summary either.
 $tsaThresholds = cms_growth_agent_tsa_thresholds($pdo);
 $tsaPoorScore = (int) ($tsaThresholds['psi_poor_score_threshold'] ?? 50);
 $tsaRows = [];
@@ -793,28 +811,55 @@ try {
     $tsaStmt->execute();
     $tsaAll = $tsaStmt->fetchAll();
 
-    $tsaHasIssue = static function (array $row) use ($tsaPoorScore): bool {
+    $tsaClassify = static function (array $row) use ($tsaPoorScore): string {
+        $anyChecked = $row['content_checked_at'] !== null || $row['schema_checked_at'] !== null || $row['psi_checked_at'] !== null;
+        if (!$anyChecked) {
+            return 'unchecked';
+        }
+        // Real content problems.
         if ((int) ($row['missing_alt_count'] ?? 0) > 0) {
-            return true;
+            return 'issue';
         }
         if ($row['has_news_article_schema'] !== null && (int) $row['has_news_article_schema'] === 0) {
-            return true;
+            return 'issue';
         }
         if ($row['has_breadcrumb_schema'] !== null && (int) $row['has_breadcrumb_schema'] === 0) {
-            return true;
+            return 'issue';
         }
         if ($row['psi_mobile_score'] !== null && (int) $row['psi_mobile_score'] <= $tsaPoorScore) {
-            return true;
+            return 'issue';
         }
-        return false;
+        // A check that was attempted but failed (schema/PSI fetch error —
+        // content-check has no such state, it only ever writes
+        // content_checked_at on success) is surfaced as 'issue' too, not
+        // silently folded into 'clean' — an operator needs to know a
+        // check didn't actually complete.
+        if ($row['schema_checked_at'] !== null && $row['has_news_article_schema'] === null) {
+            return 'issue';
+        }
+        if ($row['psi_checked_at'] !== null && $row['psi_mobile_score'] === null) {
+            return 'issue';
+        }
+        return 'clean';
     };
 
-    $tsaIssues = array_values(array_filter($tsaAll, $tsaHasIssue));
-    $tsaCleanCount = count($tsaAll) - count($tsaIssues);
-    $tsaRows = $tsaIssues;
+    $tsaUnchecked = 0;
+    $tsaCleanCount = 0;
+    foreach ($tsaAll as $tsaRow) {
+        $state = $tsaClassify($tsaRow);
+        if ($state === 'unchecked') {
+            $tsaUnchecked++;
+            $tsaRows[] = $tsaRow;
+        } elseif ($state === 'issue') {
+            $tsaRows[] = $tsaRow;
+        } else {
+            $tsaCleanCount++;
+        }
+    }
 } catch (Throwable $e) {
     $tsaAll = [];
     $tsaCleanCount = 0;
+    $tsaUnchecked = 0;
 }
 
 $tsaPsiKeyConfigured = cms_growth_agent_tsa_get_psi_api_key($pdo) !== '';
@@ -1265,13 +1310,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
     <div class="panel">
         <div class="panel__head">
             <h3 class="panel__title">Technical SEO Auditor</h3>
-            <span class="panel__meta"><?= count($tsaRows) ?> bermasalah &middot; <?= $tsaCleanCount ?> bersih</span>
+            <span class="panel__meta"><?= count($tsaRows) - $tsaUnchecked ?> bermasalah &middot; <?= $tsaCleanCount ?> bersih &middot; <?= $tsaUnchecked ?> belum diperiksa</span>
         </div>
         <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
             Laporan read-only: alt text gambar, schema markup (NewsArticle/BreadcrumbList), dan Core Web Vitals
             (PageSpeed Insights). Tidak ada approve/execute di sini — agent ini TIDAK PERNAH mengubah artikel,
-            perbaiki sendiri lewat editor artikel. Artikel yang bersih tidak ditampilkan di tabel supaya tidak
-            menenggelamkan yang perlu perhatian.
+            perbaiki sendiri lewat editor artikel. Hanya artikel yang BERMASALAH atau BELUM PERNAH diperiksa yang
+            ditampilkan di tabel — yang sudah diperiksa dan bersih disembunyikan supaya tidak menenggelamkan yang
+            perlu perhatian ("belum diperiksa" TIDAK dihitung sebagai bersih).
         </p>
         <div class="toolbar" style="padding:0 20px 16px;">
             <div class="toolbar__left">
@@ -1313,7 +1359,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 </thead>
                 <tbody>
                     <?php if ($tsaRows === []) : ?>
-                        <tr><td colspan="5" class="muted"><?= $tsaCleanCount > 0 ? 'Semua artikel yang sudah diperiksa dalam kondisi bersih.' : 'Belum ada artikel yang diperiksa — klik "Cek Konten" di atas untuk mulai.' ?></td></tr>
+                        <tr><td colspan="5" class="muted">Semua artikel yang sudah diperiksa dalam kondisi bersih, dan tidak ada artikel yang belum diperiksa.</td></tr>
                     <?php endif; ?>
                     <?php foreach ($tsaRows as $tsaRow) : ?>
                         <tr>
@@ -1466,7 +1512,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         ?>
         <?php $g0Warnings = $job['_g0_warnings'] ?? []; ?>
         <tr>
-            <td>
+            <td class="jobs-table__col-job">
                 <strong><?= cms_esc((string) $job['job_type']) ?></strong><br>
                 <span class="muted">agent: <code><?= cms_esc((string) $job['agent_key']) ?></code></span>
                 <?php if ($g0Warnings !== []) : ?>
@@ -1474,7 +1520,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         <span class="pill pill--warn" title="SEO-G0 Gate: usulan ini berpotensi tumpang tindih dengan sesuatu yang sudah ada — cek detail di bawah sebelum approve.">
                             ⚠ SEO-G0: <?= count($g0Warnings) ?> peringatan
                         </span>
-                        <div class="muted" style="font-size:11px;margin-top:4px;max-width:320px;">
+                        <div class="muted" style="font-size:11px;margin-top:4px;">
                             <?php foreach ($g0Warnings as $g0Warning) : ?>
                                 <div style="margin-top:2px;">• <?= cms_esc((string) ($g0Warning['message'] ?? '')) ?></div>
                             <?php endforeach; ?>
@@ -1482,8 +1528,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     </div>
                 <?php endif; ?>
             </td>
-            <td><?= $job['page_title'] ? cms_esc((string) $job['page_title']) : '<span class="muted">—</span>' ?></td>
-            <td>
+            <td class="jobs-table__col-article">
+                <?php if ($job['page_title']) : ?>
+                    <span class="jobs-table__truncate" title="<?= cms_esc((string) $job['page_title']) ?>"><?= cms_esc((string) $job['page_title']) ?></span>
+                <?php else : ?>
+                    <span class="muted">—</span>
+                <?php endif; ?>
+            </td>
+            <td class="jobs-table__col-status">
                 <span class="pill pill--<?= $pill ?>"><?= cms_esc((string) $job['status']) ?></span>
                 <?php $jobPriority = (string) ($job['priority'] ?? 'medium'); ?>
                 <?php if ($jobPriority === 'high') : ?>
@@ -1492,13 +1544,21 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <span class="pill pill--<?= $priorityPill['low'] ?>" title="Prioritas rendah">LOW</span>
                 <?php endif; ?>
                 <?php if ($job['status'] === 'failed' && $job['error_message']) : ?>
-                    <div class="muted" style="font-size:11px;margin-top:4px;max-width:220px;"><?= cms_esc(mb_substr((string) $job['error_message'], 0, 140)) ?></div>
+                    <div class="muted" style="font-size:11px;margin-top:4px;"><?= cms_esc(mb_substr((string) $job['error_message'], 0, 140)) ?></div>
                 <?php endif; ?>
             </td>
-            <td><?= $job['model_used'] ? cms_esc((string) $job['model_used']) : '<span class="muted">—</span>' ?></td>
-            <td><?= $job['latency_ms'] !== null ? cms_esc((string) $job['latency_ms']) . ' ms' : '<span class="muted">—</span>' ?></td>
-            <td class="muted"><?= cms_esc((string) $job['created_at']) ?></td>
-            <td class="table-actions">
+            <td class="jobs-table__col-model">
+                <?php if ($job['model_used'] || $job['latency_ms'] !== null) : ?>
+                    <?= $job['model_used'] ? cms_esc((string) $job['model_used']) : '<span class="muted">—</span>' ?>
+                    <?php if ($job['latency_ms'] !== null) : ?>
+                        <span class="muted" style="font-size:11px;"><?= $job['model_used'] ? ' · ' : '' ?><?= cms_esc((string) $job['latency_ms']) ?> ms</span>
+                    <?php endif; ?>
+                <?php else : ?>
+                    <span class="muted">—</span>
+                <?php endif; ?>
+            </td>
+            <td class="jobs-table__col-time muted"><?= cms_esc((string) $job['created_at']) ?></td>
+            <td class="jobs-table__col-actions table-actions">
                 <?php if ($job['job_type'] === 'gsc_article_idea' && !empty($job['page_id'])) : ?>
                     <a class="admin-btn admin-btn--sm admin-btn--secondary" href="pages.php?edit=<?= (int) $job['page_id'] ?>">Edit draft</a>
                 <?php elseif ($canReviewSeo) : ?>
@@ -1560,21 +1620,20 @@ require dirname(__DIR__) . '/includes/alerts.php';
         </div>
         <?php foreach ($tabDefs as $i => $tab) : ?>
             <div class="table-wrap js-ga-tab-panel" data-tab-panel="<?= $tab['key'] ?>"<?= $i === 0 ? '' : ' hidden' ?>>
-                <table class="admin-table">
+                <table class="admin-table jobs-table">
                     <thead>
                         <tr>
-                            <th>Job</th>
-                            <th>Artikel</th>
-                            <th>Status</th>
-                            <th>Model</th>
-                            <th>Latensi</th>
-                            <th>Waktu</th>
-                            <th></th>
+                            <th class="jobs-table__col-job">Job</th>
+                            <th class="jobs-table__col-article">Artikel</th>
+                            <th class="jobs-table__col-status">Status</th>
+                            <th class="jobs-table__col-model">Model / Latensi</th>
+                            <th class="jobs-table__col-time">Waktu</th>
+                            <th class="jobs-table__col-actions"></th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if ($jobsByTab[$tab['key']] === []) : ?>
-                            <tr><td colspan="7" class="muted">
+                            <tr><td colspan="6" class="muted">
                                 <?= $tab['key'] === 'need-review'
                                     ? 'Tidak ada job yang perlu direview saat ini.'
                                     : ($tab['key'] === 'ready-to-run'

@@ -1561,6 +1561,69 @@ body.admin-body {
 }
 
 /* ============================================================
+   JOB TERBARU TABLE (growth-agent.php's Recent Jobs panel)
+   Scoped to .jobs-table specifically — .admin-table's plain default
+   (table-layout: auto, no per-column width) stays untouched, so every
+   OTHER table using .admin-table on this same page (Peluang Terprioritas,
+   Status Index, Agent Memory, Feedback/Sebelum-Sesudah, Artikel
+   Terpopuler) renders exactly as before.
+
+   Fixed here: with auto layout, the Job column's SEO-G0 warning box and
+   the multi-button actions column both demanded enough content-width that
+   "Artikel" was squeezed down to a sliver, wrapping article titles one
+   word per line. table-layout: fixed + explicit column widths makes every
+   column's width predictable regardless of content, and .jobs-table__col-
+   actions overrides .table-actions' inherited white-space: nowrap (which
+   was clipping "Tutup sebagai Legacy" against the column edge) so buttons
+   wrap onto a second line instead of overflowing.
+
+   Model/Latensi were also merged into one column (see growth-agent.php's
+   $renderJobRow) — most job types (internal_link_suggestion,
+   topic_gap_article, review_indexing_issue, etc.) are non-AI and show "—"
+   for both, so two mostly-empty columns become one narrow one.
+   ============================================================ */
+
+.jobs-table {
+  table-layout: fixed;
+}
+
+.jobs-table__col-job      { width: 19%; }
+.jobs-table__col-article  { width: 25%; }
+.jobs-table__col-status   { width: 14%; }
+.jobs-table__col-model    { width: 11%; }
+.jobs-table__col-time     { width: 11%; }
+.jobs-table__col-actions  { width: 20%; }
+
+/* Article title stays on one line with an ellipsis — the FULL title is
+   still in the DOM (cms_esc()'d text content, unchanged) and repeated in
+   the title="" attribute for a native hover tooltip, so nothing is lost
+   for accessibility/copy-paste, only the visual line is constrained. */
+.jobs-table__truncate {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Buttons/forms in this column are .inline-flex (see ".table-actions
+   .inline-form" below) — .table-actions' own white-space: nowrap (fine
+   for other, narrower action columns elsewhere) would force 2-3 buttons
+   onto one line here and overflow past the fixed column width instead of
+   wrapping. This override is scoped to .jobs-table only. */
+.jobs-table__col-actions {
+  white-space: normal;
+}
+
+@media (max-width: 900px) {
+  /* Least essential column at narrow widths — mostly "—" for non-AI jobs
+     anyway (see the note above), and 900px is an existing breakpoint
+     already used elsewhere in this file, not a new one. */
+  .jobs-table__col-model {
+    display: none;
+  }
+}
+
+/* ============================================================
    PILLS / BADGES
    ============================================================ */
 
