@@ -1624,6 +1624,39 @@ body.admin-body {
 }
 
 /* ============================================================
+   PAGE-LEVEL TABS (growth-agent.php's 4 top tabs: Perlu Tindakan /
+   Kesehatan Teknis / Data & Performa / Agent & Setelan)
+
+   Deliberately separate class names from Job Terbaru's OWN internal tabs
+   (.js-ga-tabs / .js-ga-tab-btn / .js-ga-tab-panel above) so the two never
+   collide — see growth-agent.php's page-level <script> for the same note.
+
+   Scoped to .ga-page-tabs / .ga-page-tab-btn / .ga-page-tab-panel only —
+   these class names are unique to this page, so no other admin page's
+   markup or styling is affected.
+   ============================================================ */
+
+.ga-page-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 4px;
+}
+
+.ga-page-tab-btn {
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  /* Existing breakpoint, reused — tab buttons stack to full width instead
+     of clipping/overflowing on narrow screens. */
+  .ga-page-tabs {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ============================================================
    PILLS / BADGES
    ============================================================ */
 

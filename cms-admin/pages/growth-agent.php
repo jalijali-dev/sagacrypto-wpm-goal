@@ -880,6 +880,12 @@ $healthNotifCount = cms_growth_agent_notifications($pdo)['count'];
 $healthGscFailed = $gscConnected && ($gscSettings['last_fetch_status'] ?? '') === 'failed';
 $healthNeedsAttention = $healthNotifCount > 0 || $healthGscFailed;
 
+
+// ── Page-level tab badges (Fase B UI reorg) — reuse data already
+// computed above, no new queries. Hidden entirely when 0 (see tab strip
+// markup below).
+$tabActionCount = count(array_filter($jobs, static fn (array $j): bool => in_array($j['status'], ['manual_action', 'ready'], true)));
+$tabTechIssueCount = count($tsaRows) - $tsaUnchecked;
 // The panel-lead spacing fix this class used to scope (.page-growth-agent
 // .panel > .section-lead) was generalized to plain `.panel > .section-lead`
 // in admin.css 24 Jul 2026 (same bug turned up on other pages) — this class
@@ -907,17 +913,17 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <p class="section-lead">Pipeline SEO &amp; konten — bikin draft, jalanin proses, lalu kembalikan ke operator buat di-approve.</p>
         </div>
         <div class="toolbar__right" style="gap:8px;">
-            <form method="post" action="<?= cms_esc($selfUrl) ?>">
+            <form method="post" action="<?= cms_esc($selfUrl) ?>" data-ga-page-tab="action">
                 <?= cms_csrf_field() ?>
                 <input type="hidden" name="action" value="scan_seo">
                 <button type="submit" class="admin-btn admin-btn--primary">Scan untuk perbaikan SEO</button>
             </form>
-            <form method="post" action="<?= cms_esc($selfUrl) ?>">
+            <form method="post" action="<?= cms_esc($selfUrl) ?>" data-ga-page-tab="action">
                 <?= cms_csrf_field() ?>
                 <input type="hidden" name="action" value="scan_internal_linking">
                 <button type="submit" class="admin-btn admin-btn--secondary">Scan Internal Linking</button>
             </form>
-            <form method="post" action="<?= cms_esc($selfUrl) ?>">
+            <form method="post" action="<?= cms_esc($selfUrl) ?>" data-ga-page-tab="health">
                 <?= cms_csrf_field() ?>
                 <input type="hidden" name="action" value="tsa_check_content">
                 <button type="submit" class="admin-btn admin-btn--secondary">Cek Konten (Alt Text &amp; Schema)</button>
@@ -928,519 +934,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
     <p class="section-lead" style="margin-top:-8px;">Scan Internal Linking mencari pasangan artikel yang topiknya relevan tapi belum saling link (maks. 10 artikel sumber per klik, maks. 3 usulan per artikel) — murni pencocokan teks, tanpa AI. Tidak ada yang berubah sampai Anda review dan apply di halaman Review Link Internal.</p>
     <p class="section-lead" style="margin-top:-8px;">Cek Konten memeriksa alt text gambar &amp; schema markup (murni laporan, TIDAK PERNAH mengubah artikel) — hasilnya di panel "Technical SEO Auditor" di bawah. Core Web Vitals (PageSpeed Insights) dicek terpisah karena jauh lebih lambat, lihat tombolnya sendiri di panel itu.</p>
 
-    <div class="panel">
-        <div class="panel__head">
-            <h3 class="panel__title">Google Search Console</h3>
-            <span class="pill pill--<?= $gscConnected ? 'ok' : 'muted' ?>"><?= $gscConnected ? 'Terhubung' : 'Tidak terhubung' ?></span>
-        </div>
-        <div class="toolbar" style="padding:16px 20px 20px;">
-            <div class="toolbar__left">
-                <?php if ($gscConnected) : ?>
-                    <p class="muted" style="margin:0;font-size:13px;">
-                        Properti: <code><?= cms_esc((string) $gscSettings['site_url']) ?></code><br>
-                        Fetch terakhir:
-                        <?php if (!empty($gscSettings['last_fetch_at'])) : ?>
-                            <span class="pill pill--<?= $gscSettings['last_fetch_status'] === 'success' ? 'ok' : 'warn' ?>" style="margin-left:4px;"><?= cms_esc((string) $gscSettings['last_fetch_status']) ?></span>
-                            <?= (int) $gscSettings['last_fetch_rows'] ?> baris — <?= cms_esc((string) $gscSettings['last_fetch_at']) ?>
-                        <?php else : ?>
-                            <span class="muted">belum pernah — akan otomatis jalan begitu halaman ini dibuka (atau klik Fetch GSC Data).</span>
-                        <?php endif; ?>
-                    </p>
-                <?php else : ?>
-                    <p class="muted" style="margin:0;font-size:13px;">
-                        Belum tersambung ke Google Search Console — rekomendasi berbasis data GSC (tabel "Peluang Terprioritas" di bawah) belum bisa jalan.
-                        <a class="panel__link" href="<?= cms_esc(cms_nav_href('gsc-settings.php')) ?>">Hubungkan sekarang &rarr;</a>
-                    </p>
-                <?php endif; ?>
-            </div>
-            <div class="toolbar__right" style="gap:8px;">
-                <?php if ($gscConnected) : ?>
-                    <form method="post" action="<?= cms_esc(cms_action_href('gsc-refresh.php')) ?>">
-                        <?= cms_csrf_field() ?>
-                        <button type="submit" class="admin-btn admin-btn--secondary">🔄 Fetch GSC Data</button>
-                    </form>
-                    <form method="post" action="<?= cms_esc($selfUrl) ?>">
-                        <?= cms_csrf_field() ?>
-                        <input type="hidden" name="action" value="recompute_opportunities">
-                        <button type="submit" class="admin-btn admin-btn--ghost">Hitung Ulang Opportunities</button>
-                    </form>
-                <?php endif; ?>
-                <a class="admin-btn admin-btn--ghost" href="<?= cms_esc(cms_nav_href('gsc-settings.php')) ?>">GSC Settings</a>
-            </div>
-        </div>
-
-        <?php if ($gscAggregate !== null) : ?>
-            <div class="table-wrap" style="padding:0 20px 4px;">
-                <p class="muted" style="font-size:12px;margin:0 0 12px;">
-                    Rentang data: <?= cms_esc($gscAggregate['min_date']) ?> &ndash; <?= cms_esc($gscAggregate['max_date']) ?>
-                    (<?= (int) ($gscSettings['fetch_lookback_days'] ?? 14) ?> hari lookback) — Search Console punya delay
-                    &sim;3 hari, jadi beberapa hari paling baru belum tentu lengkap.
-                </p>
-            </div>
-            <div class="admin-grid admin-grid--stats" style="padding:0 20px 20px;">
-                <article class="stat-card">
-                    <div class="stat-card__label">Klik</div>
-                    <div class="stat-card__value"><?= number_format($gscAggregate['clicks']) ?></div>
-                </article>
-                <article class="stat-card">
-                    <div class="stat-card__label">Impresi</div>
-                    <div class="stat-card__value"><?= number_format($gscAggregate['impressions']) ?></div>
-                </article>
-                <article class="stat-card">
-                    <div class="stat-card__label">CTR</div>
-                    <div class="stat-card__value"><?= cms_esc((string) $gscAggregate['ctr']) ?>%</div>
-                </article>
-                <article class="stat-card">
-                    <div class="stat-card__label">Rata-rata Posisi</div>
-                    <div class="stat-card__value"><?= cms_esc((string) $gscAggregate['avg_position']) ?></div>
-                </article>
-            </div>
-
-            <div class="table-wrap">
-                <table class="admin-table">
-                    <thead>
-                        <tr><th>Query</th><th>Klik</th><th>Impresi</th><th>CTR</th><th>Posisi</th></tr>
-                    </thead>
-                    <tbody>
-                        <?php if ($gscTopQueries === []) : ?>
-                            <tr><td colspan="5" class="muted">Belum ada data.</td></tr>
-                        <?php endif; ?>
-                        <?php foreach ($gscTopQueries as $q) : ?>
-                            <?php $qImpressions = (int) $q['impressions']; $qCtr = $qImpressions > 0 ? round(((int) $q['clicks'] / $qImpressions) * 100, 2) : 0.0; ?>
-                            <tr>
-                                <td><?= cms_esc((string) $q['query']) ?></td>
-                                <td><?= number_format((int) $q['clicks']) ?></td>
-                                <td><?= number_format($qImpressions) ?></td>
-                                <td><?= cms_esc((string) $qCtr) ?>%</td>
-                                <td><?= cms_esc((string) round((float) $q['position'], 1)) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-
-            <h4 style="margin:20px 0 8px;padding:0 20px;">Halaman Teratas</h4>
-            <div class="table-wrap">
-                <table class="admin-table">
-                    <thead>
-                        <tr><th>Artikel</th><th>Klik</th><th>Impresi</th><th>CTR</th><th>Posisi</th></tr>
-                    </thead>
-                    <tbody>
-                        <?php if ($gscTopPages === []) : ?>
-                            <tr><td colspan="5" class="muted">Belum ada data.</td></tr>
-                        <?php endif; ?>
-                        <?php foreach ($gscTopPages as $pg) : ?>
-                            <?php $pImpressions = (int) $pg['impressions']; $pCtr = $pImpressions > 0 ? round(((int) $pg['clicks'] / $pImpressions) * 100, 2) : 0.0; ?>
-                            <tr>
-                                <td><?= $pg['page_title'] ? cms_esc((string) $pg['page_title']) : cms_esc((string) $pg['page_url']) ?></td>
-                                <td><?= number_format((int) $pg['clicks']) ?></td>
-                                <td><?= number_format($pImpressions) ?></td>
-                                <td><?= cms_esc((string) $pCtr) ?>%</td>
-                                <td><?= cms_esc((string) round((float) $pg['position'], 1)) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        <?php endif; ?>
+    <div class="ga-page-tabs" role="tablist">
+        <button type="button" class="admin-btn admin-btn--sm ga-page-tab-btn" data-ga-page-tab="action">Perlu Tindakan<?php if ($tabActionCount > 0) : ?> <span class="pill pill--warn"><?= $tabActionCount ?></span><?php endif; ?></button>
+        <button type="button" class="admin-btn admin-btn--sm ga-page-tab-btn" data-ga-page-tab="health">Kesehatan Teknis<?php if ($tabTechIssueCount > 0) : ?> <span class="pill pill--warn"><?= $tabTechIssueCount ?></span><?php endif; ?></button>
+        <button type="button" class="admin-btn admin-btn--sm ga-page-tab-btn" data-ga-page-tab="data">Data &amp; Performa</button>
+        <button type="button" class="admin-btn admin-btn--sm ga-page-tab-btn" data-ga-page-tab="settings">Agent &amp; Setelan</button>
     </div>
 
-    <?php if ($gscConnected) : ?>
-    <div class="panel">
-        <div class="panel__head">
-            <h3 class="panel__title">Peluang Terprioritas</h3>
-            <span class="panel__meta"><?= count($opportunities) ?> terbuka</span>
-        </div>
-        <div class="table-wrap">
-            <table class="admin-table">
-                <thead>
-                    <tr>
-                        <th>Prioritas</th>
-                        <th>Item</th>
-                        <th>Kategori Cocok</th>
-                        <th>Dampak</th>
-                        <th>Upaya</th>
-                        <th>Agent Rekomendasi</th>
-                        <th>Alasan</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($opportunities === []) : ?>
-                        <tr><td colspan="8" class="muted">Belum ada opportunity — akan muncul otomatis setelah data GSC di-fetch (atau klik "Hitung Ulang Opportunities" di atas).</td></tr>
-                    <?php endif; ?>
-                    <?php foreach ($opportunities as $opp) : ?>
-                        <tr>
-                            <td><span class="pill pill--<?= $priorityPill[$opp['priority']] ?? 'muted' ?>"><?= strtoupper(cms_esc((string) $opp['priority'])) ?></span></td>
-                            <td>
-                                <?php if ($opp['item_type'] === 'page') : ?>
-                                    <?= $opp['page_title'] ? cms_esc((string) $opp['page_title']) : '<span class="muted">Artikel #' . (int) $opp['matched_page_id'] . '</span>' ?>
-                                    <span class="muted" style="font-size:11px;">(artikel)</span>
-                                <?php else : ?>
-                                    <?= cms_esc((string) $opp['query_text']) ?>
-                                    <span class="muted" style="font-size:11px;">(query)</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <?php foreach (array_filter(array_map('trim', explode(',', (string) $opp['matched_categories']))) as $cat) : ?>
-                                    <span class="pill pill--muted" style="margin:0 3px 3px 0;"><?= cms_esc($cat) ?></span>
-                                <?php endforeach; ?>
-                            </td>
-                            <td><?= (int) $opp['impact_score'] ?>/10</td>
-                            <td><?= (int) $opp['effort_score'] ?>/10</td>
-                            <td><code><?= cms_esc((string) $opp['recommended_agent']) ?></code></td>
-                            <td class="muted" style="font-size:12px;max-width:320px;"><?= cms_esc((string) $opp['reason']) ?></td>
-                            <td class="table-actions">
-                                <form method="post" action="<?= cms_esc($selfUrl) ?>">
-                                    <?= cms_csrf_field() ?>
-                                    <input type="hidden" name="action" value="generate_from_opportunity">
-                                    <input type="hidden" name="opportunity_id" value="<?= (int) $opp['id'] ?>">
-                                    <?php if ($opp['recommended_action'] === 'cannibalization_review') : ?>
-                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary" title="Tidak ada AI di sini — cuma menampilkan data query + halaman yang bentrok buat ditinjau manual">Review</button>
-                                    <?php else : ?>
-                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--primary">Generate</button>
-                                    <?php endif; ?>
-                                </form>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <div class="panel">
-        <div class="panel__head">
-            <h3 class="panel__title">Status Index</h3>
-            <span class="panel__meta"><?= count($indexInspections) ?> artikel published ditampilkan</span>
-        </div>
-        <div class="toolbar" style="padding:0 20px 16px;">
-            <div class="toolbar__left">
-                <p class="muted" style="margin:0;font-size:13px;">
-                    Baca status index via Search Console URL Inspection API — read-only, tidak pernah menulis/mengubah artikel.
-                    Kalau verdict bermasalah, job "review_indexing_issue" otomatis dibuat di Job Terbaru (checklist deterministik, bukan AI).
-                </p>
-            </div>
-            <div class="toolbar__right">
-                <form method="post" action="<?= cms_esc($selfUrl) ?>" class="inline-form" style="display:flex;gap:8px;align-items:center;">
-                    <?= cms_csrf_field() ?>
-                    <input type="hidden" name="action" value="inspect_priority_urls">
-                    <input type="number" name="limit" value="10" min="1" max="50" style="width:70px;" title="Jumlah URL maksimum per batch">
-                    <button type="submit" class="admin-btn admin-btn--primary">Inspect prioritas</button>
-                </form>
-            </div>
-        </div>
-        <div class="table-wrap">
-            <table class="admin-table">
-                <thead>
-                    <tr>
-                        <th>Artikel</th>
-                        <th>Verdict</th>
-                        <th>Crawl Terakhir</th>
-                        <th>Terakhir Diinspeksi</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($indexInspections === []) : ?>
-                        <tr><td colspan="5" class="muted">Belum ada artikel published untuk diinspeksi.</td></tr>
-                    <?php endif; ?>
-                    <?php foreach ($indexInspections as $insp) : ?>
-                        <tr>
-                            <td><?= cms_esc((string) $insp['title']) ?></td>
-                            <td>
-                                <?php if ($insp['verdict']) : ?>
-                                    <span class="pill pill--<?= $indexVerdictPill[$insp['verdict']] ?? 'muted' ?>"><?= cms_esc((string) $insp['verdict']) ?></span>
-                                <?php elseif ($insp['error_message']) : ?>
-                                    <span class="pill pill--warn" title="<?= cms_esc((string) $insp['error_message']) ?>">Gagal</span>
-                                <?php else : ?>
-                                    <span class="muted">Belum diinspeksi</span>
-                                <?php endif; ?>
-                            </td>
-                            <td class="muted"><?= $insp['last_crawl_time'] ? cms_esc((string) $insp['last_crawl_time']) : '—' ?></td>
-                            <td class="muted"><?= $insp['inspected_at'] ? cms_esc((string) $insp['inspected_at']) : '—' ?></td>
-                            <td class="table-actions">
-                                <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>">
-                                    <?= cms_csrf_field() ?>
-                                    <input type="hidden" name="action" value="inspect_single_url">
-                                    <input type="hidden" name="page_id" value="<?= (int) $insp['page_id'] ?>">
-                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary">Inspect URL</button>
-                                </form>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <div class="panel">
-        <div class="panel__head">
-            <h3 class="panel__title">Memori Agent</h3>
-            <span class="panel__meta"><?= count($memoryPatterns) ?> pattern</span>
-        </div>
-        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
-            Pola historis dari data GSC (deteksi deterministik, bukan AI) — cuma jadi konteks tambahan buat prompt Growth Agent,
-            bukan action queue. Tidak ada approve/execute di sini; satu-satunya aksi manual adalah menonaktifkan pattern yang sudah tidak relevan.
-        </p>
-        <div class="table-wrap">
-            <table class="admin-table">
-                <thead>
-                    <tr>
-                        <th>Tipe</th>
-                        <th>Target</th>
-                        <th>Status</th>
-                        <th>Bukti</th>
-                        <th>Minggu Terdeteksi</th>
-                        <th>Terakhir Dikonfirmasi</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($memoryPatterns === []) : ?>
-                        <tr><td colspan="7" class="muted">Belum ada pattern terdeteksi — akan muncul otomatis setelah cukup data historis GSC terkumpul (minimal <?= (int) cms_gsc_get_memory_thresholds($pdo)['min_distinct_weeks'] ?> minggu berbeda).</td></tr>
-                    <?php endif; ?>
-                    <?php foreach ($memoryPatterns as $mem) : ?>
-                        <?php $memEvidence = json_decode((string) ($mem['evidence_json'] ?? ''), true); $memEvidence = is_array($memEvidence) ? $memEvidence : []; ?>
-                        <tr>
-                            <td><?= cms_esc($memoryPatternLabel[$mem['pattern_type']] ?? (string) $mem['pattern_type']) ?></td>
-                            <td>
-                                <?php if ($mem['scope_type'] === 'page') : ?>
-                                    <?= $mem['page_title'] ? cms_esc((string) $mem['page_title']) : '<span class="muted">Artikel #' . (int) $mem['matched_page_id'] . '</span>' ?>
-                                    <span class="muted" style="font-size:11px;">(page)</span>
-                                <?php else : ?>
-                                    <?= cms_esc((string) $mem['query_text']) ?>
-                                    <span class="muted" style="font-size:11px;">(query)</span>
-                                <?php endif; ?>
-                            </td>
-                            <td><span class="pill pill--<?= $memoryStatusPill[$mem['status']] ?? 'muted' ?>"><?= cms_esc((string) $mem['status']) ?></span></td>
-                            <td class="muted" style="font-size:12px;">
-                                <?php if (isset($memEvidence['avg_ctr'])) : ?>
-                                    CTR <?= round(((float) $memEvidence['avg_ctr']) * 100, 2) ?>%, posisi <?= round((float) ($memEvidence['avg_position'] ?? 0), 1) ?>,
-                                <?php endif; ?>
-                                <?= (int) ($memEvidence['total_impressions'] ?? 0) ?> impressions
-                            </td>
-                            <td><?= (int) $mem['distinct_weeks_seen'] ?></td>
-                            <td class="muted"><?= cms_esc((string) $mem['last_confirmed_at']) ?></td>
-                            <td class="table-actions">
-                                <?php if ($mem['status'] !== 'stale') : ?>
-                                    <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Tandai pattern ini sebagai stale? Ini cuma menonaktifkan dari context prompt, tidak menghapus histori.');">
-                                        <?= cms_csrf_field() ?>
-                                        <input type="hidden" name="action" value="mark_memory_stale">
-                                        <input type="hidden" name="memory_id" value="<?= (int) $mem['id'] ?>">
-                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Tandai stale</button>
-                                    </form>
-                                <?php else : ?>
-                                    <span class="muted">—</span>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <div class="panel">
-        <div class="panel__head">
-            <h3 class="panel__title">Feedback / Sebelum-Sesudah</h3>
-            <span class="panel__meta"><?= count($feedbackReport) ?> artikel</span>
-        </div>
-        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
-            Laporan read-only: artikel yang pernah kena action Growth Agent (SEO Recommendation yang sudah di-Apply,
-            atau Article Idea yang draft-nya sudah dipublish), dibandingkan performa GSC 28 hari sebelum vs sesudah
-            perubahan. Tidak ada approve/execute di sini — cuma laporan. Data yang belum cukup (minimal 7 hari di tiap
-            sisi) ditandai "Data belum cukup", bukan dipaksakan jadi kesimpulan.
-        </p>
-        <div class="table-wrap">
-            <table class="admin-table">
-                <thead>
-                    <tr>
-                        <th>Artikel</th>
-                        <th>Aksi</th>
-                        <th>Tanggal Perubahan</th>
-                        <th>Klik</th>
-                        <th>Impresi</th>
-                        <th>CTR</th>
-                        <th>Posisi</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($feedbackReport === []) : ?>
-                        <tr><td colspan="7" class="muted">Belum ada artikel yang memenuhi syarat (SEO Recommendation ter-Apply, atau Article Idea yang sudah dipublish).</td></tr>
-                    <?php endif; ?>
-                    <?php foreach ($feedbackReport as $fb) : ?>
-                        <?php $cmp = $fb['comparison']; ?>
-                        <tr>
-                            <td><?= cms_esc((string) $fb['page_title']) ?></td>
-                            <td><?= cms_esc($feedbackActionLabel[$fb['action_type']] ?? (string) $fb['action_type']) ?></td>
-                            <td class="muted"><?= cms_esc((string) $fb['change_date']) ?></td>
-                            <?php if (($cmp['status'] ?? '') === 'ok') : ?>
-                                <td>
-                                    <?= (int) $cmp['before']['clicks'] ?> &rarr; <?= (int) $cmp['after']['clicks'] ?>
-                                    <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['clicks'] >= 0 ? '+' : '' ?><?= (int) $cmp['delta']['clicks'] ?>)</span>
-                                </td>
-                                <td>
-                                    <?= (int) $cmp['before']['impressions'] ?> &rarr; <?= (int) $cmp['after']['impressions'] ?>
-                                    <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['impressions'] >= 0 ? '+' : '' ?><?= (int) $cmp['delta']['impressions'] ?>)</span>
-                                </td>
-                                <td>
-                                    <?= round($cmp['before']['ctr'] * 100, 2) ?>% &rarr; <?= round($cmp['after']['ctr'] * 100, 2) ?>%
-                                    <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['ctr'] >= 0 ? '+' : '' ?><?= round($cmp['delta']['ctr'] * 100, 2) ?>%)</span>
-                                </td>
-                                <td>
-                                    <?php if ($cmp['before']['avg_position'] !== null && $cmp['after']['avg_position'] !== null) : ?>
-                                        <?= $cmp['before']['avg_position'] ?> &rarr; <?= $cmp['after']['avg_position'] ?>
-                                        <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['avg_position'] >= 0 ? '+' : '' ?><?= $cmp['delta']['avg_position'] ?>)</span>
-                                    <?php else : ?>
-                                        <span class="muted">—</span>
-                                    <?php endif; ?>
-                                </td>
-                            <?php else : ?>
-                                <td colspan="4"><span class="pill pill--muted" title="Minimal 7 hari data di kedua sisi (sebelum/sesudah) diperlukan untuk perbandingan yang valid.">Data belum cukup</span></td>
-                            <?php endif; ?>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <div class="panel">
-        <div class="panel__head">
-            <h3 class="panel__title">Technical SEO Auditor</h3>
-            <span class="panel__meta"><?= count($tsaRows) - $tsaUnchecked ?> bermasalah &middot; <?= $tsaCleanCount ?> bersih &middot; <?= $tsaUnchecked ?> belum diperiksa</span>
-        </div>
-        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
-            Laporan read-only: alt text gambar, schema markup (NewsArticle/BreadcrumbList), dan Core Web Vitals
-            (PageSpeed Insights). Tidak ada approve/execute di sini — agent ini TIDAK PERNAH mengubah artikel,
-            perbaiki sendiri lewat editor artikel. Hanya artikel yang BERMASALAH atau BELUM PERNAH diperiksa yang
-            ditampilkan di tabel — yang sudah diperiksa dan bersih disembunyikan supaya tidak menenggelamkan yang
-            perlu perhatian ("belum diperiksa" TIDAK dihitung sebagai bersih).
-        </p>
-        <div class="toolbar" style="padding:0 20px 16px;">
-            <div class="toolbar__left">
-                <p class="muted" style="margin:0;font-size:13px;">
-                    PageSpeed Insights API Key: <span class="pill pill--<?= $tsaPsiKeyConfigured ? 'ok' : 'muted' ?>"><?= $tsaPsiKeyConfigured ? 'Terpasang' : 'Tidak terpasang (pakai limit publik per-IP)' ?></span>
-                </p>
-            </div>
-            <div class="toolbar__right" style="gap:8px;">
-                <form method="post" action="<?= cms_esc($selfUrl) ?>" style="display:flex;gap:6px;align-items:center;">
-                    <?= cms_csrf_field() ?>
-                    <input type="hidden" name="action" value="tsa_save_psi_key">
-                    <input type="password" name="psi_api_key" placeholder="PSI API key (opsional)" autocomplete="off" style="width:220px;">
-                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Simpan</button>
-                </form>
-                <?php if ($tsaPsiKeyConfigured) : ?>
-                <form method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Hapus API key PSI? PSI akan dipanggil tanpa key setelah ini.');">
-                    <?= cms_csrf_field() ?>
-                    <input type="hidden" name="action" value="tsa_clear_psi_key">
-                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Hapus API Key</button>
-                </form>
-                <?php endif; ?>
-                <form method="post" action="<?= cms_esc($selfUrl) ?>">
-                    <?= cms_csrf_field() ?>
-                    <input type="hidden" name="action" value="tsa_check_psi">
-                    <button type="submit" class="admin-btn admin-btn--secondary" title="Lambat — bisa sampai 30 detik per artikel, dibatasi beberapa artikel per klik.">Cek Core Web Vitals (maks. beberapa artikel/klik)</button>
-                </form>
-            </div>
-        </div>
-        <div class="table-wrap">
-            <table class="admin-table">
-                <thead>
-                    <tr>
-                        <th>Artikel</th>
-                        <th>Alt Text</th>
-                        <th>Schema Markup</th>
-                        <th>Core Web Vitals</th>
-                        <th>Terakhir Diperiksa</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($tsaRows === []) : ?>
-                        <tr><td colspan="5" class="muted">Semua artikel yang sudah diperiksa dalam kondisi bersih, dan tidak ada artikel yang belum diperiksa.</td></tr>
-                    <?php endif; ?>
-                    <?php foreach ($tsaRows as $tsaRow) : ?>
-                        <tr>
-                            <td><a href="pages.php?edit=<?= (int) $tsaRow['page_id'] ?>"><?= cms_esc((string) $tsaRow['title']) ?></a></td>
-                            <td>
-                                <?php if ($tsaRow['content_checked_at'] === null) : ?>
-                                    <span class="pill pill--muted">Belum diperiksa</span>
-                                <?php elseif ((int) $tsaRow['missing_alt_count'] > 0) : ?>
-                                    <span class="pill pill--warn"><?= (int) $tsaRow['missing_alt_count'] ?> dari <?= (int) $tsaRow['total_image_count'] ?> gambar tanpa alt</span>
-                                <?php else : ?>
-                                    <span class="pill pill--ok">Lengkap (<?= (int) $tsaRow['total_image_count'] ?> gambar)</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <?php if ($tsaRow['schema_checked_at'] === null) : ?>
-                                    <span class="pill pill--muted">Belum diperiksa</span>
-                                <?php elseif ($tsaRow['has_news_article_schema'] === null) : ?>
-                                    <span class="pill pill--muted" title="<?= cms_esc((string) $tsaRow['schema_check_error']) ?>">Gagal diperiksa</span>
-                                <?php elseif (!(int) $tsaRow['has_news_article_schema'] || !(int) $tsaRow['has_breadcrumb_schema']) : ?>
-                                    <span class="pill pill--warn">
-                                        <?= !(int) $tsaRow['has_news_article_schema'] ? 'NewsArticle hilang' : '' ?>
-                                        <?= (!(int) $tsaRow['has_news_article_schema'] && !(int) $tsaRow['has_breadcrumb_schema']) ? ' &amp; ' : '' ?>
-                                        <?= !(int) $tsaRow['has_breadcrumb_schema'] ? 'BreadcrumbList hilang' : '' ?>
-                                    </span>
-                                <?php else : ?>
-                                    <span class="pill pill--ok">Lengkap</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <?php if ($tsaRow['psi_checked_at'] === null) : ?>
-                                    <span class="pill pill--muted">Belum diperiksa</span>
-                                <?php elseif ($tsaRow['psi_mobile_score'] === null) : ?>
-                                    <span class="pill pill--muted" title="<?= cms_esc((string) $tsaRow['psi_error']) ?>">Gagal diperiksa</span>
-                                <?php else : ?>
-                                    <span class="pill pill--<?= (int) $tsaRow['psi_mobile_score'] <= $tsaPoorScore ? 'warn' : 'ok' ?>">Skor Mobile: <?= (int) $tsaRow['psi_mobile_score'] ?></span>
-                                    <?php if ($tsaRow['psi_lcp_ms'] !== null) : ?>
-                                        <span class="muted" style="font-size:11px;display:block;">LCP <?= round((int) $tsaRow['psi_lcp_ms'] / 1000, 1) ?>s &middot; CLS <?= $tsaRow['psi_cls'] !== null ? rtrim(rtrim(number_format((float) $tsaRow['psi_cls'], 3), '0'), '.') : '—' ?></span>
-                                    <?php endif; ?>
-                                <?php endif; ?>
-                            </td>
-                            <td class="muted" style="font-size:12px;">
-                                <?php
-                                $lastChecks = array_filter([$tsaRow['content_checked_at'], $tsaRow['schema_checked_at'], $tsaRow['psi_checked_at']]);
-                                echo $lastChecks !== [] ? cms_esc((string) max($lastChecks)) : '—';
-                                ?>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <div class="panel">
-        <div class="panel__head">
-            <h3 class="panel__title">Artikel Terpopuler</h3>
-            <span class="panel__meta">Total views, top 10</span>
-        </div>
-        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
-            Total views sepanjang waktu (bukan data 28 hari terakhir) — jangan disalahartikan sebagai angka real-time terbaru.
-        </p>
-        <div class="table-wrap">
-            <table class="admin-table">
-                <thead>
-                    <tr><th>Artikel</th><th>Views</th></tr>
-                </thead>
-                <tbody>
-                    <?php if ($topViewedArticles === []) : ?>
-                        <tr><td colspan="2" class="muted">Belum ada data.</td></tr>
-                    <?php endif; ?>
-                    <?php foreach ($topViewedArticles as $art) : ?>
-                        <tr>
-                            <td><?= cms_esc((string) $art['title']) ?></td>
-                            <td><?= number_format((int) $art['views']) ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
+    <div class="ga-page-tab-panel" data-ga-page-tab="action">
     <div class="admin-grid admin-grid--stats">
         <?php foreach ($allStatsCards as $card) : ?>
             <article class="stat-card">
@@ -1670,6 +1171,531 @@ require dirname(__DIR__) . '/includes/alerts.php';
     })();
     </script>
 
+    <?php if ($gscConnected) : ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Peluang Terprioritas</h3>
+            <span class="panel__meta"><?= count($opportunities) ?> terbuka</span>
+        </div>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Prioritas</th>
+                        <th>Item</th>
+                        <th>Kategori Cocok</th>
+                        <th>Dampak</th>
+                        <th>Upaya</th>
+                        <th>Agent Rekomendasi</th>
+                        <th>Alasan</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($opportunities === []) : ?>
+                        <tr><td colspan="8" class="muted">Belum ada opportunity — akan muncul otomatis setelah data GSC di-fetch (atau klik "Hitung Ulang Opportunities" di atas).</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($opportunities as $opp) : ?>
+                        <tr>
+                            <td><span class="pill pill--<?= $priorityPill[$opp['priority']] ?? 'muted' ?>"><?= strtoupper(cms_esc((string) $opp['priority'])) ?></span></td>
+                            <td>
+                                <?php if ($opp['item_type'] === 'page') : ?>
+                                    <?= $opp['page_title'] ? cms_esc((string) $opp['page_title']) : '<span class="muted">Artikel #' . (int) $opp['matched_page_id'] . '</span>' ?>
+                                    <span class="muted" style="font-size:11px;">(artikel)</span>
+                                <?php else : ?>
+                                    <?= cms_esc((string) $opp['query_text']) ?>
+                                    <span class="muted" style="font-size:11px;">(query)</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php foreach (array_filter(array_map('trim', explode(',', (string) $opp['matched_categories']))) as $cat) : ?>
+                                    <span class="pill pill--muted" style="margin:0 3px 3px 0;"><?= cms_esc($cat) ?></span>
+                                <?php endforeach; ?>
+                            </td>
+                            <td><?= (int) $opp['impact_score'] ?>/10</td>
+                            <td><?= (int) $opp['effort_score'] ?>/10</td>
+                            <td><code><?= cms_esc((string) $opp['recommended_agent']) ?></code></td>
+                            <td class="muted" style="font-size:12px;max-width:320px;"><?= cms_esc((string) $opp['reason']) ?></td>
+                            <td class="table-actions">
+                                <form method="post" action="<?= cms_esc($selfUrl) ?>">
+                                    <?= cms_csrf_field() ?>
+                                    <input type="hidden" name="action" value="generate_from_opportunity">
+                                    <input type="hidden" name="opportunity_id" value="<?= (int) $opp['id'] ?>">
+                                    <?php if ($opp['recommended_action'] === 'cannibalization_review') : ?>
+                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary" title="Tidak ada AI di sini — cuma menampilkan data query + halaman yang bentrok buat ditinjau manual">Review</button>
+                                    <?php else : ?>
+                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--primary">Generate</button>
+                                    <?php endif; ?>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
+    </div>
+
+    <div class="ga-page-tab-panel" data-ga-page-tab="health">
+    <?php if ($gscConnected) : ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Status Index</h3>
+            <span class="panel__meta"><?= count($indexInspections) ?> artikel published ditampilkan</span>
+        </div>
+        <div class="toolbar" style="padding:0 20px 16px;">
+            <div class="toolbar__left">
+                <p class="muted" style="margin:0;font-size:13px;">
+                    Baca status index via Search Console URL Inspection API — read-only, tidak pernah menulis/mengubah artikel.
+                    Kalau verdict bermasalah, job "review_indexing_issue" otomatis dibuat di Job Terbaru (checklist deterministik, bukan AI).
+                </p>
+            </div>
+            <div class="toolbar__right">
+                <form method="post" action="<?= cms_esc($selfUrl) ?>" class="inline-form" style="display:flex;gap:8px;align-items:center;">
+                    <?= cms_csrf_field() ?>
+                    <input type="hidden" name="action" value="inspect_priority_urls">
+                    <input type="number" name="limit" value="10" min="1" max="50" style="width:70px;" title="Jumlah URL maksimum per batch">
+                    <button type="submit" class="admin-btn admin-btn--primary">Inspect prioritas</button>
+                </form>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Artikel</th>
+                        <th>Verdict</th>
+                        <th>Crawl Terakhir</th>
+                        <th>Terakhir Diinspeksi</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($indexInspections === []) : ?>
+                        <tr><td colspan="5" class="muted">Belum ada artikel published untuk diinspeksi.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($indexInspections as $insp) : ?>
+                        <tr>
+                            <td><?= cms_esc((string) $insp['title']) ?></td>
+                            <td>
+                                <?php if ($insp['verdict']) : ?>
+                                    <span class="pill pill--<?= $indexVerdictPill[$insp['verdict']] ?? 'muted' ?>"><?= cms_esc((string) $insp['verdict']) ?></span>
+                                <?php elseif ($insp['error_message']) : ?>
+                                    <span class="pill pill--warn" title="<?= cms_esc((string) $insp['error_message']) ?>">Gagal</span>
+                                <?php else : ?>
+                                    <span class="muted">Belum diinspeksi</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="muted"><?= $insp['last_crawl_time'] ? cms_esc((string) $insp['last_crawl_time']) : '—' ?></td>
+                            <td class="muted"><?= $insp['inspected_at'] ? cms_esc((string) $insp['inspected_at']) : '—' ?></td>
+                            <td class="table-actions">
+                                <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>">
+                                    <?= cms_csrf_field() ?>
+                                    <input type="hidden" name="action" value="inspect_single_url">
+                                    <input type="hidden" name="page_id" value="<?= (int) $insp['page_id'] ?>">
+                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--secondary">Inspect URL</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Technical SEO Auditor</h3>
+            <span class="panel__meta"><?= count($tsaRows) - $tsaUnchecked ?> bermasalah &middot; <?= $tsaCleanCount ?> bersih &middot; <?= $tsaUnchecked ?> belum diperiksa</span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Laporan read-only: alt text gambar, schema markup (NewsArticle/BreadcrumbList), dan Core Web Vitals
+            (PageSpeed Insights). Tidak ada approve/execute di sini — agent ini TIDAK PERNAH mengubah artikel,
+            perbaiki sendiri lewat editor artikel. Hanya artikel yang BERMASALAH atau BELUM PERNAH diperiksa yang
+            ditampilkan di tabel — yang sudah diperiksa dan bersih disembunyikan supaya tidak menenggelamkan yang
+            perlu perhatian ("belum diperiksa" TIDAK dihitung sebagai bersih).
+        </p>
+        <div class="toolbar" style="padding:0 20px 16px;">
+            <div class="toolbar__left">
+                <p class="muted" style="margin:0;font-size:13px;">
+                    PageSpeed Insights API Key: <span class="pill pill--<?= $tsaPsiKeyConfigured ? 'ok' : 'muted' ?>"><?= $tsaPsiKeyConfigured ? 'Terpasang' : 'Tidak terpasang (pakai limit publik per-IP)' ?></span>
+                </p>
+            </div>
+            <div class="toolbar__right" style="gap:8px;">
+                <form method="post" action="<?= cms_esc($selfUrl) ?>" style="display:flex;gap:6px;align-items:center;">
+                    <?= cms_csrf_field() ?>
+                    <input type="hidden" name="action" value="tsa_save_psi_key">
+                    <input type="password" name="psi_api_key" placeholder="PSI API key (opsional)" autocomplete="off" style="width:220px;">
+                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Simpan</button>
+                </form>
+                <?php if ($tsaPsiKeyConfigured) : ?>
+                <form method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Hapus API key PSI? PSI akan dipanggil tanpa key setelah ini.');">
+                    <?= cms_csrf_field() ?>
+                    <input type="hidden" name="action" value="tsa_clear_psi_key">
+                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Hapus API Key</button>
+                </form>
+                <?php endif; ?>
+                <form method="post" action="<?= cms_esc($selfUrl) ?>">
+                    <?= cms_csrf_field() ?>
+                    <input type="hidden" name="action" value="tsa_check_psi">
+                    <button type="submit" class="admin-btn admin-btn--secondary" title="Lambat — bisa sampai 30 detik per artikel, dibatasi beberapa artikel per klik.">Cek Core Web Vitals (maks. beberapa artikel/klik)</button>
+                </form>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Artikel</th>
+                        <th>Alt Text</th>
+                        <th>Schema Markup</th>
+                        <th>Core Web Vitals</th>
+                        <th>Terakhir Diperiksa</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($tsaRows === []) : ?>
+                        <tr><td colspan="5" class="muted">Semua artikel yang sudah diperiksa dalam kondisi bersih, dan tidak ada artikel yang belum diperiksa.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($tsaRows as $tsaRow) : ?>
+                        <tr>
+                            <td><a href="pages.php?edit=<?= (int) $tsaRow['page_id'] ?>"><?= cms_esc((string) $tsaRow['title']) ?></a></td>
+                            <td>
+                                <?php if ($tsaRow['content_checked_at'] === null) : ?>
+                                    <span class="pill pill--muted">Belum diperiksa</span>
+                                <?php elseif ((int) $tsaRow['missing_alt_count'] > 0) : ?>
+                                    <span class="pill pill--warn"><?= (int) $tsaRow['missing_alt_count'] ?> dari <?= (int) $tsaRow['total_image_count'] ?> gambar tanpa alt</span>
+                                <?php else : ?>
+                                    <span class="pill pill--ok">Lengkap (<?= (int) $tsaRow['total_image_count'] ?> gambar)</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($tsaRow['schema_checked_at'] === null) : ?>
+                                    <span class="pill pill--muted">Belum diperiksa</span>
+                                <?php elseif ($tsaRow['has_news_article_schema'] === null) : ?>
+                                    <span class="pill pill--muted" title="<?= cms_esc((string) $tsaRow['schema_check_error']) ?>">Gagal diperiksa</span>
+                                <?php elseif (!(int) $tsaRow['has_news_article_schema'] || !(int) $tsaRow['has_breadcrumb_schema']) : ?>
+                                    <span class="pill pill--warn">
+                                        <?= !(int) $tsaRow['has_news_article_schema'] ? 'NewsArticle hilang' : '' ?>
+                                        <?= (!(int) $tsaRow['has_news_article_schema'] && !(int) $tsaRow['has_breadcrumb_schema']) ? ' &amp; ' : '' ?>
+                                        <?= !(int) $tsaRow['has_breadcrumb_schema'] ? 'BreadcrumbList hilang' : '' ?>
+                                    </span>
+                                <?php else : ?>
+                                    <span class="pill pill--ok">Lengkap</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($tsaRow['psi_checked_at'] === null) : ?>
+                                    <span class="pill pill--muted">Belum diperiksa</span>
+                                <?php elseif ($tsaRow['psi_mobile_score'] === null) : ?>
+                                    <span class="pill pill--muted" title="<?= cms_esc((string) $tsaRow['psi_error']) ?>">Gagal diperiksa</span>
+                                <?php else : ?>
+                                    <span class="pill pill--<?= (int) $tsaRow['psi_mobile_score'] <= $tsaPoorScore ? 'warn' : 'ok' ?>">Skor Mobile: <?= (int) $tsaRow['psi_mobile_score'] ?></span>
+                                    <?php if ($tsaRow['psi_lcp_ms'] !== null) : ?>
+                                        <span class="muted" style="font-size:11px;display:block;">LCP <?= round((int) $tsaRow['psi_lcp_ms'] / 1000, 1) ?>s &middot; CLS <?= $tsaRow['psi_cls'] !== null ? rtrim(rtrim(number_format((float) $tsaRow['psi_cls'], 3), '0'), '.') : '—' ?></span>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </td>
+                            <td class="muted" style="font-size:12px;">
+                                <?php
+                                $lastChecks = array_filter([$tsaRow['content_checked_at'], $tsaRow['schema_checked_at'], $tsaRow['psi_checked_at']]);
+                                echo $lastChecks !== [] ? cms_esc((string) max($lastChecks)) : '—';
+                                ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </div>
+
+    <div class="ga-page-tab-panel" data-ga-page-tab="data">
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Google Search Console</h3>
+            <span class="pill pill--<?= $gscConnected ? 'ok' : 'muted' ?>"><?= $gscConnected ? 'Terhubung' : 'Tidak terhubung' ?></span>
+        </div>
+        <div class="toolbar" style="padding:16px 20px 20px;">
+            <div class="toolbar__left">
+                <?php if ($gscConnected) : ?>
+                    <p class="muted" style="margin:0;font-size:13px;">
+                        Properti: <code><?= cms_esc((string) $gscSettings['site_url']) ?></code><br>
+                        Fetch terakhir:
+                        <?php if (!empty($gscSettings['last_fetch_at'])) : ?>
+                            <span class="pill pill--<?= $gscSettings['last_fetch_status'] === 'success' ? 'ok' : 'warn' ?>" style="margin-left:4px;"><?= cms_esc((string) $gscSettings['last_fetch_status']) ?></span>
+                            <?= (int) $gscSettings['last_fetch_rows'] ?> baris — <?= cms_esc((string) $gscSettings['last_fetch_at']) ?>
+                        <?php else : ?>
+                            <span class="muted">belum pernah — akan otomatis jalan begitu halaman ini dibuka (atau klik Fetch GSC Data).</span>
+                        <?php endif; ?>
+                    </p>
+                <?php else : ?>
+                    <p class="muted" style="margin:0;font-size:13px;">
+                        Belum tersambung ke Google Search Console — rekomendasi berbasis data GSC (tabel "Peluang Terprioritas" di bawah) belum bisa jalan.
+                        <a class="panel__link" href="<?= cms_esc(cms_nav_href('gsc-settings.php')) ?>">Hubungkan sekarang &rarr;</a>
+                    </p>
+                <?php endif; ?>
+            </div>
+            <div class="toolbar__right" style="gap:8px;">
+                <?php if ($gscConnected) : ?>
+                    <form method="post" action="<?= cms_esc(cms_action_href('gsc-refresh.php')) ?>">
+                        <?= cms_csrf_field() ?>
+                        <button type="submit" class="admin-btn admin-btn--secondary">🔄 Fetch GSC Data</button>
+                    </form>
+                    <form method="post" action="<?= cms_esc($selfUrl) ?>">
+                        <?= cms_csrf_field() ?>
+                        <input type="hidden" name="action" value="recompute_opportunities">
+                        <button type="submit" class="admin-btn admin-btn--ghost">Hitung Ulang Opportunities</button>
+                    </form>
+                <?php endif; ?>
+                <a class="admin-btn admin-btn--ghost" href="<?= cms_esc(cms_nav_href('gsc-settings.php')) ?>">GSC Settings</a>
+            </div>
+        </div>
+
+        <?php if ($gscAggregate !== null) : ?>
+            <div class="table-wrap" style="padding:0 20px 4px;">
+                <p class="muted" style="font-size:12px;margin:0 0 12px;">
+                    Rentang data: <?= cms_esc($gscAggregate['min_date']) ?> &ndash; <?= cms_esc($gscAggregate['max_date']) ?>
+                    (<?= (int) ($gscSettings['fetch_lookback_days'] ?? 14) ?> hari lookback) — Search Console punya delay
+                    &sim;3 hari, jadi beberapa hari paling baru belum tentu lengkap.
+                </p>
+            </div>
+            <div class="admin-grid admin-grid--stats" style="padding:0 20px 20px;">
+                <article class="stat-card">
+                    <div class="stat-card__label">Klik</div>
+                    <div class="stat-card__value"><?= number_format($gscAggregate['clicks']) ?></div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-card__label">Impresi</div>
+                    <div class="stat-card__value"><?= number_format($gscAggregate['impressions']) ?></div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-card__label">CTR</div>
+                    <div class="stat-card__value"><?= cms_esc((string) $gscAggregate['ctr']) ?>%</div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-card__label">Rata-rata Posisi</div>
+                    <div class="stat-card__value"><?= cms_esc((string) $gscAggregate['avg_position']) ?></div>
+                </article>
+            </div>
+
+            <div class="table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr><th>Query</th><th>Klik</th><th>Impresi</th><th>CTR</th><th>Posisi</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($gscTopQueries === []) : ?>
+                            <tr><td colspan="5" class="muted">Belum ada data.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($gscTopQueries as $q) : ?>
+                            <?php $qImpressions = (int) $q['impressions']; $qCtr = $qImpressions > 0 ? round(((int) $q['clicks'] / $qImpressions) * 100, 2) : 0.0; ?>
+                            <tr>
+                                <td><?= cms_esc((string) $q['query']) ?></td>
+                                <td><?= number_format((int) $q['clicks']) ?></td>
+                                <td><?= number_format($qImpressions) ?></td>
+                                <td><?= cms_esc((string) $qCtr) ?>%</td>
+                                <td><?= cms_esc((string) round((float) $q['position'], 1)) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <h4 style="margin:20px 0 8px;padding:0 20px;">Halaman Teratas</h4>
+            <div class="table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr><th>Artikel</th><th>Klik</th><th>Impresi</th><th>CTR</th><th>Posisi</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($gscTopPages === []) : ?>
+                            <tr><td colspan="5" class="muted">Belum ada data.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($gscTopPages as $pg) : ?>
+                            <?php $pImpressions = (int) $pg['impressions']; $pCtr = $pImpressions > 0 ? round(((int) $pg['clicks'] / $pImpressions) * 100, 2) : 0.0; ?>
+                            <tr>
+                                <td><?= $pg['page_title'] ? cms_esc((string) $pg['page_title']) : cms_esc((string) $pg['page_url']) ?></td>
+                                <td><?= number_format((int) $pg['clicks']) ?></td>
+                                <td><?= number_format($pImpressions) ?></td>
+                                <td><?= cms_esc((string) $pCtr) ?>%</td>
+                                <td><?= cms_esc((string) round((float) $pg['position'], 1)) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Artikel Terpopuler</h3>
+            <span class="panel__meta">Total views, top 10</span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Total views sepanjang waktu (bukan data 28 hari terakhir) — jangan disalahartikan sebagai angka real-time terbaru.
+        </p>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Artikel</th><th>Views</th></tr>
+                </thead>
+                <tbody>
+                    <?php if ($topViewedArticles === []) : ?>
+                        <tr><td colspan="2" class="muted">Belum ada data.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($topViewedArticles as $art) : ?>
+                        <tr>
+                            <td><?= cms_esc((string) $art['title']) ?></td>
+                            <td><?= number_format((int) $art['views']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <?php if ($gscConnected) : ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Feedback / Sebelum-Sesudah</h3>
+            <span class="panel__meta"><?= count($feedbackReport) ?> artikel</span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Laporan read-only: artikel yang pernah kena action Growth Agent (SEO Recommendation yang sudah di-Apply,
+            atau Article Idea yang draft-nya sudah dipublish), dibandingkan performa GSC 28 hari sebelum vs sesudah
+            perubahan. Tidak ada approve/execute di sini — cuma laporan. Data yang belum cukup (minimal 7 hari di tiap
+            sisi) ditandai "Data belum cukup", bukan dipaksakan jadi kesimpulan.
+        </p>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Artikel</th>
+                        <th>Aksi</th>
+                        <th>Tanggal Perubahan</th>
+                        <th>Klik</th>
+                        <th>Impresi</th>
+                        <th>CTR</th>
+                        <th>Posisi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($feedbackReport === []) : ?>
+                        <tr><td colspan="7" class="muted">Belum ada artikel yang memenuhi syarat (SEO Recommendation ter-Apply, atau Article Idea yang sudah dipublish).</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($feedbackReport as $fb) : ?>
+                        <?php $cmp = $fb['comparison']; ?>
+                        <tr>
+                            <td><?= cms_esc((string) $fb['page_title']) ?></td>
+                            <td><?= cms_esc($feedbackActionLabel[$fb['action_type']] ?? (string) $fb['action_type']) ?></td>
+                            <td class="muted"><?= cms_esc((string) $fb['change_date']) ?></td>
+                            <?php if (($cmp['status'] ?? '') === 'ok') : ?>
+                                <td>
+                                    <?= (int) $cmp['before']['clicks'] ?> &rarr; <?= (int) $cmp['after']['clicks'] ?>
+                                    <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['clicks'] >= 0 ? '+' : '' ?><?= (int) $cmp['delta']['clicks'] ?>)</span>
+                                </td>
+                                <td>
+                                    <?= (int) $cmp['before']['impressions'] ?> &rarr; <?= (int) $cmp['after']['impressions'] ?>
+                                    <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['impressions'] >= 0 ? '+' : '' ?><?= (int) $cmp['delta']['impressions'] ?>)</span>
+                                </td>
+                                <td>
+                                    <?= round($cmp['before']['ctr'] * 100, 2) ?>% &rarr; <?= round($cmp['after']['ctr'] * 100, 2) ?>%
+                                    <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['ctr'] >= 0 ? '+' : '' ?><?= round($cmp['delta']['ctr'] * 100, 2) ?>%)</span>
+                                </td>
+                                <td>
+                                    <?php if ($cmp['before']['avg_position'] !== null && $cmp['after']['avg_position'] !== null) : ?>
+                                        <?= $cmp['before']['avg_position'] ?> &rarr; <?= $cmp['after']['avg_position'] ?>
+                                        <span class="muted" style="font-size:11px;">(<?= $cmp['delta']['avg_position'] >= 0 ? '+' : '' ?><?= $cmp['delta']['avg_position'] ?>)</span>
+                                    <?php else : ?>
+                                        <span class="muted">—</span>
+                                    <?php endif; ?>
+                                </td>
+                            <?php else : ?>
+                                <td colspan="4"><span class="pill pill--muted" title="Minimal 7 hari data di kedua sisi (sebelum/sesudah) diperlukan untuk perbandingan yang valid.">Data belum cukup</span></td>
+                            <?php endif; ?>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
+    </div>
+
+    <div class="ga-page-tab-panel" data-ga-page-tab="settings">
+    <?php if ($gscConnected) : ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Memori Agent</h3>
+            <span class="panel__meta"><?= count($memoryPatterns) ?> pattern</span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Pola historis dari data GSC (deteksi deterministik, bukan AI) — cuma jadi konteks tambahan buat prompt Growth Agent,
+            bukan action queue. Tidak ada approve/execute di sini; satu-satunya aksi manual adalah menonaktifkan pattern yang sudah tidak relevan.
+        </p>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Tipe</th>
+                        <th>Target</th>
+                        <th>Status</th>
+                        <th>Bukti</th>
+                        <th>Minggu Terdeteksi</th>
+                        <th>Terakhir Dikonfirmasi</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($memoryPatterns === []) : ?>
+                        <tr><td colspan="7" class="muted">Belum ada pattern terdeteksi — akan muncul otomatis setelah cukup data historis GSC terkumpul (minimal <?= (int) cms_gsc_get_memory_thresholds($pdo)['min_distinct_weeks'] ?> minggu berbeda).</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($memoryPatterns as $mem) : ?>
+                        <?php $memEvidence = json_decode((string) ($mem['evidence_json'] ?? ''), true); $memEvidence = is_array($memEvidence) ? $memEvidence : []; ?>
+                        <tr>
+                            <td><?= cms_esc($memoryPatternLabel[$mem['pattern_type']] ?? (string) $mem['pattern_type']) ?></td>
+                            <td>
+                                <?php if ($mem['scope_type'] === 'page') : ?>
+                                    <?= $mem['page_title'] ? cms_esc((string) $mem['page_title']) : '<span class="muted">Artikel #' . (int) $mem['matched_page_id'] . '</span>' ?>
+                                    <span class="muted" style="font-size:11px;">(page)</span>
+                                <?php else : ?>
+                                    <?= cms_esc((string) $mem['query_text']) ?>
+                                    <span class="muted" style="font-size:11px;">(query)</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><span class="pill pill--<?= $memoryStatusPill[$mem['status']] ?? 'muted' ?>"><?= cms_esc((string) $mem['status']) ?></span></td>
+                            <td class="muted" style="font-size:12px;">
+                                <?php if (isset($memEvidence['avg_ctr'])) : ?>
+                                    CTR <?= round(((float) $memEvidence['avg_ctr']) * 100, 2) ?>%, posisi <?= round((float) ($memEvidence['avg_position'] ?? 0), 1) ?>,
+                                <?php endif; ?>
+                                <?= (int) ($memEvidence['total_impressions'] ?? 0) ?> impressions
+                            </td>
+                            <td><?= (int) $mem['distinct_weeks_seen'] ?></td>
+                            <td class="muted"><?= cms_esc((string) $mem['last_confirmed_at']) ?></td>
+                            <td class="table-actions">
+                                <?php if ($mem['status'] !== 'stale') : ?>
+                                    <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Tandai pattern ini sebagai stale? Ini cuma menonaktifkan dari context prompt, tidak menghapus histori.');">
+                                        <?= cms_csrf_field() ?>
+                                        <input type="hidden" name="action" value="mark_memory_stale">
+                                        <input type="hidden" name="memory_id" value="<?= (int) $mem['id'] ?>">
+                                        <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Tandai stale</button>
+                                    </form>
+                                <?php else : ?>
+                                    <span class="muted">—</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="panel">
         <div class="panel__head">
             <h3 class="panel__title">Aturan Gaya</h3>
@@ -1748,6 +1774,71 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <button type="submit" class="admin-btn admin-btn--ghost">Bersihkan sekarang</button>
         </form>
     </div>
+    </div>
+
+<script>
+// ---- Page-level tabs (Growth Agent) — deliberately separate class
+// names/attributes (ga-page-tab-*) from Job Terbaru's own internal tabs
+// (js-ga-tab-*) above, so the two never interfere with each other.
+//
+// No-JS degradation: server-rendered HTML has NO `hidden` on ANY of the
+// 4 tab panels — all 4 tabs' content is fully present and visible by
+// default (a long scroll, same as the page before this reorg). This
+// script is what hides the non-active 3 at runtime (via p.hidden below).
+// If JS is blocked/fails, nothing gets hidden and every panel stays
+// reachable — the tab buttons just become inert decoration instead of
+// making 3/4 of the page inaccessible.
+//
+// Tab persistence across POST+redirect: this page's $redirect() helper
+// only ever redirects back to growth-agent.php with no hash/query, so
+// persistence is handled entirely client-side via sessionStorage — on
+// any form submit, we record which tab that form belongs to (via the
+// closest .ga-page-tab-panel, or an explicit data-ga-page-tab attribute
+// on the 3 header forms that live outside any tab panel), then restore
+// it on the next load. This required zero changes to $redirect() or any
+// PHP action handler.
+(function () {
+    var STORAGE_KEY = 'wpm_ga_active_tab';
+    var tabsWrap = document.querySelector('.ga-page-tabs');
+    if (!tabsWrap) { return; }
+    var panels = document.querySelectorAll('.ga-page-tab-panel');
+    var buttons = tabsWrap.querySelectorAll('.ga-page-tab-btn');
+
+    function activate(tabKey) {
+        buttons.forEach(function (b) {
+            var isActive = b.getAttribute('data-ga-page-tab') === tabKey;
+            b.classList.toggle('is-active', isActive);
+            b.classList.toggle('admin-btn--secondary', isActive);
+            b.classList.toggle('admin-btn--ghost', !isActive);
+        });
+        panels.forEach(function (p) {
+            p.hidden = p.getAttribute('data-ga-page-tab') !== tabKey;
+        });
+        try { sessionStorage.setItem(STORAGE_KEY, tabKey); } catch (e) {}
+    }
+
+    buttons.forEach(function (b) {
+        b.addEventListener('click', function () {
+            activate(b.getAttribute('data-ga-page-tab'));
+        });
+    });
+
+    document.addEventListener('submit', function (e) {
+        var form = e.target;
+        if (!(form instanceof HTMLFormElement)) { return; }
+        var panel = form.closest('.ga-page-tab-panel');
+        var tabKey = panel ? panel.getAttribute('data-ga-page-tab') : form.getAttribute('data-ga-page-tab');
+        if (tabKey) {
+            try { sessionStorage.setItem(STORAGE_KEY, tabKey); } catch (err) {}
+        }
+    }, true);
+
+    var validKeys = Array.prototype.map.call(buttons, function (b) { return b.getAttribute('data-ga-page-tab'); });
+    var initialTab = null;
+    try { initialTab = sessionStorage.getItem(STORAGE_KEY); } catch (e) {}
+    activate(validKeys.indexOf(initialTab) !== -1 ? initialTab : 'action');
+})();
+</script>
 </section>
 <?php
 require dirname(__DIR__) . '/includes/footer.php';
