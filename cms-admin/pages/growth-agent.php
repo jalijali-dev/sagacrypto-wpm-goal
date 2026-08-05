@@ -912,27 +912,27 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </h2>
             <p class="section-lead">Pipeline SEO &amp; konten — bikin draft, jalanin proses, lalu kembalikan ke operator buat di-approve.</p>
         </div>
-        <div class="toolbar__right" style="gap:8px;">
-            <form method="post" action="<?= cms_esc($selfUrl) ?>" data-ga-page-tab="action">
-                <?= cms_csrf_field() ?>
-                <input type="hidden" name="action" value="scan_seo">
-                <button type="submit" class="admin-btn admin-btn--primary">Scan untuk perbaikan SEO</button>
-            </form>
-            <form method="post" action="<?= cms_esc($selfUrl) ?>" data-ga-page-tab="action">
-                <?= cms_csrf_field() ?>
-                <input type="hidden" name="action" value="scan_internal_linking">
-                <button type="submit" class="admin-btn admin-btn--secondary">Scan Internal Linking</button>
-            </form>
-            <form method="post" action="<?= cms_esc($selfUrl) ?>" data-ga-page-tab="health">
-                <?= cms_csrf_field() ?>
-                <input type="hidden" name="action" value="tsa_check_content">
-                <button type="submit" class="admin-btn admin-btn--secondary">Cek Konten (Alt Text &amp; Schema)</button>
-            </form>
-        </div>
     </div>
-    <p class="section-lead" style="margin-top:-8px;">Scan mengecek artikel published yang belum pernah di-scan (maks. 5 per klik) dan mengusulkan meta title/description yang lebih baik untuk masing-masing — tidak ada yang berubah sampai Anda review dan apply.</p>
-    <p class="section-lead" style="margin-top:-8px;">Scan Internal Linking mencari pasangan artikel yang topiknya relevan tapi belum saling link (maks. 10 artikel sumber per klik, maks. 3 usulan per artikel) — murni pencocokan teks, tanpa AI. Tidak ada yang berubah sampai Anda review dan apply di halaman Review Link Internal.</p>
-    <p class="section-lead" style="margin-top:-8px;">Cek Konten memeriksa alt text gambar &amp; schema markup (murni laporan, TIDAK PERNAH mengubah artikel) — hasilnya di panel "Technical SEO Auditor" di bawah. Core Web Vitals (PageSpeed Insights) dicek terpisah karena jauh lebih lambat, lihat tombolnya sendiri di panel itu.</p>
+    <div class="ga-scan-actions">
+        <form method="post" action="<?= cms_esc($selfUrl) ?>" data-ga-page-tab="action">
+            <?= cms_csrf_field() ?>
+            <input type="hidden" name="action" value="scan_seo">
+            <button type="submit" class="admin-btn admin-btn--primary">Scan untuk perbaikan SEO</button>
+        </form>
+        <form method="post" action="<?= cms_esc($selfUrl) ?>" data-ga-page-tab="action">
+            <?= cms_csrf_field() ?>
+            <input type="hidden" name="action" value="scan_internal_linking">
+            <button type="submit" class="admin-btn admin-btn--secondary">Scan Internal Linking</button>
+        </form>
+        <form method="post" action="<?= cms_esc($selfUrl) ?>" data-ga-page-tab="health">
+            <?= cms_csrf_field() ?>
+            <input type="hidden" name="action" value="tsa_check_content">
+            <button type="submit" class="admin-btn admin-btn--secondary">Cek Konten (Alt Text &amp; Schema)</button>
+        </form>
+    </div>
+    <p class="section-lead">Scan mengecek artikel published yang belum pernah di-scan (maks. 5 per klik) dan mengusulkan meta title/description yang lebih baik untuk masing-masing — tidak ada yang berubah sampai Anda review dan apply.</p>
+    <p class="section-lead section-lead--tight">Scan Internal Linking mencari pasangan artikel yang topiknya relevan tapi belum saling link (maks. 10 artikel sumber per klik, maks. 3 usulan per artikel) — murni pencocokan teks, tanpa AI. Tidak ada yang berubah sampai Anda review dan apply di halaman Review Link Internal.</p>
+    <p class="section-lead section-lead--tight">Cek Konten memeriksa alt text gambar &amp; schema markup (murni laporan, TIDAK PERNAH mengubah artikel) — hasilnya di panel "Technical SEO Auditor" di bawah. Core Web Vitals (PageSpeed Insights) dicek terpisah karena jauh lebih lambat, lihat tombolnya sendiri di panel itu.</p>
 
     <div class="ga-page-tabs" role="tablist">
         <button type="button" class="admin-btn admin-btn--sm ga-page-tab-btn" data-ga-page-tab="action">Perlu Tindakan<?php if ($tabActionCount > 0) : ?> <span class="pill pill--warn"><?= $tabActionCount ?></span><?php endif; ?></button>

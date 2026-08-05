@@ -1290,6 +1290,35 @@ body.admin-body {
   flex: 1;
 }
 
+/* Plain text links with no explicit class (e.g. an article title inside a
+   data table cell) previously fell through to the browser's default blue
+   (unvisited) / purple (:visited) — nearly unreadable on this theme's dark
+   surfaces, and :visited is the state most likely to get missed since it
+   only shows up after you've actually clicked one.
+
+   Reuses the same color pair already established for plain text links
+   elsewhere in this file (.admin-breadcrumb a / .panel__link below) rather
+   than inventing a new one. Setting `color` on the bare state (not inside
+   `:link`/`:visited`) covers ALL link states — including :visited — with
+   one declaration, which is what actually fixes the reported defect.
+
+   `:not([class])` means this can only ever match an anchor with NO class
+   attribute at all — it can never match `.admin-btn`, `.panel__link`, or
+   any other explicitly classed link, so there's no risk of this overriding
+   existing button/link styling anywhere. Scoped to `.admin-content` (the
+   per-page body — excludes the sidebar/navbar/breadcrumb, which live
+   outside it and already have their own link styling) so this reaches
+   every admin page's plain content links consistently, not just one. */
+.admin-content a:not([class]) {
+  color: var(--brown-soft);
+  text-decoration: none;
+}
+
+.admin-content a:not([class]):hover {
+  color: var(--gold-2);
+  text-decoration: underline;
+}
+
 /* ============================================================
    BUTTONS
    ============================================================ */
@@ -1656,6 +1685,32 @@ body.admin-body {
   }
 }
 
+/* Each tab's content used to be a flat run of .admin-stack children (which
+   get its 22px gap for free — see .admin-stack above). Now that content is
+   nested one level down inside .ga-page-tab-panel, so the SAME 22px needs
+   to apply again here, between this wrapper's own direct children (stat
+   grid / .panel / .panel / ...) — otherwise they sit flush against each
+   other. Reusing .admin-stack's exact gap value, just scoped to this one
+   class instead of touching .panel itself (which is shared by every other
+   admin page). */
+.ga-page-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* Row of scan-action buttons/forms below the Growth Agent intro paragraph
+   (moved out of .toolbar__right — 3 long labels never fit that row without
+   wrapping awkwardly against the title). Reuses .toolbar__right's own gap
+   value, just left-aligned instead of right-aligned and given breathing
+   room from the paragraph above/below it. */
+.ga-scan-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0 4px;
+}
+
 /* ============================================================
    PILLS / BADGES
    ============================================================ */
@@ -1923,6 +1978,13 @@ body.admin-body {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* Was an inline style="margin-top:-8px" repeated on 3 <p class="section-lead">
+   in growth-agent.php, to visually group a run of consecutive explanatory
+   paragraphs tighter than the default 8px. Same value, just a class now. */
+.section-lead--tight {
+  margin-top: -8px;
 }
 
 .module-note {
