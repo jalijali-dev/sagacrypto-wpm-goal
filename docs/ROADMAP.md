@@ -198,6 +198,35 @@ Diketahui perlu dikerjakan suatu saat, tapi bukan prioritas sekarang.
   dites sungguhan — dicatat eksplisit sebagai gap di dokumen itu.
 
 **5 Agu 2026:**
+- **Halaman Growth Agent ditata ulang jadi 4 tab** (murni penataan UI — nol
+  perubahan query, skema, atau logika agent; diverifikasi 0 baris SQL baru di
+  diff). Sebelumnya 10 panel dalam satu scroll panjang dengan tujuan campur
+  aduk. Sekarang: **Perlu Tindakan** (Job Terbaru + Peluang Terprioritas,
+  aktif default), **Kesehatan Teknis** (Status Index + Technical SEO
+  Auditor), **Data & Performa** (GSC + Artikel Terpopuler + Feedback), dan
+  **Agent & Setelan** (Memori Agent + Aturan Gaya + Pemeliharaan). Header
+  dan 3 tombol scan tetap di luar tab, selalu terlihat.
+
+  Tiga hal yang sengaja dijaga dan gampang salah kalau tidak diperhatikan:
+  (1) **Tab bersarang** — panel Job Terbaru sudah punya tab sendiri
+  (`js-ga-tab-*`); tab tingkat-halaman memakai class yang benar-benar
+  berbeda (`ga-page-tab-*`) dengan handler terpisah, dibuktikan independen
+  dua arah. (2) **Degradasi tanpa JS** — HTML server TIDAK memuat atribut
+  `hidden` sama sekali; JS yang menyembunyikan saat runtime, jadi kalau JS
+  gagal semua panel tetap terjangkau (cuma kembali jadi scroll panjang),
+  bukan 3 dari 4 tab hilang. (3) **Tab bertahan setelah POST+redirect** —
+  tanpa menyentuh closure `$redirect()`: sessionStorage mencatat tab asal
+  form yang di-submit (via `closest()`, atau atribut `data-ga-page-tab`
+  eksplisit untuk 3 form tombol scan yang berada di luar tab). Diverifikasi:
+  klik "Cek Konten" mendarat kembali di tab Kesehatan Teknis.
+
+  Badge jumlah di tombol tab memakai data yang sudah dihitung halaman ini
+  (tidak ada query tambahan), disembunyikan saat nilainya nol.
+
+  Catatan temuan lama (bukan regresi, dikonfirmasi devs lewat diff bahwa
+  CSS `.jobs-table` tidak tersentuh): teks di tabel Job Terbaru masih
+  bertumpuk di lebar ~600px. Prioritas rendah — itu lebar layar HP,
+  sementara admin dikelola dari desktop.
 - **Dua perbaikan UI di `growth-agent.php`** (murni penyajian, nol perubahan
   DB/logika agent). (1) Panel Technical SEO Auditor tadinya mengklaim
   "24 bersih" padahal tabel audit masih kosong — penyebabnya `LEFT JOIN`
