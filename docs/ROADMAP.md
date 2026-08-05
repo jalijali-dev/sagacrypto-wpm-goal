@@ -198,6 +198,39 @@ Diketahui perlu dikerjakan suatu saat, tapi bukan prioritas sekarang.
   dites sungguhan — dicatat eksplisit sebagai gap di dokumen itu.
 
 **5 Agu 2026:**
+- **Tiga perbaikan tampilan lanjutan di halaman Growth Agent** (murni
+  CSS/markup, nol perubahan query/skema/logika). (1) Tiga tombol scan
+  dipindah dari `.toolbar__right` ke baris sendiri di bawah paragraf intro
+  — label ketiganya terlalu panjang untuk muat sebaris di samping judul,
+  hasilnya menumpuk. Urutan baca sekarang: intro → tombol → penjelasan tiap
+  tombol. Atribut `data-ga-page-tab` di ketiga form dipertahankan dan
+  diverifikasi masih berfungsi. (2) **Regresi jarak antar panel** dari
+  penataan tab kemarin diperbaiki: `.admin-stack` punya `gap: 22px` tapi
+  hanya menjangkau anak langsung, sementara panel kini turun satu level ke
+  dalam `.ga-page-tab-panel`. Diperbaiki dengan menerapkan gap 22px yang
+  SAMA di wrapper tab (nilainya diambil dari yang sudah dipakai, diverifikasi
+  dengan mengukur jarak panel di `dashboard.php` yang juga 22px) — scoped ke
+  class baru, `.panel` sendiri tidak disentuh sehingga halaman admin lain
+  tidak berubah. (3) **Link judul artikel tidak terbaca di tema gelap** —
+  anchor di panel Technical SEO Auditor tidak punya class dan `admin.css`
+  tidak punya aturan warna link baseline, jadi jatuh ke warna bawaan browser
+  (biru/ungu) yang nyaris tak terbaca di atas latar ungu gelap; kondisi
+  `:visited` paling parah. Diperbaiki dengan aturan umum
+  `.admin-content a:not([class])` memakai konvensi warna yang SUDAH ada di
+  codebase (`--brown-soft`/`--gold-2`, dipakai `.panel__link` &
+  breadcrumb) — bukan warna karangan baru. Selector `:not([class])`
+  menjamin aturan ini mustahil menimpa anchor yang sudah punya class
+  (`.admin-btn`, dll). Bonus: devs menemukan cacat yang sama di 5 halaman
+  admin lain (cannibalization-review, content-conflict-detection,
+  prompt-control, seo-dashboard, seo-intelligence) — semuanya ikut
+  terperbaiki oleh aturan yang sama. Kontras terukur 4.17:1, sedikit di
+  bawah WCAG AA (4.5:1), tapi itu warna yang memang sudah dipakai
+  site-wide — menaikkannya adalah keputusan palet menyeluruh, bukan bagian
+  dari perbaikan bug ini.
+
+  Catatan proses: pada putaran pertama devs mengerjakan (1) dan (2) tapi
+  **melewati (3) tanpa menyebutnya sama sekali** di laporan — bukan menolak
+  dengan alasan. Ditegur, lalu dikerjakan di putaran kedua.
 - **Halaman Growth Agent ditata ulang jadi 4 tab** (murni penataan UI — nol
   perubahan query, skema, atau logika agent; diverifikasi 0 baris SQL baru di
   diff). Sebelumnya 10 panel dalam satu scroll panjang dengan tujuan campur
