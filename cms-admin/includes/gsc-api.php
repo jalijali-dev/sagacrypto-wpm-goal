@@ -1178,6 +1178,42 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                 // throughput matters more than clearing a backlog instantly.
                 'batch_size' => 20,
             ],
+
+            // Daftar Artikel Berpotensi Tinggi (GROWTH_AGENT_V2_PROPOSAL.md
+            // § Fase D — renamed 6 Aug 2026 from "Backlink Monitor" after
+            // investigation found the GSC API has no Links/backlink report
+            // endpoint at all, free or paid; that half of the original
+            // scope was dropped entirely, see the doc's own correction).
+            // What survives: published articles ranked by existing GSC
+            // traffic/impression signal, so an operator has concrete
+            // promotion/outreach targets. See
+            // cms_growth_agent_get_high_potential_articles() in
+            // growth-agent-service.php — pure live SQL aggregate, no new
+            // table/column (unlike Technical SEO Auditor, nothing here is
+            // expensive enough to need persisting between page loads).
+            'high_potential_articles' => [
+                // Same order of magnitude as most other "recent window"
+                // knobs in this file (comparison_window_days, Measurement
+                // Loop's own window_days) — 28 days is this codebase's
+                // default lookback everywhere GSC trend data is involved.
+                'window_days' => 28,
+                // Below this many impressions in the window, a page isn't
+                // a meaningful "high potential" candidate — just noise.
+                // Deliberately low: this list is meant to surface anything
+                // worth a human's attention, not just the top handful.
+                'min_impressions' => 50,
+                // How many articles the panel actually displays.
+                'articles_per_report' => 10,
+                // Pass 1 (bulk GROUP BY ranking, see that function's own
+                // docblock for the two-pass design) casts a wider net than
+                // articles_per_report before pass 2 re-aggregates each
+                // candidate via cms_growth_agent_aggregate_page_window() and
+                // re-sorts by the properly-sourced numbers — a buffer so a
+                // page whose properly-sourced total differs slightly from
+                // pass 1's raw sum doesn't fall out of the top
+                // articles_per_report incorrectly.
+                'candidate_pool_size' => 30,
+            ],
         ];
     }
 }

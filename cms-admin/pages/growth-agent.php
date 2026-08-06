@@ -765,6 +765,22 @@ try {
 $memoryStatusPill = ['active' => 'ok', 'pending_review' => 'info', 'stale' => 'muted'];
 $memoryPatternLabel = ['winning_pattern' => 'Pola Sukses', 'content_gap' => 'Kesenjangan Konten'];
 
+// ── Daftar Artikel Berpotensi Tinggi (GROWTH_AGENT_V2_PROPOSAL.md § Fase
+// D, renamed 6 Aug 2026 from "Backlink Monitor" — see
+// cms_growth_agent_get_high_potential_articles()'s own docblock for why).
+// Gated on $gscConnected same as Feedback Loop below — this reads
+// gsc_query_data, so without GSC connected there's nothing to rank by.
+// Live-computed on every page load (no persistence, unlike Technical SEO
+// Auditor) — cheap SQL aggregate, never throws.
+$highPotentialArticles = [];
+if ($gscConnected) {
+    try {
+        $highPotentialArticles = cms_growth_agent_get_high_potential_articles($pdo);
+    } catch (Throwable $e) {
+        $highPotentialArticles = [];
+    }
+}
+
 // ── Feedback Loop / Before-After (ROADMAP.md gap #4) ──
 // Read-only reporting — no approve/execute here (see
 // cms_growth_agent_get_feedback_report()'s own guardrail note on why
@@ -1570,6 +1586,42 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </table>
         </div>
     </div>
+
+    <?php if ($gscConnected) : ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Daftar Artikel Berpotensi Tinggi</h3>
+            <span class="panel__meta"><?= count($highPotentialArticles) ?> artikel</span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Artikel published diranking berdasarkan traffic/impression GSC 28 hari terakhir — target konkret buat
+            dipromosikan/di-push manual (share ulang, internal link, dsb). Murni laporan read-only, tidak ada
+            approve/execute di sini. <em>Dulu direncanakan sebagai "Backlink Monitor" — dibatalkan 6 Agu 2026 setelah
+            ditemukan Search Console API tidak punya endpoint data backlink sama sekali, gratis maupun berbayar.</em>
+        </p>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Artikel</th><th>Impressions</th><th>Klik</th><th>CTR</th><th>Posisi Rata-rata</th></tr>
+                </thead>
+                <tbody>
+                    <?php if ($highPotentialArticles === []) : ?>
+                        <tr><td colspan="5" class="muted">Belum ada artikel dengan impression yang cukup di window ini.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($highPotentialArticles as $hpa) : ?>
+                        <tr>
+                            <td><a href="pages.php?edit=<?= (int) $hpa['page_id'] ?>"><?= cms_esc((string) $hpa['title']) ?></a></td>
+                            <td><?= number_format((int) $hpa['impressions']) ?></td>
+                            <td><?= number_format((int) $hpa['clicks']) ?></td>
+                            <td><?= number_format(((float) $hpa['ctr']) * 100, 2) ?>%</td>
+                            <td><?= $hpa['avg_position'] !== null ? number_format((float) $hpa['avg_position'], 1) : '—' ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <?php if ($gscConnected) : ?>
     <div class="panel">

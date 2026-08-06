@@ -4374,6 +4374,128 @@ function cms_growth_agent_run_measurement_loop(PDO $pdo): array
 }
 
 /**
+ * "Daftar Artikel Berpotensi Tinggi" (GROWTH_AGENT_V2_PROPOSAL.md § Fase D
+ * — renamed 6 Aug 2026 from "Backlink Monitor" after investigation found
+ * Google's Search Console API has no Links/backlink report endpoint at
+ * all, free or paid — that half of the original scope was dropped
+ * entirely; see the doc's own correction). What survives: published
+ * articles ranked by existing GSC traffic/impression signal, so an
+ * operator has concrete promotion/outreach targets to work from manually
+ * — no "zero backlink" filter (that data source is gone along with the
+ * monitoring half it would have come from).
+ *
+ * Pure read + aggregate, same "read-only report, no growth_agent_jobs row"
+ * shape as the Technical SEO Auditor (see that feature's own docblock
+ * above for why this is still § 1b-compliant — there's no decision here,
+ * only information an operator acts on manually). UNLIKE TSA, this
+ * persists NOTHING: no new table, no new column. TSA persists because a
+ * PageSpeed Insights call is genuinely expensive (10-30s/URL) and must
+ * not re-run every page view; this is a cheap SQL aggregate over data
+ * that's already fetched (gsc_query_data), so it's simply recomputed live
+ * on every page load — nothing to keep in sync, nothing that can go
+ * stale.
+ *
+ * Two-pass query, not one — deliberately reuses
+ * cms_growth_agent_aggregate_page_window() (the SAME function
+ * cms_growth_agent_compare_before_after() uses, so this panel's numbers
+ * are consistent with every other panel that shows page-level GSC
+ * metrics) rather than a fresh ad-hoc SUM():
+ *   1. One cheap bulk GROUP BY over gsc_query_data ranks ALL published
+ *      pages by impressions in a single query — this is what makes the
+ *      feature scale to any article count without one query per article.
+ *   2. Only the top 'candidate_pool_size' candidates from pass 1 (wider
+ *      than the final 'articles_per_report' — see
+ *      cms_gsc_default_opportunity_thresholds()['high_potential_articles']
+ *      for why) get a real cms_growth_agent_aggregate_page_window() call,
+ *      for properly-sourced final numbers (it prefers the durable
+ *      growth_agent_performance snapshot over raw gsc_query_data when the
+ *      snapshot has better day-coverage — pass 1's raw SUM alone doesn't
+ *      know to do that). Results are re-sorted by THESE numbers before
+ *      slicing to articles_per_report, not by pass 1's order, so a
+ *      candidate whose properly-sourced total differs from its raw sum
+ *      still lands in the correct final position.
+ *
+ * Never throws.
+ *
+ * @return list<array{page_id:int,title:string,slug:string,clicks:int,impressions:int,ctr:float,avg_position:?float}>
+ */
+function cms_growth_agent_get_high_potential_articles(PDO $pdo): array
+{
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $config = cms_gsc_get_opportunity_thresholds($pdo)['high_potential_articles'] ?? [];
+        $windowDays = max(1, min(180, (int) ($config['window_days'] ?? 28)));
+        $minImpressions = max(0, (int) ($config['min_impressions'] ?? 50));
+        $limit = max(1, min(50, (int) ($config['articles_per_report'] ?? 10)));
+        $candidatePoolSize = max($limit, min(200, (int) ($config['candidate_pool_size'] ?? 30)));
+
+        $start = date('Y-m-d', strtotime('-' . $windowDays . ' days'));
+        $end = date('Y-m-d');
+
+        // Pass 1 — cheap bulk ranking, one query for every published page
+        // at once (see this function's own docblock for why this can't
+        // just be N calls to aggregate_page_window() directly).
+        $candidateStmt = $pdo->prepare(
+            "SELECT matched_page_id AS page_id, SUM(impressions) AS total_impressions
+               FROM gsc_query_data
+              WHERE matched_page_id IS NOT NULL AND data_date BETWEEN :start AND :end
+              GROUP BY matched_page_id
+             HAVING SUM(impressions) >= :min_impressions
+              ORDER BY total_impressions DESC
+              LIMIT " . $candidatePoolSize
+        );
+        $candidateStmt->execute(['start' => $start, 'end' => $end, 'min_impressions' => $minImpressions]);
+        $candidatePageIds = array_map('intval', array_column($candidateStmt->fetchAll(), 'page_id'));
+
+        if ($candidatePageIds === []) {
+            return [];
+        }
+
+        // Only published articles are actionable promotion targets —
+        // drafts can't be pushed to anyone yet.
+        $placeholders = implode(',', array_fill(0, count($candidatePageIds), '?'));
+        $pagesStmt = $pdo->prepare(
+            "SELECT page_id, title, slug FROM pages WHERE page_id IN ($placeholders) AND status = 'published'"
+        );
+        $pagesStmt->execute($candidatePageIds);
+        $pageMeta = [];
+        foreach ($pagesStmt->fetchAll() as $row) {
+            $pageMeta[(int) $row['page_id']] = ['title' => (string) $row['title'], 'slug' => (string) $row['slug']];
+        }
+
+        // Pass 2 — re-aggregate each surviving candidate through the
+        // shared, properly-sourced function.
+        $candidates = [];
+        foreach ($candidatePageIds as $pageId) {
+            if (!isset($pageMeta[$pageId])) {
+                continue; // not a published page (draft/deleted since the GSC data was fetched) — skip
+            }
+            try {
+                $agg = cms_growth_agent_aggregate_page_window($pdo, $pageId, $start, $end);
+            } catch (Throwable $e) {
+                continue;
+            }
+            $candidates[] = [
+                'page_id' => $pageId,
+                'title' => $pageMeta[$pageId]['title'],
+                'slug' => $pageMeta[$pageId]['slug'],
+                'clicks' => $agg['clicks'],
+                'impressions' => $agg['impressions'],
+                'ctr' => $agg['ctr'],
+                'avg_position' => $agg['avg_position'],
+            ];
+        }
+
+        usort($candidates, static fn (array $a, array $b): int => $b['impressions'] <=> $a['impressions']);
+
+        return array_slice($candidates, 0, $limit);
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_get_high_potential_articles] Failed: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
  * Delete old, already-resolved growth_agent_jobs rows so the table doesn't
  * grow forever (there's no cron in this codebase — see sitemap-service.php's
  * own note that everything here runs synchronously on request, not on a

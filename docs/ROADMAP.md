@@ -133,18 +133,23 @@ teknis lengkap (skema DB, alasan tiap item, urutan prioritas) ada di
 `docs/GROWTH_AGENT_V2_PROPOSAL.md` — ringkasan di bawah ini cuma index,
 jangan diedit terpisah dari dokumen aslinya.
 
-**Fase A dan B sudah tuntas** (lihat rincian tanggal per item di bawah);
-Fase C dan D masih di antrian, belum mulai. Fase E ditambah 5 Agu 2026,
-disetujui cakupannya, belum ada kode ditulis.
+**Fase A, B, dan Measurement Loop (bagian Fase C) sudah tuntas & live di
+production** (lihat rincian tanggal per item di bawah). Sisa Fase C,
+Fase D, dan Fase E masih di antrian.
 
-**Urutan eksekusi berikutnya (direvisi 5 Agu 2026 — bukan urutan huruf
-A→E):** Measurement Loop (bagian dari Fase C) dikerjakan **duluan**,
-sebelum Fase E — dipicu perbandingan dengan workflow referensi kedua
-("Val's Cake" milik kolega user) yang menandai measurement loop sebagai
-prasyarat, bukan pelengkap: tanpa data before/after nyata, keputusan
-job_type mana yang "cukup aman diotomatisin" di Fase E cuma tebakan.
-Urutan penuh: **Measurement Loop → Fase E (internal link doang) →
-Backlink Monitor (cakupan diperluas) → sisa Fase C/D.**
+**Urutan eksekusi (direvisi 5 Agu 2026 — bukan urutan huruf A→E):**
+Measurement Loop dikerjakan **duluan**, sebelum Fase E — dipicu
+perbandingan dengan workflow referensi kedua ("Val's Cake" milik kolega
+user) yang menandai measurement loop sebagai prasyarat, bukan pelengkap:
+tanpa data before/after nyata, keputusan job_type mana yang "cukup aman
+diotomatisin" di Fase E cuma tebakan. Urutan penuh: **✅ Measurement Loop
+(selesai, live 6 Agu 2026) → Fase E (internal link doang) → Backlink
+Monitor (cakupan diperluas) → sisa Fase C/D.**
+
+⚠️ **Fase E belum mulai dikerjakan** meski Measurement Loop udah live —
+sengaja ditahan sampai ada cukup sampel job yang genuinely lewat 28 hari
+dan terukur (baru mulai ngumpul dari 6 Agu 2026), biar keputusan job_type
+mana yang dipercaya otonom berbasis data, bukan asumsi.
 
 - **Fase A — Fondasi: ✅ SELESAI (5 Agu 2026), semua 3 item tuntas.**
   Scheduler mandiri (Cron Job cPanel, pola sama kayak backup mingguan di
@@ -162,19 +167,36 @@ Backlink Monitor (cakupan diperluas) → sisa Fase C/D.**
   kali), **Technical SEO Auditor** (Core Web Vitals via PageSpeed
   Insights API, schema markup, alt text — laporan doang, gak auto-fix,
   nol job/antrian).
-- **Fase C — Distribusi & closing the loop:** **Social Specialist**
-  (siapin draft caption sosmed setelah artikel dipublish manual, gak
-  pernah auto-post), **auto re-trigger measurement loop** — 🔜
-  **dikerjakan duluan, prasyarat Fase E** (jadwal otomatis cek ulang
-  performa 28 hari setelah sebuah rekomendasi di-Apply, hasilnya masuk
-  ke panel Feedback yang sudah ada).
-- **Fase D — Perlu keputusan lanjutan sebelum dikerjakan:** **Backlink
-  Monitor** (read-only, lewat GSC Links report yang udah gratis diakses
-  — sengaja gak ada outreach otomatis) — cakupan diperluas 5 Agu 2026:
-  bukan cuma "siapa yang link ke kita", tapi juga daftar artikel
-  berpotensi yang nol backlink, buat target outreach manual operator;
-  riset keyword pakai API berbayar (trade-off biaya vs akurasi, belum
-  diputuskan).
+- **Fase C — Distribusi & closing the loop:** **auto re-trigger
+  measurement loop — ✅ SELESAI & LIVE (6 Agu 2026).** Job `succeeded`
+  (internal link, SEO meta, ide artikel yang sudah publish) otomatis
+  dijadwalin dicek ulang performa GSC-nya 28 hari kemudian, hasil masuk
+  ke panel Feedback yang sudah ada (sekarang juga mencakup internal
+  link, sebelumnya gak ada). Kolom baru `measured_at` di
+  `growth_agent_jobs`, config baru `measurement_loop` di
+  `opportunity_thresholds_json` — nol tabel baru. Diuji pakai data
+  production asli, sempat nemu & benerin bug (`updated_at` ke-bump gak
+  sengaja) sebelum deploy. Commit `956f5df`. **Belum ada hasil
+  kelihatan** sampai job pertama genuinely lewat 28 hari — jalan diam-diam
+  di background, gak ada menu/tombol baru (sengaja, gak butuh keputusan
+  manusia). **Social Specialist** (siapin draft caption sosmed setelah
+  artikel dipublish manual, gak pernah auto-post) masih di antrian,
+  belum dikerjakan.
+- **Fase D — 🔧 SEDANG DIKERJAKAN (mulai 6 Agu 2026):** ~~Backlink
+  Monitor~~ → **dikoreksi & di-scope-ulang 6 Agu 2026 jadi "Daftar
+  Artikel Berpotensi Tinggi".** Investigasi teknis sebelum ngoding
+  menemukan: GSC API resmi TIDAK PERNAH punya endpoint data backlink
+  (Links report cuma ada di UI web GSC, bukan lewat API apapun, gratis
+  maupun berbayar) — klaim awal "teknis gampang" di proposal itu keliru.
+  Keputusan user: drop bagian monitoring backlink sepenuhnya, fokus ke
+  separuh yang masih feasible — laporan read-only artikel published
+  berpotensi tinggi (ranking by traffic/impression dari `gsc_query_data`
+  yang sudah ada), tanpa filter "nol backlink" (gugur bareng data
+  sumbernya). Presedennya Technical SEO Auditor (§ Fase B) — nol
+  job/antrian baru, laporan doang. Detail lengkap di
+  `docs/GROWTH_AGENT_V2_PROPOSAL.md` § Fase D. Riset keyword pakai API
+  berbayar (trade-off biaya vs akurasi, belum diputuskan) — item terpisah,
+  belum dikerjakan.
 - **Fase E — Mode Otonom (toggle per job_type): disetujui cakupannya
   5 Agu 2026, belum ada kode, nunggu Measurement Loop selesai duluan.**
   Toggle default OFF yang, kalau dinyalain operator, skip tombol

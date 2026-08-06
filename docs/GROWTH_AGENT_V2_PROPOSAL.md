@@ -101,7 +101,7 @@ Queue).
 | 1 | **Internal Linking Agent** | Scan artikel published, cari pasangan artikel yang relevan tapi belum saling link, usulkan anchor text + lokasi taruh link. Approve → link ditambahkan ke draft revisi (bukan auto-edit artikel published). | Internal link nyebarin "link equity" antar halaman & bantu Google ngerti struktur topik situs — dampaknya nyata, resikonya rendah (cuma nambah `<a>` tag, gak ubah makna konten). |
 | 2 | **Technical SEO Auditor** | Cek Core Web Vitals (lewat PageSpeed Insights API, gratis), ada/gaknya schema markup (Article/BreadcrumbList), alt text gambar yang kosong. Laporan doang, gak auto-fix. | Kecepatan halaman & structured data itu ranking factor teknis yang sekarang sama sekali gak dipantau. |
 | 3 | **Keyword Expansion Agent** | Diberi 1 topik/pillar, AI usulkan varian keyword & sub-topik yang relevan buat niche olahraga (bukan cuma dari GSC — dari pengetahuan umum + opsional web search). Hasilnya masuk sebagai draft topic baru di Topic Cluster yang sudah ada, bukan job type baru dari nol. | Opportunity Engine sekarang cuma reaktif ke yang udah keliatan; ini yang isi gap "cari topik yang belum pernah dicoba sama sekali". |
-| 4 | **Backlink Monitor** (read-only) | Fetch laporan "Links" dari GSC API (gratis, sudah ada aksesnya) tiap minggu, catat domain yang baru link ke Sagagoal. Murni monitoring, **tidak ada outreach/pencarian backlink otomatis**. | Sinyal off-page tetap relevan buat ranking, tapi outreach backlink otomatis berisiko (bisa keliatan spammy/melanggar guideline Google) — jadi sengaja dibatasi ke monitoring doang. |
+| 4 | ~~Backlink Monitor~~ → **Daftar Artikel Berpotensi Tinggi** (read-only) — **DIKOREKSI 6 Agu 2026, baca § Fase D untuk detail lengkap** | ~~Fetch laporan "Links" dari GSC API tiap minggu~~ — **terbukti tidak feasible**: GSC API resmi tidak pernah punya endpoint data backlink, gratis maupun berbayar (Links report cuma ada di UI web GSC). Fitur di-scope-ulang jadi: ranking artikel published berdasarkan traffic/impression dari `gsc_query_data` yang sudah ada, tanpa komponen backlink sama sekali. | Sinyal off-page (backlink) tetap relevan secara teori, tapi tidak bisa diotomatisin lewat API gratis yang jadi premis awal — daripada dibiarkan jadi fitur setengah jadi, di-scope-ulang jadi laporan yang sepenuhnya buildable dari data yang sudah ada. |
 | 5 | **Social Specialist** | Setelah artikel dipublish (manual), siapkan draft caption buat 2-3 platform sosmed. **Tidak pernah posting sendiri** — hasilnya nongkrong di Action Queue nunggu di-copy manual sama admin. | Persis pola di diagram Val's Cake — traffic awal dari sosmed bantu artikel baru lebih cepat dapat sinyal engagement. |
 
 **Sengaja tidak diusulkan:** auto backlink outreach, auto-posting sosmed,
@@ -396,39 +396,90 @@ judgment manusia yang gak bisa digantikan AI dengan aman.
 ### Fase C — Distribusi & closing the loop
 
 - **Social Specialist** (lihat § 2).
-- **Auto re-trigger measurement loop** — sekarang Feedback Loop
-  before/after itu laporan yang dilihat manual; usulan: begitu ada
-  perubahan yang di-Apply, otomatis jadwalkan "cek ulang performanya
-  dalam 28 hari" biar gak ketinggalan dievaluasi.
+- **Auto re-trigger measurement loop — ✅ SELESAI & DEPLOY 6 Agu 2026.**
+  `cms_growth_agent_run_measurement_loop()` (`growth-agent-service.php`)
+  jalan otomatis tiap job `succeeded` (`internal_link_suggestion`,
+  `seo_recommendation`, `gsc_article_idea`) sudah lewat `window_days`
+  (default 28 hari) sejak `updated_at`/`published_at` — memanggil ulang
+  `cms_growth_agent_compare_before_after()` yang sudah ada, hasilnya
+  ditandai lewat kolom baru `measured_at` (additive, `cms_ensure_column`)
+  biar gak diukur dobel. Config baru `measurement_loop` di
+  `opportunity_thresholds_json` (`window_days`, `min_days`,
+  `eligible_job_types`, `batch_size`) — nol tabel baru. Panel Feedback
+  yang sudah ada ikut diperluas mencakup `internal_link_suggestion`
+  (sebelumnya cuma `seo_recommendation`/`gsc_article_idea`). Dijadwalin
+  di 2 tempat: lazy call di `growth-agent.php` + step 6 baru di
+  `cron/growth_agent_maintenance.php`.
 
-  > ⬆️ **DIPRIORITASKAN ULANG 5 Agu 2026 — dikerjakan SEBELUM Fase E,**
-  > bukan sesudahnya seperti urutan huruf A-E menyiratkan. Dipicu dari
-  > perbandingan sama workflow referensi kedua ("Val's Cake", milik
-  > kolega user) yang eksplisit mencatat: *"tanpa measurement loop, klaim
-  > naikin ranking masih tanpa bukti."* Alasan urutan: item ini adalah
-  > prasyarat data buat menilai apakah suatu job_type layak dipercaya
-  > masuk mode otonom Fase E — tanpa data before/after yang konsisten,
-  > keputusan job_type mana yang "cukup aman diotomatisin" cuma tebakan,
-  > bukan berbasis bukti. Belum ada kode ditulis; ini item paling
-  > berikutnya yang dikerjakan setelah dokumen ini di-update.
+  **Bug ditemukan & diperbaiki saat testing:** `UPDATE ... SET
+  measured_at = NOW()` diam-diam ikut nge-bump `updated_at` job (efek
+  `ON UPDATE CURRENT_TIMESTAMP` di skema tabel) — kalau lolos, tiap
+  pengukuran bakal ngerusak sendiri tanggal pivot `change_date` yang
+  dipakai fitur ini. Diperbaiki dengan `updated_at = updated_at` eksplisit
+  di query sebelum deploy.
+
+  **Deviasi kecil dari spek awal, disengaja:** untuk `gsc_article_idea`,
+  pivot tanggalnya pakai `pages.published_at` (fallback `updated_at`),
+  bukan `updated_at` job seperti 2 job_type lain — karena `updated_at`
+  job itu cuma waktu draft dibuat, bukan waktu publish. Konsisten dengan
+  logika yang sudah dipakai `get_feedback_report()` buat job_type yang
+  sama.
+
+  Diuji pakai data production asli (2 row dimundurkan tanggalnya lalu
+  dikembalikan persis): job 28+ hari terukur & idempoten (jalan dua kali
+  gak dobel), job <28 hari benar di-skip, gak pernah throw walau data GSC
+  kurang (`insufficient_data`). Commit `956f5df`, `diff` kosong di 4 file
+  yang di-`cp` ke `public_html`.
+
+  ⚠️ **Belum kelihatan hasil apapun** sampai ada job yang genuinely lewat
+  28 hari sejak Apply — mulai sekarang berjalan diam-diam di background,
+  gak ada tombol/menu baru (sesuai desain: proses ini gak butuh keputusan
+  manusia). Hasilnya baca di panel Feedback yang sudah ada.
+
+  Rencana awal (arsip): usulan sebelum diprioritaskan ulang 5 Agu 2026 —
+  dipicu perbandingan sama workflow referensi kedua ("Val's Cake", milik
+  kolega user) yang eksplisit mencatat: *"tanpa measurement loop, klaim
+  naikin ranking masih tanpa bukti."* Alasan urutan: item ini adalah
+  prasyarat data buat menilai apakah suatu job_type layak dipercaya
+  masuk mode otonom Fase E — tanpa data before/after yang konsisten,
+  keputusan job_type mana yang "cukup aman diotomatisin" cuma tebakan,
+  bukan berbasis bukti.
 
 ### Fase D — Perlu keputusan lebih dulu (jangan langsung kerjain)
 
-- **Backlink Monitor** — teknis gampang (API GSC yang sudah ada), tapi
-  perlu diputusin dulu mau ditaruh di halaman mana / seberapa penting
-  dibanding fase A-C.
+- **Backlink Monitor** — ~~teknis gampang (API GSC yang sudah ada)~~
+  **DIKOREKSI 6 Agu 2026, klaim di atas SALAH.** Investigasi teknis
+  sebelum mulai ngoding (bukan setelah) menemukan: Google Search Console
+  API resmi (`webmasters/v3`/`searchconsole/v1` — yang sudah dipakai buat
+  fetch performa & URL Inspection) **tidak pernah punya endpoint buat
+  data backlink/Links report**, gratis maupun berbayar. Laporan "Links"
+  (siapa yang link ke kita) cuma tersedia di UI web GSC, bukan lewat API
+  apapun. Ini bukan soal kredensial kurang — datanya memang tidak
+  diekspos Google lewat API.
 
-  > ⬆️ **Cakupan diperluas 5 Agu 2026** (masih Fase D, belum naik
-  > prioritas jadi "Now"): bukan cuma monitoring pasif ("siapa yang link
-  > ke kita"), tapi juga hasilkan daftar **gap actionable** — artikel
-  > published yang punya potensi (traffic/impression GSC bagus) tapi nol
-  > backlink — biar operator punya target konkret buat outreach manual
-  > (guest post, submit ke komunitas, dst). Tetap **read-only + laporan**,
-  > tidak ada outreach otomatis (alasan risiko spam di § 2 tidak berubah).
-  > Alasan diperluas: dari diskusi 5 Agu 2026, backlink/domain authority
-  > diidentifikasi sebagai faktor terbesar yang menentukan cepat-lambatnya
-  > naik ranking buat keyword kompetitif — sesuatu yang sama sekali belum
-  > digarap di fase manapun sebelum ini.
+  > ⬆️ **Cakupan diperluas 5 Agu 2026** (sebelum koreksi di atas
+  > ditemukan): bukan cuma monitoring pasif ("siapa yang link ke kita"),
+  > tapi juga hasilkan daftar **gap actionable** — artikel published yang
+  > punya potensi (traffic/impression GSC bagus) tapi nol backlink.
+
+  **Keputusan user (6 Agu 2026) setelah koreksi di atas disampaikan:**
+  drop bagian "siapa yang link ke kita" (monitoring pasif) sepenuhnya —
+  gak feasible tanpa API berbayar pihak ketiga (Ahrefs/SEMrush, di luar
+  scope "gratis" yang jadi premis awal). **Fokus cuma ke separuh yang
+  masih feasible**: daftar artikel published berpotensi tinggi (ranking
+  by traffic/impression dari `gsc_query_data` yang sudah ada) — TANPA
+  filter "nol backlink" (kriteria itu ikut gugur bareng monitoring-nya,
+  karena sumber datanya sama). Operator yang menilai sendiri mana yang
+  layak di-push manual. Fitur ini di-rename jadi **"Daftar Artikel
+  Berpotensi Tinggi"** — bukan lagi "Backlink Monitor", biar nama fitur
+  gak menjanjikan sesuatu yang gak dikerjakan.
+
+  Desain: laporan read-only, presedennya persis Technical SEO Auditor
+  (§ Fase B) — nol job/antrian baru, karena ini informasi, bukan usulan
+  yang butuh keputusan (§ 1b hanya mewajibkan job row untuk usulan yang
+  butuh approve/reject). Taruh di tab "Data & Performa" `growth-agent.php`
+  (bukan tab "Kesehatan Teknis" tempat Technical SEO Auditor, karena ini
+  turunan data GSC, bukan sinyal kesehatan situs).
 - **Riset keyword pakai API berbayar** (Ahrefs/SEMrush/sejenisnya) —
   Keyword Expansion Agent di Fase B bisa jalan gratis (AI + web search),
   tapi hasilnya gak akan setajam data volume pencarian asli dari tool
