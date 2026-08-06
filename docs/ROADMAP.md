@@ -179,38 +179,43 @@ mana yang dipercaya otonom berbasis data, bukan asumsi.
   sengaja) sebelum deploy. Commit `956f5df`. **Belum ada hasil
   kelihatan** sampai job pertama genuinely lewat 28 hari — jalan diam-diam
   di background, gak ada menu/tombol baru (sengaja, gak butuh keputusan
-  manusia). **Social Specialist** (siapin draft caption sosmed setelah
-  artikel dipublish manual, gak pernah auto-post) masih di antrian,
-  belum dikerjakan.
-- **Fase D — 🔧 SEDANG DIKERJAKAN (mulai 6 Agu 2026):** ~~Backlink
-  Monitor~~ → **dikoreksi & di-scope-ulang 6 Agu 2026 jadi "Daftar
-  Artikel Berpotensi Tinggi".** Investigasi teknis sebelum ngoding
-  menemukan: GSC API resmi TIDAK PERNAH punya endpoint data backlink
-  (Links report cuma ada di UI web GSC, bukan lewat API apapun, gratis
-  maupun berbayar) — klaim awal "teknis gampang" di proposal itu keliru.
-  Keputusan user: drop bagian monitoring backlink sepenuhnya, fokus ke
-  separuh yang masih feasible — laporan read-only artikel published
-  berpotensi tinggi (ranking by traffic/impression dari `gsc_query_data`
-  yang sudah ada), tanpa filter "nol backlink" (gugur bareng data
-  sumbernya). Presedennya Technical SEO Auditor (§ Fase B) — nol
-  job/antrian baru, laporan doang. Detail lengkap di
-  `docs/GROWTH_AGENT_V2_PROPOSAL.md` § Fase D. Riset keyword pakai API
-  berbayar (trade-off biaya vs akurasi, belum diputuskan) — item terpisah,
-  belum dikerjakan.
-- **Fase E — Mode Otonom (toggle per job_type): disetujui cakupannya
-  5 Agu 2026, belum ada kode, nunggu Measurement Loop selesai duluan.**
-  Toggle default OFF yang, kalau dinyalain operator, skip tombol
-  Approve/Apply manusia — **cakupan direvisi 5 Agu 2026: cuma
-  `internal_link_suggestion`**, `seo_recommendation` (meta) dicabut dari
-  pilot dan tetap manual selamanya (dampaknya nampil langsung di hasil
-  pencarian publik, beda dari internal link yang sepenuhnya reversible
-  di dalam konten sendiri) — bukan **autonomous publishing** (Growth
-  Agent tetap tidak pernah menyentuh `pages.status`). Rate limit
-  **mingguan** (maks 3 auto-apply/minggu, direvisi dari harian) + kill
-  switch + notifikasi Telegram tiap auto-apply.
-  `cannibalization_review`/`review_indexing_issue` sengaja TIDAK
-  dimasukkan (butuh judgment strategis, didiskusikan terpisah nanti).
-  Detail desain lengkap di `docs/GROWTH_AGENT_V2_PROPOSAL.md` § Fase E.
+  manusia). ~~**Social Specialist**~~ **DIBATALKAN 6 Agu 2026** — Sagagoal
+  gak punya kanal media sosial aktif, jadi fiturnya gak relevan; dicoret
+  dari antrian, bukan ditunda.
+- **Fase D — ✅ SELESAI & LIVE (6 Agu 2026):** ~~Backlink Monitor~~ →
+  **dikoreksi & di-scope-ulang jadi "Daftar Artikel Berpotensi Tinggi".**
+  Investigasi teknis sebelum ngoding menemukan: GSC API resmi TIDAK PERNAH
+  punya endpoint data backlink (Links report cuma ada di UI web GSC,
+  bukan lewat API apapun, gratis maupun berbayar) — klaim awal "teknis
+  gampang" di proposal itu keliru. Keputusan user: drop bagian monitoring
+  backlink sepenuhnya, fokus ke separuh yang masih feasible — laporan
+  read-only artikel published berpotensi tinggi (ranking by
+  traffic/impression dari `gsc_query_data`, live-compute nol tabel baru,
+  reuse `cms_growth_agent_aggregate_page_window()`), tanpa filter "nol
+  backlink" (gugur bareng data sumbernya). Panel baru di tab Data &
+  Performa, antara "Artikel Terpopuler" dan "Feedback / Sebelum-Sesudah".
+  Presedennya Technical SEO Auditor (§ Fase B) — nol job/antrian baru,
+  laporan doang. Detail lengkap di `docs/GROWTH_AGENT_V2_PROPOSAL.md`
+  § Fase D. Commit `5224101`. Riset keyword pakai API berbayar
+  (trade-off biaya vs akurasi, belum diputuskan) — item terpisah, masih
+  di antrian.
+- **Fase E — Mode Otonom internal linking: ✅ KODE SELESAI (6 Agu 2026),
+  TOGGLE MASIH OFF DI PRODUCTION, sengaja.** Cakupan cuma
+  `internal_link_suggestion` (`seo_recommendation`/meta dicabut permanen,
+  tetap manual selamanya). Rate limit mingguan (maks 3/minggu) + kill
+  switch + tombol Revert eksplisit (CMS gak punya sistem revisi artikel) +
+  notifikasi via constant `GROWTH_AGENT_AUTONOMOUS_WEBHOOK_URL` baru
+  (bukan reuse webhook n8n lama seperti rencana awal — ternyata integrasi
+  n8n yang ada itu pull bukan push, jadi gak ada yang bisa di-reuse).
+  Diuji end-to-end pakai data production asli. **Bukan autonomous
+  publishing** — Growth Agent tetap gak pernah menyentuh `pages.status`.
+  **Toggle sengaja gak dinyalain**: job internal link tertua baru ~2 hari
+  per 6 Agu 2026, jauh dari ambang 28 hari yang dibutuhin Measurement Loop
+  buat kasih bukti data — nyalain sekarang berarti percaya tanpa bukti,
+  persis yang mau dihindari. `cannibalization_review`/`review_indexing_issue`
+  sengaja TIDAK dimasukkan (butuh judgment strategis, didiskusikan
+  terpisah nanti). Detail lengkap di `docs/GROWTH_AGENT_V2_PROPOSAL.md`
+  § Fase E.
 
 Prinsip yang tetap dijaga di semua fase: AI cuma menyarankan, gak ada
 publish/posting/outreach otomatis — sama persis kayak guardrail Growth

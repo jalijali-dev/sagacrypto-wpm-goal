@@ -287,12 +287,51 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'scan_internal_linking') {
         $ilStats = cms_growth_agent_scan_internal_links($pdo);
         if ($ilStats['created'] > 0) {
-            $redirect($ilStats['created'] . ' usulan link internal baru dari ' . $ilStats['scanned'] . ' artikel yang di-scan. Cek di tabel "Job Terbaru" di bawah.');
+            $redirect(
+                $ilStats['created'] . ' usulan link internal baru dari ' . $ilStats['scanned'] . ' artikel yang di-scan.'
+                . ($ilStats['auto_applied'] > 0 ? ' ' . $ilStats['auto_applied'] . ' di antaranya diterapkan OTOMATIS (Mode Otonom aktif).' : '')
+                . ' Cek di tabel "Job Terbaru" di bawah.'
+            );
         }
         if ($ilStats['scanned'] === 0) {
             $redirect('Tidak cukup artikel published untuk di-scan (butuh minimal 2).', 'error');
         }
         $redirect('Scan selesai (' . $ilStats['scanned'] . ' artikel) tapi tidak ada usulan link baru yang ditemukan — kemungkinan besar semua pasangan relevan sudah pernah diusulkan/di-link, atau memang belum ada topik yang cukup tumpang tindih.', 'error');
+    }
+
+    // ── Autonomous Mode (GROWTH_AGENT_V2_PROPOSAL.md § Fase E, 6 Aug 2026)
+    // — one on/off switch, presented to the operator as ONE checkbox even
+    // though the underlying config technically supports per-job_type
+    // granularity (only internal_link_suggestion exists as a pilot
+    // job_type today — see cms_gsc_default_opportunity_thresholds()). Both
+    // 'enabled' and job_types.internal_link_suggestion are flipped together
+    // so there is exactly one switch to reason about, matching the devs
+    // brief's own "kill switch tunggal" wording.
+    if ($action === 'autonomous_toggle') {
+        $turnOn = !empty($_POST['enabled']);
+        $saved = cms_gsc_set_opportunity_threshold_key($pdo, 'autonomous_mode', [
+            'enabled' => $turnOn,
+            'job_types' => ['internal_link_suggestion' => $turnOn],
+            'weekly_limit' => (int) (cms_gsc_get_opportunity_thresholds($pdo)['autonomous_mode']['weekly_limit'] ?? 3),
+        ]);
+        if (!$saved) {
+            $redirect('Gagal menyimpan pengaturan Mode Otonom.', 'error');
+        }
+        $redirect($turnOn
+            ? 'Mode Otonom Internal Linking DINYALAKAN — usulan link internal baru akan otomatis diterapkan (sampai batas mingguan) mulai scan berikutnya.'
+            : 'Mode Otonom Internal Linking DIMATIKAN — semua usulan baru kembali butuh review manual.');
+    }
+
+    if ($action === 'revert_auto_applied_link') {
+        $revertJobId = (int) ($_POST['job_id'] ?? 0);
+        if ($revertJobId <= 0) {
+            $redirect('Job tidak valid.', 'error');
+        }
+        $revertResult = cms_growth_agent_revert_auto_applied_link($pdo, $revertJobId);
+        $redirect(
+            $revertResult['ok'] ? 'Link internal yang di-auto-apply berhasil direvert — konten artikel dikembalikan seperti sebelum perubahan.' : 'Gagal revert: ' . $revertResult['error'],
+            $revertResult['ok'] ? 'success' : 'error'
+        );
     }
 
     // ── Technical SEO Auditor (Fase B item 3, 5 Agu 2026) — pure REPORT,
@@ -1199,6 +1238,88 @@ require dirname(__DIR__) . '/includes/alerts.php';
         });
     })();
     </script>
+
+    <?php
+    // ── Autonomous Mode (GROWTH_AGENT_V2_PROPOSAL.md § Fase E, 6 Aug 2026)
+    // — read-only-until-submitted panel state. Presented as ONE switch
+    // (see the autonomous_toggle handler above for why enabled +
+    // job_types.internal_link_suggestion are always written together).
+    // Ships OFF — the oldest internal_link_suggestion job in this install
+    // is nowhere near the Measurement Loop's 28-day window yet, so there is
+    // no before/after evidence to justify turning this on. That decision
+    // belongs to an operator, later, not to this deploy.
+    $autonomousConfig = cms_gsc_get_opportunity_thresholds($pdo)['autonomous_mode'] ?? [];
+    $autonomousEnabled = ($autonomousConfig['enabled'] ?? false) === true
+        && (($autonomousConfig['job_types'] ?? [])['internal_link_suggestion'] ?? false) === true;
+    $autonomousWeeklyLimit = max(0, (int) ($autonomousConfig['weekly_limit'] ?? 3));
+    $autonomousWeeklyUsed = cms_growth_agent_autonomous_weekly_used($pdo);
+    $autonomousRecentLinks = cms_growth_agent_get_recent_auto_applied_links($pdo, 10);
+    ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Mode Otonom — Internal Linking</h3>
+            <span class="pill pill--<?= $autonomousEnabled ? 'ok' : 'muted' ?>"><?= $autonomousEnabled ? 'AKTIF' : 'NONAKTIF' ?></span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Kalau dinyalakan, usulan link internal baru (job_type <code>internal_link_suggestion</code>) langsung
+            diterapkan otomatis lewat fungsi yang sama persis dengan tombol "Apply" manual — tanpa menunggu review.
+            Rekomendasi meta SEO (<code>seo_recommendation</code>) TIDAK PERNAH ikut, itu tetap manual selamanya.
+            Dibatasi <?= $autonomousWeeklyLimit ?> auto-apply per minggu, dan tiap perubahan bisa direvert di bawah
+            kalau hasilnya keliru.
+        </p>
+        <div class="toolbar" style="padding:0 20px 16px;">
+            <div class="toolbar__left">
+                <p class="muted" style="margin:0;font-size:13px;">
+                    Dipakai minggu ini: <strong><?= $autonomousWeeklyUsed ?> / <?= $autonomousWeeklyLimit ?></strong>
+                </p>
+            </div>
+            <div class="toolbar__right">
+                <form method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('<?= $autonomousEnabled ? 'Matikan' : 'Nyalakan' ?> Mode Otonom Internal Linking?');">
+                    <?= cms_csrf_field() ?>
+                    <input type="hidden" name="action" value="autonomous_toggle">
+                    <input type="hidden" name="enabled" value="<?= $autonomousEnabled ? '0' : '1' ?>">
+                    <button type="submit" class="admin-btn admin-btn--sm <?= $autonomousEnabled ? 'admin-btn--ghost' : 'admin-btn--primary' ?>">
+                        <?= $autonomousEnabled ? 'Matikan' : 'Nyalakan' ?>
+                    </button>
+                </form>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Artikel</th>
+                        <th>Link Ditambahkan</th>
+                        <th>Diterapkan</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($autonomousRecentLinks === []) : ?>
+                        <tr><td colspan="4" class="muted">Belum ada link yang diterapkan otomatis.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($autonomousRecentLinks as $autoLink) : ?>
+                        <tr>
+                            <td><?= cms_esc($autoLink['page_title']) ?></td>
+                            <td>
+                                <span class="muted">"<?= cms_esc($autoLink['anchor_text']) ?>"</span>
+                                &rarr; <?= cms_esc($autoLink['target_title']) ?>
+                            </td>
+                            <td class="muted"><?= cms_esc($autoLink['applied_at']) ?></td>
+                            <td class="table-actions">
+                                <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Revert link ini? Konten artikel akan dikembalikan seperti sebelum link ditambahkan.');">
+                                    <?= cms_csrf_field() ?>
+                                    <input type="hidden" name="action" value="revert_auto_applied_link">
+                                    <input type="hidden" name="job_id" value="<?= $autoLink['job_id'] ?>">
+                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Revert</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
 
     <?php if ($gscConnected) : ?>
     <div class="panel">

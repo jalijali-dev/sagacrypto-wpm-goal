@@ -1214,6 +1214,44 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                 // articles_per_report incorrectly.
                 'candidate_pool_size' => 30,
             ],
+
+            // Autonomous Mode (GROWTH_AGENT_V2_PROPOSAL.md § Fase E, 6 Aug
+            // 2026) — the ONLY place this whole feature reads its config
+            // from; there is no separate settings row anywhere else. See
+            // cms_growth_agent_autonomous_maybe_apply_internal_link() in
+            // growth-agent-service.php.
+            //
+            // 'enabled' AND 'job_types' BOTH gate every auto-apply attempt
+            // (see that function) — this default ships OFF/empty
+            // deliberately: the oldest internal_link_suggestion job in this
+            // install is ~2 days old, nowhere near the Measurement Loop's
+            // 28-day window, so there is zero before/after evidence yet to
+            // justify trusting autonomous mode for ANY job_type. Do not
+            // flip 'enabled' to true as part of a deploy — that's an
+            // operator decision, made later, once real data exists.
+            'autonomous_mode' => [
+                'enabled' => false,
+                // Deliberately an explicit per-job_type allowlist, not a
+                // single flag — a job_type simply absent from this array
+                // must be treated as OFF (see the calling function's own
+                // strict `=== true` check), never as "on by default because
+                // the master switch is on". internal_link_suggestion is the
+                // only Fase E pilot candidate (see that section's own
+                // table): seo_recommendation was explicitly cut from the
+                // pilot 5 Aug 2026 and stays permanently manual, so it is
+                // intentionally NOT a key here at all, not even `=> false`.
+                'job_types' => [
+                    'internal_link_suggestion' => false,
+                ],
+                // Weekly, not daily (this section's own devs brief) — a
+                // human should still be able to sanity-check what
+                // autonomous mode did at a pace slower than "every scan
+                // click", not just cap total volume. Counted from
+                // growth_agent_feedback.action='auto_applied' rows in the
+                // trailing 7 days — see
+                // cms_growth_agent_autonomous_maybe_apply_internal_link().
+                'weekly_limit' => 3,
+            ],
         ];
     }
 }
@@ -1239,6 +1277,49 @@ if (!function_exists('cms_gsc_get_opportunity_thresholds')) {
             return array_replace_recursive($defaults, $decoded);
         } catch (Throwable $e) {
             return $defaults;
+        }
+    }
+}
+
+if (!function_exists('cms_gsc_set_opportunity_threshold_key')) {
+    /**
+     * Writes ONE top-level key into gsc_settings.opportunity_thresholds_json,
+     * leaving every other key exactly as it was stored (or entirely absent,
+     * if it was never explicitly set). The first — and, as of Autonomous
+     * Mode's toggle UI (Fase E, 6 Aug 2026), only — write path into this
+     * JSON blob; every other consumer only ever reads it via
+     * cms_gsc_get_opportunity_thresholds()'s defaults-merged view.
+     *
+     * Deliberately reads the RAW stored JSON here, not the defaults-merged
+     * result cms_gsc_get_opportunity_thresholds() returns — merging in
+     * defaults before writing back would permanently persist today's code
+     * defaults for every OTHER feature's config too (measurement_loop,
+     * technical_seo, etc.), silently freezing them against future default
+     * changes even though nobody asked to configure them. This function
+     * only ever touches the one key it's told to.
+     *
+     * Never throws — returns false on any failure, same convention as
+     * cms_ensure_column().
+     */
+    function cms_gsc_set_opportunity_threshold_key(PDO $pdo, string $key, $value): bool
+    {
+        try {
+            $settings = cms_gsc_get_settings($pdo);
+            $raw = (string) ($settings['opportunity_thresholds_json'] ?? '');
+            $stored = $raw !== '' ? json_decode($raw, true) : [];
+            if (!is_array($stored)) {
+                $stored = [];
+            }
+
+            $stored[$key] = $value;
+
+            $pdo->prepare('UPDATE gsc_settings SET opportunity_thresholds_json = :json ORDER BY id ASC LIMIT 1')
+                ->execute(['json' => json_encode($stored, JSON_UNESCAPED_UNICODE)]);
+
+            return true;
+        } catch (Throwable $e) {
+            error_log('[cms_gsc_set_opportunity_threshold_key] key=' . $key . ': ' . $e->getMessage());
+            return false;
         }
     }
 }

@@ -395,7 +395,14 @@ judgment manusia yang gak bisa digantikan AI dengan aman.
 
 ### Fase C — Distribusi & closing the loop
 
-- **Social Specialist** (lihat § 2).
+- ~~**Social Specialist**~~ (lihat § 2) — **DIBATALKAN 6 Agu 2026,
+  keputusan eksplisit user.** Alasan: Sagagoal saat ini gak punya akun
+  media sosial aktif — fitur "siapin draft caption buat 2-3 platform
+  sosmed" jadi gak relevan sama sekali, bukan soal resiko/otomasi kayak
+  item lain di dokumen ini. Beda dari item yang "ditunda" (Fase D lama,
+  dst.) — ini dicoret dari antrian sepenuhnya, bukan nunggu giliran.
+  Kalau nanti Sagagoal mulai punya kanal sosmed, ini bisa diajukan ulang
+  sebagai item baru — bukan otomatis lanjut dari sini.
 - **Auto re-trigger measurement loop — ✅ SELESAI & DEPLOY 6 Agu 2026.**
   `cms_growth_agent_run_measurement_loop()` (`growth-agent-service.php`)
   jalan otomatis tiap job `succeeded` (`internal_link_suggestion`,
@@ -572,13 +579,51 @@ dipercaya otonom" berbasis bukti, bukan asumsi.
   agent yang boleh otonom (saat ini cuma satu: Internal Linking) dengan
   switch ON/OFF sendiri, plus indikator rate limit terpakai minggu ini.
 
-⚠️ **Belum ada satu baris kode pun yang ditulis untuk fase ini — Measurement
-Loop dikerjakan lebih dulu.** Setelah itu, sebelum Fase E mulai: (1) tuning
-rate limit default lewat pengamatan production sebenarnya (belum ada data
-volume auto-apply nyata), (2) perlu tombol "Revert" eksplisit di UI untuk
-internal link yang di-auto-apply, karena CMS ini tidak punya sistem revisi
-artikel — snapshot di `output_json` selama ini cuma dibaca manual lewat DB
-kalau ada masalah, belum ada tombol pulih di admin panel.
+✅ **KODE SELESAI 6 Agu 2026 — TOGGLE MASIH OFF, SENGAJA.** Dibangun
+setelah Measurement Loop live, sesuai urutan yang disepakati — tapi
+dinyalain-nya tetap ditahan sampai ada cukup data before/after nyata
+(job internal link tertua baru ~2 hari per tanggal ini, jauh dari ambang
+28 hari). Ini keputusan eksplisit user: kode boleh siap duluan, tapi
+menyalakannya nunggu bukti, bukan asumsi.
+
+Implementasi:
+- `cms_growth_agent_autonomous_maybe_apply_internal_link($pdo, $jobId)` —
+  gate berlapis (master `enabled` → job_type allowlist strict `=== true`
+  → rate limit mingguan), baru manggil `cms_growth_agent_apply_internal_link()`
+  yang **tidak dimodifikasi sama sekali** — hooked langsung ke akhir loop
+  `cms_growth_agent_scan_internal_links()`.
+- Rate limit dihitung dari baris `growth_agent_feedback.action='auto_applied'`
+  7 hari terakhir — bukan kolom counter terpisah. ENUM `action` dan
+  `growth_agent_jobs.status` diperluas nambah `'reverted'` (pola yang sama
+  kayak `closed_as_legacy` sebelumnya).
+- **Deviasi dari brief, beralasan:** brief mengasumsikan ada webhook n8n
+  yang bisa di-reuse buat notifikasi — ternyata integrasi n8n yang ada
+  (`growth-agent-digest.php`) itu **pull**, bukan push, jadi gak ada yang
+  bisa di-reuse. Devs nambah constant baru
+  `GROWTH_AGENT_AUTONOMOUS_WEBHOOK_URL` di `config/app.php` (gitignored,
+  default `''` = no-op aman) — pola yang sama kayak
+  `GROWTH_AGENT_DIGEST_TOKEN`. **Operator perlu nambahin constant ini
+  manual ke `app.php` production kalau nanti mau notifikasi aktif** — gak
+  ikut ke-`cp` otomatis karena gitignored.
+- Tombol **Revert** eksplisit: `cms_growth_agent_revert_auto_applied_link()`
+  restore `pages.content` dari snapshot `output_json.previous_content`,
+  set status job jadi `'reverted'` (bukan `succeeded`/`closed_as_legacy`
+  — ini yang bikin otomatis kekecualiin dari panel Feedback & Measurement
+  Loop, dua-duanya filter `status='succeeded'`), nambah baris feedback baru
+  `'rejected'` tanpa nimpa audit trail asli (append-only).
+
+Diuji end-to-end pakai job/artikel production asli: auto-apply → tagging
+benar → rate limit ke-3 kebentur bener → master-switch-off ngeblok walau
+job_type-nya `true` → revert restore konten byte-per-byte + cegah
+double-revert → job `reverted` kekonfirmasi absen dari Feedback report &
+Measurement Loop. Sempat ada insiden testing: `output_json` job 151
+kehapus sebelum konten halamannya sempat direstore — dipulihkan manual
+dengan nyari `<a>` tag yang disisipin lalu dihapus presisi (diverifikasi:
+teks judul yang jadi anchor cuma muncul sekali lagi, balik ke `<h2>`
+doang). Semua data test & config udah dikembaliin ke kondisi semula,
+toggle dikonfirmasi OFF di DB maupun tampilan.
+
+Belum di-commit — nunggu deploy.
 
 ---
 

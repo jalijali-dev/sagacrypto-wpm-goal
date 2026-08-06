@@ -155,6 +155,10 @@ function cms_growth_agent_ensure_schema(PDO $pdo): void
     // a usable comparison (see that function's own note on
     // status='insufficient_data' still counting as measured).
     cms_ensure_column($pdo, 'growth_agent_jobs', 'measured_at', 'TIMESTAMP NULL DEFAULT NULL AFTER `updated_at`');
+
+    // Autonomous Mode (GROWTH_AGENT_V2_PROPOSAL.md § Fase E, 6 Aug 2026) —
+    // see cms_growth_agent_ensure_autonomous_schema()'s own docblock.
+    cms_growth_agent_ensure_autonomous_schema($pdo);
 }
 
 /**
@@ -186,6 +190,53 @@ function cms_growth_agent_ensure_legacy_status(PDO $pdo): void
     )->fetchColumn();
     if ($actionType !== '' && !str_contains($actionType, "'closed_as_legacy'")) {
         $pdo->exec("ALTER TABLE `growth_agent_feedback` MODIFY COLUMN `action` ENUM('approved_as_is','approved_with_edits','rejected','closed_as_legacy') NOT NULL");
+    }
+}
+
+/**
+ * Widens growth_agent_jobs.status (+'reverted') and growth_agent_feedback.action
+ * (+'auto_applied') for Autonomous Mode (GROWTH_AGENT_V2_PROPOSAL.md § Fase
+ * E, 6 Aug 2026) — exact same widen-safe pattern as
+ * cms_growth_agent_ensure_legacy_status() right above, kept as a separate
+ * function per feature rather than folded into that one, same reasoning
+ * cms_gsc_ensure_cannibalization_action() is its own function too.
+ *
+ * 'auto_applied' (feedback.action): distinct from 'approved_as_is' so a
+ * human-approved internal link and an autonomous one are queryable
+ * separately — this is what cms_growth_agent_autonomous_maybe_apply_internal_link()
+ * retags the row to right after calling the exact same
+ * cms_growth_agent_apply_internal_link() the manual "Apply" button uses (it
+ * always inserts 'approved_as_is' first; retagging after the fact means
+ * zero changes to that shared function). Also what the weekly rate-limit
+ * count and the Revert UI's eligibility check key off of.
+ *
+ * 'reverted' (jobs.status): deliberately NOT reusing 'closed_as_legacy' —
+ * their meanings differ ("no longer relevant" vs. "an operator undid a
+ * live content change") — and deliberately NOT staying 'succeeded' after a
+ * revert, because 'succeeded' is exactly what
+ * cms_growth_agent_get_feedback_report() and
+ * cms_growth_agent_run_measurement_loop() filter on: once reverted, the
+ * link is no longer even in the article, so it must stop being measured
+ * and stop appearing in the Feedback panel. Changing status away from
+ * 'succeeded' achieves that for free, with no extra filtering logic needed
+ * in either of those two functions.
+ */
+function cms_growth_agent_ensure_autonomous_schema(PDO $pdo): void
+{
+    $statusType = (string) $pdo->query(
+        "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'growth_agent_jobs' AND COLUMN_NAME = 'status'"
+    )->fetchColumn();
+    if ($statusType !== '' && !str_contains($statusType, "'reverted'")) {
+        $pdo->exec("ALTER TABLE `growth_agent_jobs` MODIFY COLUMN `status` ENUM('ready','running','succeeded','failed','manual_action','closed_as_legacy','reverted') NOT NULL DEFAULT 'running'");
+    }
+
+    $actionType = (string) $pdo->query(
+        "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'growth_agent_feedback' AND COLUMN_NAME = 'action'"
+    )->fetchColumn();
+    if ($actionType !== '' && !str_contains($actionType, "'auto_applied'")) {
+        $pdo->exec("ALTER TABLE `growth_agent_feedback` MODIFY COLUMN `action` ENUM('approved_as_is','approved_with_edits','rejected','closed_as_legacy','auto_applied') NOT NULL");
     }
 }
 
@@ -1414,7 +1465,7 @@ function cms_growth_agent_il_insert_link(string $html, string $targetTitle, stri
  */
 function cms_growth_agent_scan_internal_links(PDO $pdo): array
 {
-    $stats = ['scanned' => 0, 'created' => 0, 'errors' => 0];
+    $stats = ['scanned' => 0, 'created' => 0, 'errors' => 0, 'auto_applied' => 0];
 
     try {
         cms_growth_agent_ensure_schema($pdo);
@@ -1524,6 +1575,18 @@ function cms_growth_agent_scan_internal_links(PDO $pdo): array
                     $stats['created']++;
                     $suggestionsForThisArticle++;
                     $existingPairs[$sourceId . ':' . $targetId] = true;
+
+                    // Autonomous Mode (Fase E) — no-op unless an operator
+                    // has explicitly turned it on for this job_type; see
+                    // that function's own docblock. Deliberately checked
+                    // per-job, right after creation, not as a separate
+                    // batch pass afterward — keeps the rate-limit count
+                    // (which this call itself consumes from) accurate
+                    // between successive suggestions in the same scan run.
+                    $autoResult = cms_growth_agent_autonomous_maybe_apply_internal_link($pdo, $jobId);
+                    if ($autoResult['applied']) {
+                        $stats['auto_applied']++;
+                    }
                 } else {
                     $stats['errors']++;
                 }
@@ -1642,6 +1705,316 @@ function cms_growth_agent_apply_internal_link(PDO $pdo, int $jobId): array
         return ['ok' => true, 'error' => ''];
     } catch (Throwable $e) {
         return ['ok' => false, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Autonomous Mode (GROWTH_AGENT_V2_PROPOSAL.md § Fase E, 6 Aug 2026) — the
+ * ONLY entry point that auto-applies an internal_link_suggestion job
+ * without a human clicking "Apply". Called once, right after a brand-new
+ * job is created, from cms_growth_agent_scan_internal_links()'s own loop —
+ * this feature has no lazy/cron trigger of its own, it rides the same
+ * "Scan Internal Linking" click that already creates the job.
+ *
+ * Gates, in order (first failure short-circuits, job is left exactly as
+ * cms_growth_agent_scan_internal_links() created it — status='manual_action',
+ * unchanged — so it just falls back to the normal human-review queue):
+ *   1. opportunity_thresholds_json.autonomous_mode.enabled === true (the
+ *      single kill switch — see cms_gsc_default_opportunity_thresholds()).
+ *      Ships false. DO NOT flip true as part of any deploy — see that
+ *      config block's own note on why (no before/after evidence yet).
+ *   2. ...job_types['internal_link_suggestion'] === true — strict
+ *      identity check, not a truthy check: a job_type simply absent from
+ *      the array (e.g. some future job_type nobody added yet) must never
+ *      be treated as enabled.
+ *   3. Weekly rate limit (weekly_limit, default 3) — counts
+ *      growth_agent_feedback rows with action='auto_applied' created in
+ *      the trailing 7 days. Reaching the limit is not an error, just a
+ *      normal "wait for next week" outcome — the job stays manual_action
+ *      for a human to pick up in the meantime.
+ *
+ * If all three pass: calls cms_growth_agent_apply_internal_link() —
+ * literally the exact same function internal-link-review.php's manual
+ * "Apply" button calls, completely unmodified, so every guard already in
+ * there (content-changed-since-scan check, transaction, previous_content
+ * snapshot) applies identically here. The only difference from a manual
+ * Apply is what happens AFTER it succeeds: the 'approved_as_is' feedback
+ * row that function always inserts gets retagged to 'auto_applied' (one
+ * UPDATE, not a duplicate INSERT — see cms_growth_agent_ensure_autonomous_schema()
+ * for why that ENUM value exists) so this event is distinguishable from a
+ * human-approved one for rate-limit counting and the Revert UI, and a
+ * best-effort notification fires (cms_growth_agent_autonomous_notify()).
+ *
+ * Never throws — a failure anywhere in this gate must not break the scan
+ * it's attached to; the job simply stays manual_action, same as if
+ * autonomous mode didn't exist at all.
+ *
+ * @return array{applied:bool,reason:string}
+ */
+function cms_growth_agent_autonomous_maybe_apply_internal_link(PDO $pdo, int $jobId): array
+{
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $config = cms_gsc_get_opportunity_thresholds($pdo)['autonomous_mode'] ?? [];
+
+        if (($config['enabled'] ?? false) !== true) {
+            return ['applied' => false, 'reason' => 'autonomous_mode.enabled is not true'];
+        }
+        if ((($config['job_types'] ?? [])['internal_link_suggestion'] ?? false) !== true) {
+            return ['applied' => false, 'reason' => 'internal_link_suggestion not in job_types allowlist'];
+        }
+
+        $weeklyLimit = max(0, (int) ($config['weekly_limit'] ?? 3));
+        $usedThisWeek = (int) $pdo->query(
+            "SELECT COUNT(*) FROM growth_agent_feedback WHERE action = 'auto_applied' AND created_at >= (NOW() - INTERVAL 7 DAY)"
+        )->fetchColumn();
+        if ($usedThisWeek >= $weeklyLimit) {
+            return ['applied' => false, 'reason' => "weekly rate limit reached ({$usedThisWeek}/{$weeklyLimit})"];
+        }
+
+        $result = cms_growth_agent_apply_internal_link($pdo, $jobId);
+        if (!$result['ok']) {
+            return ['applied' => false, 'reason' => 'apply failed: ' . $result['error']];
+        }
+
+        // Retag the feedback row cms_growth_agent_apply_internal_link() just
+        // inserted (action='approved_as_is', reviewed_by=NULL — that
+        // function reads $_SESSION['cms_admin_id'], which is simply absent
+        // here since this path has no logged-in admin, same as any other
+        // system-initiated write in this codebase). A job can only ever be
+        // approved once (that function itself guards status='manual_action'
+        // before proceeding), so this WHERE matches exactly one row; ORDER
+        // BY + LIMIT kept anyway as a defensive habit, not a requirement.
+        $pdo->prepare(
+            "UPDATE growth_agent_feedback SET action = 'auto_applied'
+              WHERE job_id = :job_id AND action = 'approved_as_is'
+              ORDER BY id DESC LIMIT 1"
+        )->execute(['job_id' => $jobId]);
+
+        cms_growth_agent_autonomous_notify($pdo, $jobId);
+
+        return ['applied' => true, 'reason' => 'ok'];
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_autonomous_maybe_apply_internal_link] job_id=' . $jobId . ': ' . $e->getMessage());
+        return ['applied' => false, 'reason' => 'exception: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * Best-effort Telegram notification for one auto-applied internal link.
+ *
+ * IMPORTANT — there is no pre-existing outbound n8n webhook in this
+ * codebase to "reuse" (checked before assuming otherwise): the only n8n
+ * integration that exists is api/growth-agent-digest.php, which is PULL —
+ * n8n calls THIS server on a schedule for a weekly summary. This function
+ * is the first PUSH integration (this server calls OUT to n8n once per
+ * auto-apply event) — a genuinely new webhook, not a reuse of the digest
+ * one, since the two move data in opposite directions and the digest
+ * endpoint has no mechanism to originate an unsolicited per-event call.
+ *
+ * GROWTH_AGENT_AUTONOMOUS_WEBHOOK_URL (config/app.php, gitignored, same
+ * precedent as GROWTH_AGENT_DIGEST_TOKEN there) defaults to '' — notifying
+ * is entirely optional; auto-apply itself works identically whether or not
+ * this is configured. Never throws — a failed/unconfigured notification
+ * must never undo or block an apply that already succeeded.
+ */
+function cms_growth_agent_autonomous_notify(PDO $pdo, int $jobId): void
+{
+    try {
+        if (!defined('GROWTH_AGENT_AUTONOMOUS_WEBHOOK_URL') || GROWTH_AGENT_AUTONOMOUS_WEBHOOK_URL === '') {
+            return;
+        }
+
+        require_once __DIR__ . '/gsc-api.php';
+
+        $stmt = $pdo->prepare(
+            "SELECT j.id, j.page_id, j.input_brief, p.title, p.slug
+               FROM growth_agent_jobs j
+               LEFT JOIN pages p ON p.page_id = j.page_id
+              WHERE j.id = :id LIMIT 1"
+        );
+        $stmt->execute(['id' => $jobId]);
+        $job = $stmt->fetch();
+        if (!$job) {
+            return;
+        }
+
+        $brief = json_decode((string) ($job['input_brief'] ?? ''), true);
+        $targetTitle = is_array($brief) ? (string) ($brief['target_title'] ?? '') : '';
+        $anchorText = is_array($brief) ? (string) ($brief['anchor_text'] ?? '') : '';
+
+        $adminUrl = rtrim(BASE_URL, '/') . '/pages/growth-agent.php';
+        $text = "🤖 Internal link diterapkan otomatis\n"
+            . 'Artikel: ' . (string) $job['title'] . "\n"
+            . 'Anchor: "' . $anchorText . '" → ' . $targetTitle . "\n"
+            . 'Detail: ' . $adminUrl;
+
+        cms_gsc_http_request(
+            'POST',
+            GROWTH_AGENT_AUTONOMOUS_WEBHOOK_URL,
+            json_encode(['job_id' => $jobId, 'page_id' => (int) $job['page_id'], 'text' => $text], JSON_UNESCAPED_UNICODE),
+            ['Content-Type: application/json'],
+            10
+        );
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_autonomous_notify] job_id=' . $jobId . ': ' . $e->getMessage());
+    }
+}
+
+/**
+ * Reverts one auto-applied internal link — restores pages.content from the
+ * previous_content snapshot cms_growth_agent_apply_internal_link() took at
+ * apply time (stored in growth_agent_jobs.output_json, same field the
+ * manual-apply flow has always written; nothing new to read from). This is
+ * the ONLY path back: this CMS has no article revision history at all, so
+ * once a human notices an autonomous change was wrong, this snapshot is
+ * the sole way to undo it (see this section's own devs brief note).
+ *
+ * Eligibility, checked directly in the WHERE clause rather than as
+ * separate PHP guards: the job must be job_type='internal_link_suggestion',
+ * status='succeeded' (a job that's already 'reverted' can't be reverted
+ * again — no matching row, clean "not found" error), AND have a
+ * growth_agent_feedback row with action='auto_applied' — deliberately
+ * scoped to AUTO-applied links only, not every manually-applied one too
+ * (the devs brief's own wording: "buat internal link yang di-auto-apply").
+ * A manually-applied link has no equivalent Revert button anywhere in this
+ * codebase and this function does not add one — reverting a human's own
+ * deliberate action is a different, larger conversation than undoing
+ * something the agent did unsupervised.
+ *
+ * On success: pages.content restored, growth_agent_jobs.status set to
+ * 'reverted' (NOT back to 'succeeded' or 'manual_action' — see
+ * cms_growth_agent_ensure_autonomous_schema()'s docblock for why this
+ * specific status value exists and what it deliberately excludes the job
+ * from), and a NEW growth_agent_feedback row is inserted with
+ * action='rejected' — the original 'auto_applied' row is left untouched as
+ * an honest historical record ("this WAS auto-applied on this date"); the
+ * revert is recorded as its own later, separate event, same
+ * append-only-log spirit as every other multi-event job in this table.
+ *
+ * @return array{ok:bool,error:string}
+ */
+function cms_growth_agent_revert_auto_applied_link(PDO $pdo, int $jobId): array
+{
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT j.id, j.page_id, j.output_json
+               FROM growth_agent_jobs j
+              WHERE j.id = :id
+                AND j.job_type = 'internal_link_suggestion'
+                AND j.status = 'succeeded'
+                AND EXISTS (
+                    SELECT 1 FROM growth_agent_feedback f
+                     WHERE f.job_id = j.id AND f.action = 'auto_applied'
+                )
+              LIMIT 1"
+        );
+        $stmt->execute(['id' => $jobId]);
+        $job = $stmt->fetch();
+        if (!$job) {
+            return ['ok' => false, 'error' => 'Job auto-applied tidak ditemukan — mungkin sudah direvert sebelumnya, atau link ini diterapkan manual (bukan otomatis).'];
+        }
+
+        $output = json_decode((string) $job['output_json'], true);
+        if (!is_array($output) || !isset($output['previous_content'])) {
+            return ['ok' => false, 'error' => 'Snapshot konten sebelum perubahan tidak ditemukan di job ini — tidak bisa direvert dengan aman.'];
+        }
+
+        $pageId = (int) $job['page_id'];
+        $currentAdminId = (int) ($_SESSION['cms_admin_id'] ?? 0) ?: null;
+
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare('UPDATE pages SET content = :content, updated_at = NOW() WHERE page_id = :id')
+                ->execute(['content' => (string) $output['previous_content'], 'id' => $pageId]);
+
+            $pdo->prepare(
+                "UPDATE growth_agent_jobs SET status = 'reverted', updated_at = NOW() WHERE id = :id"
+            )->execute(['id' => $jobId]);
+
+            $pdo->prepare(
+                'INSERT INTO growth_agent_feedback (job_id, action, notes, reviewed_by, created_at)
+                 VALUES (:job_id, :action, :notes, :reviewed_by, NOW())'
+            )->execute([
+                'job_id' => $jobId,
+                'action' => 'rejected',
+                'notes' => 'Auto-applied internal link direvert manual oleh operator — konten dikembalikan ke sebelum perubahan.',
+                'reviewed_by' => $currentAdminId,
+            ]);
+
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+
+        return ['ok' => true, 'error' => ''];
+    } catch (Throwable $e) {
+        return ['ok' => false, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * How many auto-applies have counted against this week's rate limit so
+ * far — same COUNT() cms_growth_agent_autonomous_maybe_apply_internal_link()
+ * itself checks before applying, exposed separately so the Autonomous Mode
+ * panel can show "X / weekly_limit used this week" without duplicating the
+ * query inline in growth-agent.php. Never throws (returns 0 on failure —
+ * same "don't block the page over a display number" reasoning as every
+ * other $safeCount()-style helper in this codebase).
+ */
+function cms_growth_agent_autonomous_weekly_used(PDO $pdo): int
+{
+    try {
+        return (int) $pdo->query(
+            "SELECT COUNT(*) FROM growth_agent_feedback WHERE action = 'auto_applied' AND created_at >= (NOW() - INTERVAL 7 DAY)"
+        )->fetchColumn();
+    } catch (Throwable $e) {
+        return 0;
+    }
+}
+
+/**
+ * Recent auto-applied internal links, newest first — feeds the Autonomous
+ * Mode panel's Revert list. Only rows still eligible for Revert (status=
+ * 'succeeded', i.e. not already reverted) are returned — an already-
+ * reverted job simply drops off this list, since
+ * cms_growth_agent_revert_auto_applied_link() itself would refuse it
+ * anyway (see that function's WHERE clause). Never throws.
+ *
+ * @return list<array{job_id:int,page_id:int,page_title:string,target_title:string,anchor_text:string,applied_at:string}>
+ */
+function cms_growth_agent_get_recent_auto_applied_links(PDO $pdo, int $limit = 10): array
+{
+    $limit = max(1, min(50, $limit));
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT j.id AS job_id, j.page_id, p.title AS page_title, j.input_brief, f.created_at AS applied_at
+               FROM growth_agent_jobs j
+               INNER JOIN growth_agent_feedback f ON f.job_id = j.id AND f.action = 'auto_applied'
+               LEFT JOIN pages p ON p.page_id = j.page_id
+              WHERE j.job_type = 'internal_link_suggestion' AND j.status = 'succeeded'
+              ORDER BY f.created_at DESC
+              LIMIT " . $limit
+        );
+        $stmt->execute();
+        $rows = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $brief = json_decode((string) ($row['input_brief'] ?? ''), true);
+            $rows[] = [
+                'job_id' => (int) $row['job_id'],
+                'page_id' => (int) $row['page_id'],
+                'page_title' => (string) ($row['page_title'] ?? ''),
+                'target_title' => is_array($brief) ? (string) ($brief['target_title'] ?? '') : '',
+                'anchor_text' => is_array($brief) ? (string) ($brief['anchor_text'] ?? '') : '',
+                'applied_at' => (string) $row['applied_at'],
+            ];
+        }
+        return $rows;
+    } catch (Throwable $e) {
+        return [];
     }
 }
 
