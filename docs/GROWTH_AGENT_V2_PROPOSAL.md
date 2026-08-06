@@ -401,16 +401,133 @@ judgment manusia yang gak bisa digantikan AI dengan aman.
   perubahan yang di-Apply, otomatis jadwalkan "cek ulang performanya
   dalam 28 hari" biar gak ketinggalan dievaluasi.
 
+  > ⬆️ **DIPRIORITASKAN ULANG 5 Agu 2026 — dikerjakan SEBELUM Fase E,**
+  > bukan sesudahnya seperti urutan huruf A-E menyiratkan. Dipicu dari
+  > perbandingan sama workflow referensi kedua ("Val's Cake", milik
+  > kolega user) yang eksplisit mencatat: *"tanpa measurement loop, klaim
+  > naikin ranking masih tanpa bukti."* Alasan urutan: item ini adalah
+  > prasyarat data buat menilai apakah suatu job_type layak dipercaya
+  > masuk mode otonom Fase E — tanpa data before/after yang konsisten,
+  > keputusan job_type mana yang "cukup aman diotomatisin" cuma tebakan,
+  > bukan berbasis bukti. Belum ada kode ditulis; ini item paling
+  > berikutnya yang dikerjakan setelah dokumen ini di-update.
+
 ### Fase D — Perlu keputusan lebih dulu (jangan langsung kerjain)
 
 - **Backlink Monitor** — teknis gampang (API GSC yang sudah ada), tapi
   perlu diputusin dulu mau ditaruh di halaman mana / seberapa penting
   dibanding fase A-C.
+
+  > ⬆️ **Cakupan diperluas 5 Agu 2026** (masih Fase D, belum naik
+  > prioritas jadi "Now"): bukan cuma monitoring pasif ("siapa yang link
+  > ke kita"), tapi juga hasilkan daftar **gap actionable** — artikel
+  > published yang punya potensi (traffic/impression GSC bagus) tapi nol
+  > backlink — biar operator punya target konkret buat outreach manual
+  > (guest post, submit ke komunitas, dst). Tetap **read-only + laporan**,
+  > tidak ada outreach otomatis (alasan risiko spam di § 2 tidak berubah).
+  > Alasan diperluas: dari diskusi 5 Agu 2026, backlink/domain authority
+  > diidentifikasi sebagai faktor terbesar yang menentukan cepat-lambatnya
+  > naik ranking buat keyword kompetitif — sesuatu yang sama sekali belum
+  > digarap di fase manapun sebelum ini.
 - **Riset keyword pakai API berbayar** (Ahrefs/SEMrush/sejenisnya) —
   Keyword Expansion Agent di Fase B bisa jalan gratis (AI + web search),
   tapi hasilnya gak akan setajam data volume pencarian asli dari tool
   berbayar. Ini trade-off biaya vs akurasi yang perlu didiskusikan dulu,
   bukan diputuskan sepihak di dokumen ini.
+
+### Fase E — Mode Otonom (toggle per job_type) — disetujui masuk antrian, 5 Agu 2026
+
+> **Status dokumen bagian ini: DISETUJUI cakupannya, BELUM mulai
+> dikerjakan.** Dipicu dari pertanyaan user: bisakah workflow yang sudah
+> ada dijalankan otonom (skip approval manusia), dengan toggle on/off?
+> Jawabannya ya secara teknis, tapi **bukan "autonomous publishing"** —
+> koreksi penting terhadap catatan lama di `docs/ROADMAP.md` § Next
+> ("autonomous publishing... bukan goal kita"): Growth Agent tidak pernah
+> menyentuh `pages.status` sama sekali, jadi tidak ada mode yang bikin AI
+> publish artikel sendiri. Yang diusulkan di sini adalah skip tombol
+> Approve/Apply manusia **khusus** untuk perubahan yang reversible &
+> low-risk. Draft artikel tetap berhenti di draft, publish tetap aksi
+> manual terpisah seperti sekarang.
+>
+> **⚠️ REVISI CAKUPAN 5 Agu 2026 (setelah dibandingkan dengan workflow
+> referensi kedua, "Val's Cake" milik kolega user):** cakupan pilot
+> awalnya mencakup `seo_recommendation` (meta) — itu **DICABUT**. Alasan:
+> workflow referensi itu eksplisit menempatkan perubahan meta
+> title/description/schema sebagai "Tier 1 — selalu manual, tidak bisa
+> di-toggle sama sekali", terpisah dari perubahan "Tier 2" yang boleh
+> semi-otomatis (index request, link apply, freshness refresh). Bedanya
+> dengan internal link: meta nampil LANGSUNG di hasil pencarian publik
+> begitu Google re-crawl (dampak instan & terlihat), sementara internal
+> link efeknya lebih halus dan sepenuhnya reversible di dalam konten
+> sendiri. User setuju meta tetap manual selamanya, bukan cuma ditunda.
+
+**Kenapa per job_type, bukan satu saklar global:** risiko tiap job_type
+beda jauh kalau salah:
+
+| job_type | Reversible? | Blast radius kalau salah | Masuk Fase E? |
+|---|---|---|---|
+| `internal_link_suggestion` | Ya — `previous_content` snapshot sudah wajib disimpan (§ Fase B) | Kecil — cuma nambah 1 `<a>` | ✅ **Satu-satunya** job_type di pilot |
+| `seo_recommendation` (meta) | Ya — gampang ganti balik | Kecil-menengah — nampil LANGSUNG di hasil pencarian Google | ⛔ **DICABUT dari pilot 5 Agu 2026** — tetap manual selamanya (Tier 1), bukan cuma ditunda |
+| `gsc_article_idea` / `keyword_expansion_topic` / `topic_gap_article` | N/A — hasil approve cuma bikin `status='draft'` | Nol — sudah aman by design, titik amannya di publish manual, bukan di approve | ⛔ Tidak relevan diotomatisin — approve-nya sendiri sudah bukan titik risiko |
+| `cannibalization_review` / `review_indexing_issue` | Butuh judgment strategis (merge? redirect? biarin?) | Besar kalau AI salah putus | 🤔 Kandidat masa depan, **butuh diskusi lebih lanjut** sebelum dikerjakan |
+
+**Keputusan user (revisi 5 Agu 2026):** pilot Fase E = **`internal_link_suggestion`
+doang**. `seo_recommendation` dipindah permanen ke kategori "selalu manual,
+tidak ada toggle" — bukan lagi kandidat pilot. `cannibalization_review`
+dan `review_indexing_issue` tetap dicatat sebagai kandidat masa depan,
+belum dikerjakan.
+
+**Prasyarat sebelum mulai bangun Fase E:** Measurement Loop (§ Fase C,
+diprioritaskan ulang di atas) harus sudah jalan dan menghasilkan data
+before/after nyata dulu — biar keputusan "internal link ini layak
+dipercaya otonom" berbasis bukti, bukan asumsi.
+
+**Desain implementasi (nol tabel baru, sesuai § 1b):**
+
+- Setting baru di `gsc_settings.opportunity_thresholds_json` key
+  `autonomous_mode`:
+  ```json
+  {
+    "enabled": false,
+    "job_types": {
+      "internal_link_suggestion": false
+    }
+  }
+  ```
+  Job_type di luar `internal_link_suggestion` sengaja TIDAK dimasukkan ke
+  daftar sama sekali (bukan cuma di-`false`) — termasuk `seo_recommendation`
+  sekarang, sejak revisi di atas — jadi UI toggle-nya tidak akan pernah
+  menampilkan opsi buat job_type manapun selain internal link.
+- Master switch `enabled` — kill switch tunggal buat matiin otonomi
+  sekaligus tanpa perlu ubah setting per job_type.
+- Kalau toggle nyala: setelah job dibuat, sistem memanggil fungsi Apply
+  yang **persis sama** dengan yang dipakai tombol manual sekarang
+  (`cms_growth_agent_il_apply()`) — snapshot, transaksi, guard "konten
+  sudah diedit orang lain sejak usulan dibuat" (§ Fase B) semuanya tetap
+  jalan, cuma tidak menunggu klik.
+- Rate limit **mingguan**, bukan harian (direvisi 5 Agu 2026 mengikuti
+  pola workflow referensi — "maks 3 artifact/minggu" lebih konservatif
+  daripada "3/hari" yang diusulkan sebelumnya): default diusulkan
+  **maks 3 auto-apply/minggu**, di key yang sama.
+- Setiap auto-apply mengirim notifikasi Telegram lewat webhook n8n yang
+  sudah disetel (§ Fase A, "Notifikasi ringkasan mingguan" — event
+  auto-apply memakai jalur yang sama, bukan webhook kedua) — operator
+  tahu real-time tanpa perlu buka admin.
+- Baris tetap tercatat normal di `growth_agent_jobs` — statusnya langsung
+  `succeeded` dengan `input_brief.applied_by = 'autonomous_mode'`, jadi
+  audit trail "usulan → hasil" di § 1b tetap utuh, cuma tanpa jeda
+  menunggu manusia.
+- UI: panel baru di `growth-agent.php` dekat "Job Terbaru" — daftar tiap
+  agent yang boleh otonom (saat ini cuma satu: Internal Linking) dengan
+  switch ON/OFF sendiri, plus indikator rate limit terpakai minggu ini.
+
+⚠️ **Belum ada satu baris kode pun yang ditulis untuk fase ini — Measurement
+Loop dikerjakan lebih dulu.** Setelah itu, sebelum Fase E mulai: (1) tuning
+rate limit default lewat pengamatan production sebenarnya (belum ada data
+volume auto-apply nyata), (2) perlu tombol "Revert" eksplisit di UI untuk
+internal link yang di-auto-apply, karena CMS ini tidak punya sistem revisi
+artikel — snapshot di `output_json` selama ini cuma dibaca manual lewat DB
+kalau ada masalah, belum ada tombol pulih di admin panel.
 
 ---
 

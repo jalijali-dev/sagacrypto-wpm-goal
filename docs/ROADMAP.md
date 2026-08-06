@@ -4,7 +4,7 @@
 > perubahan detail per-tanggal, lihat `SITEMAP.md` (root). Untuk konteks
 > cepat & konvensi teknis, lihat `HANDOFF.md` (root) dan `docs/DEV_GUIDE.md`.
 
-Terakhir diperbarui: **31 Juli 2026** (setup backup otomatis mingguan ke Google Drive)
+Terakhir diperbarui: **5 Agustus 2026** (digest mingguan Growth Agent ke Telegram lewat n8n — Fase A tuntas)
 
 ---
 
@@ -133,42 +133,81 @@ teknis lengkap (skema DB, alasan tiap item, urutan prioritas) ada di
 `docs/GROWTH_AGENT_V2_PROPOSAL.md` — ringkasan di bawah ini cuma index,
 jangan diedit terpisah dari dokumen aslinya.
 
-**Belum ada satu item pun yang mulai dikerjakan** — status "disetujui"
-di sini artinya masuk antrian resmi, prioritas urutan fase A → D.
+**Fase A dan B sudah tuntas** (lihat rincian tanggal per item di bawah);
+Fase C dan D masih di antrian, belum mulai. Fase E ditambah 5 Agu 2026,
+disetujui cakupannya, belum ada kode ditulis.
 
-- **Fase A — Fondasi:** scheduler mandiri (Cron Job cPanel, pola sama
-  kayak backup mingguan di `docs/BACKUP_WORKFLOW.md`, gantikan trigger
-  "lazy" yang sekarang cuma jalan pas admin buka halaman), notifikasi
-  digest mingguan (Telegram/email), SEO-G0 Gate diformalkan (Content
-  Conflict Detection yang sudah ada dipindah jadi pre-check sebelum
-  agent lain bikin usulan, bukan kategori opportunity terpisah).
-- **Fase B — Akselerator ranking:** 3 karakter baru — **Internal Linking
-  Agent** (saran link antar artikel, approve → masuk draft revisi),
-  **Keyword Expansion Agent** (usulan topik/keyword di luar histori GSC,
-  nyambung ke Topic Cluster yang sudah ada), **Technical SEO Auditor**
-  (Core Web Vitals via PageSpeed Insights API, schema markup, alt text
-  — laporan doang, gak auto-fix).
+**Urutan eksekusi berikutnya (direvisi 5 Agu 2026 — bukan urutan huruf
+A→E):** Measurement Loop (bagian dari Fase C) dikerjakan **duluan**,
+sebelum Fase E — dipicu perbandingan dengan workflow referensi kedua
+("Val's Cake" milik kolega user) yang menandai measurement loop sebagai
+prasyarat, bukan pelengkap: tanpa data before/after nyata, keputusan
+job_type mana yang "cukup aman diotomatisin" di Fase E cuma tebakan.
+Urutan penuh: **Measurement Loop → Fase E (internal link doang) →
+Backlink Monitor (cakupan diperluas) → sisa Fase C/D.**
+
+- **Fase A — Fondasi: ✅ SELESAI (5 Agu 2026), semua 3 item tuntas.**
+  Scheduler mandiri (Cron Job cPanel, pola sama kayak backup mingguan di
+  `docs/BACKUP_WORKFLOW.md`, gantikan trigger "lazy" yang sekarang cuma
+  jalan pas admin buka halaman), notifikasi digest mingguan (Telegram,
+  lihat "Done" 5 Agu 2026), SEO-G0 Gate diformalkan (Content Conflict
+  Detection yang sudah ada dipindah jadi pre-check sebelum agent lain
+  bikin usulan, bukan kategori opportunity terpisah).
+- **Fase B — Akselerator ranking: ✅ SELESAI (5 Agu 2026), semua 3 item
+  tuntas.** **Internal Linking Agent** (saran link antar artikel,
+  approve → masuk draft revisi, teruji 24 artikel asli: 7 bagus/2
+  cukup/0 jelek), **Keyword Expansion Agent** (usulan topik/keyword di
+  luar histori GSC, job type `keyword_expansion_topic` — belum diuji AI
+  sungguhan di production, baca dulu hasilnya sebelum approve pertama
+  kali), **Technical SEO Auditor** (Core Web Vitals via PageSpeed
+  Insights API, schema markup, alt text — laporan doang, gak auto-fix,
+  nol job/antrian).
 - **Fase C — Distribusi & closing the loop:** **Social Specialist**
   (siapin draft caption sosmed setelah artikel dipublish manual, gak
-  pernah auto-post), auto re-trigger measurement loop (jadwal otomatis
-  cek ulang performa 28 hari setelah sebuah rekomendasi di-Apply).
+  pernah auto-post), **auto re-trigger measurement loop** — 🔜
+  **dikerjakan duluan, prasyarat Fase E** (jadwal otomatis cek ulang
+  performa 28 hari setelah sebuah rekomendasi di-Apply, hasilnya masuk
+  ke panel Feedback yang sudah ada).
 - **Fase D — Perlu keputusan lanjutan sebelum dikerjakan:** **Backlink
   Monitor** (read-only, lewat GSC Links report yang udah gratis diakses
-  — sengaja gak ada outreach otomatis), riset keyword pakai API
-  berbayar (trade-off biaya vs akurasi, belum diputuskan).
+  — sengaja gak ada outreach otomatis) — cakupan diperluas 5 Agu 2026:
+  bukan cuma "siapa yang link ke kita", tapi juga daftar artikel
+  berpotensi yang nol backlink, buat target outreach manual operator;
+  riset keyword pakai API berbayar (trade-off biaya vs akurasi, belum
+  diputuskan).
+- **Fase E — Mode Otonom (toggle per job_type): disetujui cakupannya
+  5 Agu 2026, belum ada kode, nunggu Measurement Loop selesai duluan.**
+  Toggle default OFF yang, kalau dinyalain operator, skip tombol
+  Approve/Apply manusia — **cakupan direvisi 5 Agu 2026: cuma
+  `internal_link_suggestion`**, `seo_recommendation` (meta) dicabut dari
+  pilot dan tetap manual selamanya (dampaknya nampil langsung di hasil
+  pencarian publik, beda dari internal link yang sepenuhnya reversible
+  di dalam konten sendiri) — bukan **autonomous publishing** (Growth
+  Agent tetap tidak pernah menyentuh `pages.status`). Rate limit
+  **mingguan** (maks 3 auto-apply/minggu, direvisi dari harian) + kill
+  switch + notifikasi Telegram tiap auto-apply.
+  `cannibalization_review`/`review_indexing_issue` sengaja TIDAK
+  dimasukkan (butuh judgment strategis, didiskusikan terpisah nanti).
+  Detail desain lengkap di `docs/GROWTH_AGENT_V2_PROPOSAL.md` § Fase E.
 
 Prinsip yang tetap dijaga di semua fase: AI cuma menyarankan, gak ada
 publish/posting/outreach otomatis — sama persis kayak guardrail Growth
-Agent v1 yang sudah berjalan.
+Agent v1 yang sudah berjalan. Fase E tidak melanggar prinsip ini karena
+publish tetap manual; yang di-skip cuma approval untuk internal link
+(reversible), bukan publish itu sendiri.
 
-**Aturan arsitektur wajib (ditetapkan 2 Agu 2026):** semua agent — lama
-maupun baru — cuma boleh menulis usulan ke Action Queue
-(`growth_agent_jobs`), dibedakan lewat `job_type`/`agent_key`. Dilarang
-bikin tabel antrian sendiri per-agent, dilarang ada aksi yang jalan tanpa
-row di antrian + approval manusia, dan hasil setelah di-approve dicatat
-balik ke baris yang sama (`output_json` + `growth_agent_feedback`).
-Detail lengkap + alasannya di `docs/GROWTH_AGENT_V2_PROPOSAL.md` § 1b —
-**wajib dibaca sebelum mengerjakan agent baru mana pun.**
+**Aturan arsitektur wajib (ditetapkan 2 Agu 2026, diperjelas 5 Agu 2026
+soal Fase E):** semua agent — lama maupun baru — cuma boleh menulis
+usulan ke Action Queue (`growth_agent_jobs`), dibedakan lewat
+`job_type`/`agent_key`. Dilarang bikin tabel antrian sendiri per-agent,
+dan hasil dicatat balik ke baris yang sama (`output_json` +
+`growth_agent_feedback`). Soal "dilarang ada aksi yang jalan tanpa row
+di antrian + approval manusia" — row di antrian tetap **wajib mutlak**
+tanpa pengecualian; "approval manusia"-nya yang boleh di-skip **hanya**
+untuk job_type yang eksplisit di-whitelist di toggle Fase E, dan cuma
+kalau operator sendiri yang menyalakannya. Detail lengkap + alasannya di
+`docs/GROWTH_AGENT_V2_PROPOSAL.md` § 1b dan § Fase E — **wajib dibaca
+sebelum mengerjakan agent baru mana pun.**
 
 ## Later / Backlog
 
@@ -311,6 +350,46 @@ Diketahui perlu dikerjakan suatu saat, tapi bukan prioritas sekarang.
   lokal sengaja kosong, semua pengujian pakai mock) — kualitas topik baru
   terukur setelah dicoba di production. Detail di
   `docs/GROWTH_AGENT_V2_PROPOSAL.md` § Fase B.
+
+- ✅ **Growth Agent v2 Fase A item 2 — Notifikasi digest mingguan
+  Telegram SELESAI.** Dengan ini **seluruh Fase A tuntas** (scheduler
+  mandiri + SEO-G0 Gate sudah selesai 4 Agu 2026, lihat di bawah).
+  Endpoint baru `cms-admin/api/growth-agent-digest.php` (commit
+  `b3f1e59`): read-only, murni `SELECT`, nol session/`auth.php` (dipanggil
+  workflow n8n eksternal, bukan browser admin). Auth pakai token tunggal
+  `GROWTH_AGENT_DIGEST_TOKEN` (`config/app.php`, gitignored, pola sama
+  `CMS_AI_ENC_SECRET`), dicek `hash_equals()`, mendukung header
+  `Authorization: Bearer` maupun query param `?token=`. Semua angka
+  (opportunity terbuka, job nunggu review/manual action, masalah index,
+  cannibalization, content conflict, terakhir dianalisis) REUSE query
+  yang sama persis dengan yang tampil di `growth-agent.php`/
+  `content-conflict-detection.php` — sengaja supaya angka di Telegram
+  tidak pernah beda dari yang admin lihat di dashboard. Tiap query
+  dibungkus try/catch per-bagian (pola `$safeCount()`), satu tabel gagal
+  tidak menjatuhkan seluruh endpoint.
+
+  Workflow n8n (`SAGAGOAL - Growth Agent Digest`) disambungkan langsung
+  lewat browser automation: Schedule Trigger → HTTP Request (GET ke
+  endpoint di atas) → Telegram "Send a text message", dengan Text node
+  diganti dari template lama `{{ $json.body.summary }}` (peninggalan
+  eksperimen webhook manual) ke `{{ $json.summary_text }}` (field siap
+  pakai dari endpoint). **Auth via header sempat gagal** — token benar
+  (diverifikasi lewat curl manual sebelumnya), tapi n8n HTTP Request node
+  tetap dapat 401 "Unauthorized" (kemungkinan header `Authorization`
+  tidak tereskalasi sampai PHP di hosting ini lewat client HTTP n8n,
+  beda dari curl) — diperbaiki dengan pindah ke jalur `?token=` query
+  param yang endpoint ini memang sudah dukung sebagai fallback, langsung
+  berhasil. **Kirim Telegram sempat gagal** dengan "Bad Request: chat
+  not found" — root cause: bot Telegram lama ("test bot" credential di
+  n8n) & chat_id `8487881100` bukan pasangan yang valid (masalah sama
+  yang sempat muncul saat setup awal, kontak "Kiw" bukan bot beneran).
+  Diselesaikan dengan bikin bot baru lewat BotFather, chat_id baru
+  diambil via `getUpdates`, dan credential Telegram baru dibuat di n8n
+  (bukan menimpa "test bot" lama). Ditest end-to-end sampai pesan
+  sungguhan masuk ke Telegram (`ragajali007`, chat_id `7390766610`) dari
+  bot `sagagoalBot`, workflow disimpan. **Belum di-Publish/aktifkan** —
+  masih perlu 1 langkah manual user (klik Publish di n8n) supaya jadwal
+  mingguannya jalan otomatis, belum dilakukan di sesi ini.
 
 **4 Agu 2026:**
 - **Fix layout halaman listing berita + kolom iklan sidebar kanan** (commit

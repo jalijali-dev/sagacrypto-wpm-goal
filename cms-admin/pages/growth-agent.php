@@ -43,6 +43,15 @@ cms_growth_agent_detect_memory_if_stale($pdo);
 // `pages` or growth_agent_jobs. Never throws.
 cms_growth_agent_snapshot_performance_if_stale($pdo, 24);
 
+// Lazy Measurement Loop (GROWTH_AGENT_V2_PROPOSAL.md § Fase C, reprioritized
+// 5 Aug 2026 ahead of Fase E). Unlike the *_if_stale() calls above, this one
+// isn't gated by a "last run" timestamp — its own WHERE clause
+// (measured_at IS NULL AND 28+ days old) is already self-limiting, so
+// repeat calls on every page load only ever touch genuinely new rows, same
+// spirit as cms_growth_agent_cleanup_old_jobs() above. Bounded per call via
+// opportunity_thresholds_json.measurement_loop.batch_size. Never throws.
+cms_growth_agent_run_measurement_loop($pdo);
+
 $pageTitle = 'Growth Agent';
 $currentNav = 'growth-agent';
 $breadcrumbs = [
@@ -768,7 +777,11 @@ if ($gscConnected) {
         $feedbackReport = [];
     }
 }
-$feedbackActionLabel = ['seo_recommendation' => 'Rekomendasi SEO (Diterapkan)', 'gsc_article_idea' => 'Ide Artikel (Terbit)'];
+$feedbackActionLabel = [
+    'internal_link_suggestion' => 'Internal Link (Diterapkan)',
+    'seo_recommendation' => 'Rekomendasi SEO (Diterapkan)',
+    'gsc_article_idea' => 'Ide Artikel (Terbit)',
+];
 
 // ── Technical SEO Auditor report (Fase B item 3) — pure read, joined
 // against every published article so articles never-yet-audited still

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Cron: run Growth Agent's five maintenance/collection steps on a schedule,
+ * Cron: run Growth Agent's six maintenance/collection steps on a schedule,
  * instead of only "lazily" whenever an admin happens to open
  * cms-admin/pages/growth-agent.php.
  *
@@ -11,7 +11,8 @@ declare(strict_types=1);
  * functions (with the exact same parameters) as growth-agent.php's page
  * load: cms_growth_agent_ensure_schema(), cms_growth_agent_cleanup_old_jobs(),
  * cms_gsc_fetch_if_stale(), cms_growth_agent_detect_memory_if_stale(),
- * cms_growth_agent_snapshot_performance_if_stale() — all in
+ * cms_growth_agent_snapshot_performance_if_stale(),
+ * cms_growth_agent_run_measurement_loop() — all in
  * cms-admin/includes/growth-agent-service.php and gsc-api.php. Both callers
  * run identical code, same as sync_fixtures.php vs the admin "Sync Sekarang"
  * button.
@@ -111,6 +112,16 @@ if (($after['last_performance_snapshot_at'] ?? null) !== ($before['last_performa
 } else {
     echo "[growth_agent_maintenance] perf_snapshot: Skipped — belum stale (last_performance_snapshot_at: " . ($before['last_performance_snapshot_at'] ?? 'null') . ", ambang 24 jam).\n";
 }
+
+// ── 6. Measurement Loop (Fase C, reprioritized ahead of Fase E) ────────
+// Not a *_if_stale() function — no "last run" timestamp to diff, its own
+// WHERE clause (measured_at IS NULL AND N+ days old) is what makes repeat
+// calls safe/cheap, so it just returns its own stats directly instead.
+// Documented "never throws" — returns zeroed stats on internal failure.
+$measurement = cms_growth_agent_run_measurement_loop($pdo);
+echo "[growth_agent_maintenance] measurement_loop: {$measurement['checked']} job dicek, "
+    . "{$measurement['measured']} ditandai measured_at ({$measurement['insufficient_data']} di antaranya insufficient_data), "
+    . "{$measurement['errors']} error (measured_at dibiarkan kosong, dicoba lagi run berikutnya).\n";
 
 echo "[growth_agent_maintenance] Done.\n";
 exit($exitCode);

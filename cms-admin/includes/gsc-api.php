@@ -1144,6 +1144,40 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                 // logic.
                 'psi_poor_score_threshold' => 50,
             ],
+
+            // Measurement Loop (GROWTH_AGENT_V2_PROPOSAL.md § Fase C,
+            // reprioritized 5 Aug 2026 to run BEFORE Fase E, not after — see
+            // that section's own note: without before/after evidence,
+            // deciding which job_type is "safe enough to automate" in Fase E
+            // is a guess, not a fact). See
+            // cms_growth_agent_run_measurement_loop() in
+            // growth-agent-service.php.
+            'measurement_loop' => [
+                // Same before/after window and minimum-data guardrail as
+                // cms_growth_agent_compare_before_after()'s own defaults —
+                // kept here (not hardcoded in the loop function) so both can
+                // be tuned together without a code change, same
+                // "everything lives in gsc_settings" philosophy as every
+                // other block in this array.
+                'window_days' => 28,
+                'min_days' => 7,
+                // internal_link_suggestion is included here (not just
+                // seo_recommendation/gsc_article_idea, which the Feedback
+                // report already covered) — it is in fact the primary
+                // motivating case: this is the exact data Fase E's pilot
+                // ('internal_link_suggestion' only, see that section) needs
+                // before autonomous mode can be trusted for it.
+                'eligible_job_types' => ['internal_link_suggestion', 'seo_recommendation', 'gsc_article_idea'],
+                // Bounded per run — cms_growth_agent_compare_before_after()
+                // does 2 aggregate queries per row, so an unbounded batch on
+                // first rollout (when many already-old succeeded jobs are
+                // suddenly all eligible at once) could make one page load or
+                // cron run noticeably slow. Same order of magnitude as
+                // cms_growth_agent_get_feedback_report()'s own default
+                // $limit (20) — this is the loop that feeds it, so eventual
+                // throughput matters more than clearing a backlog instantly.
+                'batch_size' => 20,
+            ],
         ];
     }
 }

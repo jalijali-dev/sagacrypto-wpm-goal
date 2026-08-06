@@ -142,6 +142,19 @@ function cms_growth_agent_ensure_schema(PDO $pdo): void
     );
 
     cms_growth_agent_ensure_legacy_status($pdo);
+
+    // Measurement Loop (GROWTH_AGENT_V2_PROPOSAL.md § Fase C, reprioritized
+    // 5 Aug 2026 ahead of Fase E — see cms_growth_agent_run_measurement_loop()
+    // below for the feature itself). Additive column, same precedent as
+    // `priority` (gsc-api.php's cms_gsc_ensure_schema()): a plain indexed
+    // TIMESTAMP, not a flag buried in output_json, because "which succeeded
+    // jobs are 28+ days old and still unmeasured" needs to be a cheap
+    // indexed WHERE, not a per-row JSON scan. NULL = not yet measured (or
+    // not eligible); a non-NULL value only ever means "a measurement
+    // attempt ran for this job" — it does not by itself mean the result was
+    // a usable comparison (see that function's own note on
+    // status='insufficient_data' still counting as measured).
+    cms_ensure_column($pdo, 'growth_agent_jobs', 'measured_at', 'TIMESTAMP NULL DEFAULT NULL AFTER `updated_at`');
 }
 
 /**
@@ -4082,6 +4095,15 @@ function cms_growth_agent_compare_before_after(PDO $pdo, int $pageId, string $ch
 /**
  * Builds the "Feedback / Before-After" report growth-agent.php renders —
  * one row per page that had a REAL, verifiable applied change:
+ *   - internal_link_suggestion: only jobs that actually went through Apply
+ *     (job_type='internal_link_suggestion', status='succeeded', page_id
+ *     set — succeeded only ever happens via
+ *     cms_growth_agent_apply_internal_link(), the one thing that writes
+ *     pages.content for this job_type). change_date = job.updated_at (set
+ *     at Apply time). Added 5 Aug 2026 as part of the Measurement Loop
+ *     (GROWTH_AGENT_V2_PROPOSAL.md § Fase C) — this job_type is also the
+ *     sole Fase E pilot candidate, so its before/after evidence matters
+ *     most here.
  *   - seo_recommendation: only jobs that actually went through Apply
  *     (job_type='seo_recommendation', status='succeeded', page_id set —
  *     succeeded only ever happens via seo-recommendation-review.php's
@@ -4113,6 +4135,28 @@ function cms_growth_agent_get_feedback_report(PDO $pdo, int $limit = 20, int $wi
 {
     $limit = max(1, min(100, $limit));
     $candidates = [];
+
+    try {
+        $ilStmt = $pdo->prepare(
+            "SELECT j.page_id, p.title, j.updated_at AS change_date
+               FROM growth_agent_jobs j
+               INNER JOIN pages p ON p.page_id = j.page_id
+              WHERE j.job_type = 'internal_link_suggestion' AND j.status = 'succeeded' AND j.page_id IS NOT NULL
+              ORDER BY j.updated_at DESC
+              LIMIT " . $limit
+        );
+        $ilStmt->execute();
+        foreach ($ilStmt->fetchAll() as $row) {
+            $candidates[] = [
+                'page_id' => (int) $row['page_id'],
+                'page_title' => (string) $row['title'],
+                'action_type' => 'internal_link_suggestion',
+                'change_date' => (string) $row['change_date'],
+            ];
+        }
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_get_feedback_report] internal_link_suggestion query failed: ' . $e->getMessage());
+    }
 
     try {
         $seoStmt = $pdo->prepare(
@@ -4174,6 +4218,159 @@ function cms_growth_agent_get_feedback_report(PDO $pdo, int $limit = 20, int $wi
     }
 
     return $report;
+}
+
+/**
+ * Measurement Loop (GROWTH_AGENT_V2_PROPOSAL.md § Fase C, reprioritized 5
+ * Aug 2026 to run BEFORE Fase E — see that section's note on why: Fase E's
+ * "which job_type is safe enough to trust autonomously" decision needs real
+ * before/after evidence, not a guess). Finds succeeded jobs whose applied
+ * change is old enough ($windowDays, default 28 — see
+ * cms_gsc_default_opportunity_thresholds()['measurement_loop']) to have a
+ * full "after" window, runs cms_growth_agent_compare_before_after() once per
+ * row, and marks measured_at so the same row is never re-processed.
+ *
+ * This does NOT persist the comparison result anywhere new — no column or
+ * output_json write for it. Overwriting output_json was considered and
+ * rejected: for seo_recommendation it holds the original recommended_meta_*
+ * pair that seo-recommendation-review.php re-reads on every load (even
+ * after Apply), and for internal_link_suggestion it holds the
+ * previous_content revert snapshot (see cms_growth_agent_apply_internal_link()
+ * above) — clobbering either would break existing pages. The result is only
+ * ever needed live, on demand, by cms_growth_agent_get_feedback_report()
+ * (which already recomputes the same comparison itself when rendering the
+ * Feedback panel) — so measured_at's only job is to mark "already checked,
+ * don't check again", not to cache the number itself.
+ *
+ * change_date per job_type — deliberately NOT a single uniform
+ * `updated_at` across all three, even though that would be a simpler query:
+ *   - internal_link_suggestion / seo_recommendation: job.updated_at IS the
+ *     Apply timestamp (no separate publish step), same as
+ *     cms_growth_agent_get_feedback_report()'s identical treatment of
+ *     seo_recommendation.
+ *   - gsc_article_idea: job.updated_at only reflects when the DRAFT was
+ *     created (cms_growth_agent_create_article_draft_from_idea(), called
+ *     from growth-agent.php's approve handler) — the article may then sit
+ *     as an unpublished draft for days/weeks before an editor actually
+ *     publishes it. Measuring GSC performance from draft-creation time
+ *     would be measuring the wrong event entirely (no public page existed
+ *     yet to accrue impressions). Uses pages.published_at (falling back to
+ *     pages.updated_at), gated on pages.status='published' — the exact same
+ *     logic cms_growth_agent_get_feedback_report() already uses for this
+ *     job_type, for the exact same reason.
+ *
+ * "Never throws" per-row, not just overall: a genuine exception on one row
+ * (DB hiccup mid-loop) is caught, logged, and leaves that row's measured_at
+ * untouched so it's retried on the next run — but compare_before_after()
+ * returning status='insufficient_data' is NOT an error, it's a normal
+ * final outcome (this function's own docblock: some old jobs may
+ * legitimately never clear the min-days bar), so measured_at IS set for
+ * those too. Matches the feature's own framing — "schedule ONE check 28
+ * days later", not "poll forever until data looks good".
+ *
+ * @return array{checked:int,measured:int,insufficient_data:int,errors:int}
+ */
+function cms_growth_agent_run_measurement_loop(PDO $pdo): array
+{
+    $stats = ['checked' => 0, 'measured' => 0, 'insufficient_data' => 0, 'errors' => 0];
+
+    try {
+        cms_growth_agent_ensure_schema($pdo);
+        require_once __DIR__ . '/gsc-api.php';
+
+        $config = cms_gsc_get_opportunity_thresholds($pdo)['measurement_loop'] ?? [];
+        $windowDays = max(1, min(180, (int) ($config['window_days'] ?? 28)));
+        $minDays = max(1, min($windowDays, (int) ($config['min_days'] ?? 7)));
+        $eligibleTypes = is_array($config['eligible_job_types'] ?? null) && $config['eligible_job_types'] !== []
+            ? array_values(array_filter($config['eligible_job_types'], 'is_string'))
+            : ['internal_link_suggestion', 'seo_recommendation', 'gsc_article_idea'];
+        $batchSize = max(1, min(100, (int) ($config['batch_size'] ?? 20)));
+
+        $candidates = [];
+
+        $directTypes = array_values(array_intersect(['internal_link_suggestion', 'seo_recommendation'], $eligibleTypes));
+        if ($directTypes !== []) {
+            $placeholders = implode(',', array_fill(0, count($directTypes), '?'));
+            $stmt = $pdo->prepare(
+                "SELECT id, page_id, updated_at AS change_date
+                   FROM growth_agent_jobs
+                  WHERE status = 'succeeded'
+                    AND job_type IN ($placeholders)
+                    AND page_id IS NOT NULL
+                    AND measured_at IS NULL
+                    AND DATEDIFF(NOW(), updated_at) >= ?
+                  ORDER BY updated_at ASC
+                  LIMIT " . $batchSize
+            );
+            $stmt->execute([...$directTypes, $windowDays]);
+            foreach ($stmt->fetchAll() as $row) {
+                $candidates[] = [
+                    'id' => (int) $row['id'],
+                    'page_id' => (int) $row['page_id'],
+                    'change_date' => (string) $row['change_date'],
+                ];
+            }
+        }
+
+        if (in_array('gsc_article_idea', $eligibleTypes, true)) {
+            $stmt = $pdo->prepare(
+                "SELECT j.id, j.page_id, COALESCE(p.published_at, p.updated_at) AS change_date
+                   FROM growth_agent_jobs j
+                   INNER JOIN pages p ON p.page_id = j.page_id
+                  WHERE j.status = 'succeeded'
+                    AND j.job_type = 'gsc_article_idea'
+                    AND j.page_id IS NOT NULL
+                    AND j.measured_at IS NULL
+                    AND p.status = 'published'
+                    AND DATEDIFF(NOW(), COALESCE(p.published_at, p.updated_at)) >= :window_days
+                  ORDER BY COALESCE(p.published_at, p.updated_at) ASC
+                  LIMIT " . $batchSize
+            );
+            $stmt->execute(['window_days' => $windowDays]);
+            foreach ($stmt->fetchAll() as $row) {
+                $candidates[] = [
+                    'id' => (int) $row['id'],
+                    'page_id' => (int) $row['page_id'],
+                    'change_date' => (string) $row['change_date'],
+                ];
+            }
+        }
+
+        $candidates = array_slice($candidates, 0, $batchSize);
+
+        foreach ($candidates as $candidate) {
+            $stats['checked']++;
+            try {
+                $comparison = cms_growth_agent_compare_before_after(
+                    $pdo, $candidate['page_id'], $candidate['change_date'], $windowDays, $minDays
+                );
+
+                // `updated_at` explicitly preserved in the SET list —
+                // growth_agent_jobs.updated_at is ON UPDATE CURRENT_TIMESTAMP,
+                // so leaving it out of an UPDATE to a DIFFERENT column still
+                // silently bumps it to NOW() (confirmed the hard way while
+                // testing this function). That would corrupt the very
+                // change_date pivot this whole measurement is built around —
+                // a second run next month would then measure from "today",
+                // not from the real Apply date.
+                $pdo->prepare('UPDATE growth_agent_jobs SET measured_at = NOW(), updated_at = updated_at WHERE id = :id')
+                    ->execute(['id' => $candidate['id']]);
+
+                $stats['measured']++;
+                if (($comparison['status'] ?? '') === 'insufficient_data') {
+                    $stats['insufficient_data']++;
+                }
+            } catch (Throwable $e) {
+                error_log('[cms_growth_agent_run_measurement_loop] Row failed (job_id=' . $candidate['id'] . '): ' . $e->getMessage());
+                $stats['errors']++;
+                // measured_at left NULL on purpose — retried next run.
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_run_measurement_loop] Failed: ' . $e->getMessage());
+    }
+
+    return $stats;
 }
 
 /**
