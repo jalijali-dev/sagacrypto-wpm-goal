@@ -859,9 +859,12 @@ function cms_growth_agent_seo_g0_gate(PDO $pdo, string $jobType, string $topicTe
             // cms_growth_agent_keyword_expansion_process_topics()), so the
             // existing ternary below already reads it correctly with no
             // further change needed.
+            // 'auto_draft_article' (Fase F, 8 Aug 2026) added the same way —
+            // cms_growth_agent_generate_auto_draft_article() also stores the
+            // source headline under 'missing_topic', same reasoning.
             $pendingStmt = $pdo->query(
                 "SELECT id, job_type, status, input_brief FROM growth_agent_jobs
-                  WHERE job_type IN ('gsc_article_idea', 'topic_gap_article', 'keyword_expansion_topic')
+                  WHERE job_type IN ('gsc_article_idea', 'topic_gap_article', 'keyword_expansion_topic', 'auto_draft_article')
                     AND status IN ('manual_action', 'ready', 'running')"
             );
             foreach ($pendingStmt->fetchAll() as $row) {
@@ -5620,4 +5623,633 @@ function cms_growth_agent_notifications(PDO $pdo, int $limit = 8): array
     }
 
     return $result;
+}
+
+/**
+ * ── Full Draft Automation (GROWTH_AGENT_V2_PROPOSAL.md § 6, Fase F,
+ *    8 Aug 2026) ──
+ *
+ * Extends the same "scraper gives AI a headline for context, AI writes
+ * 100% original content" pattern already proven by
+ * cms_growth_agent_generate_article_idea() (§ 5) — the only thing new here
+ * is the AI now writes a full body (not just a title+outline) and a cover
+ * image gets generated too. Copyright boundary is identical and NOT
+ * relaxed: only headline text ever reaches a prompt, never scraped body
+ * content (see cms_growth_agent_refresh_trending_headlines()'s own
+ * docblock — that constraint was already enforced at the point headlines
+ * are stored, so it's inherited here for free by reading from the same
+ * growth_agent_trending_headlines table rather than re-scraping).
+ *
+ * job_type = 'auto_draft_article', logged status='manual_action' — same
+ * Action Queue as everything else (§ 1b). Approve creates a `pages` DRAFT
+ * row (never published) — same "Approve IS execute" exception as
+ * gsc_article_idea, for the same reason: there is nothing else an
+ * approved full-draft proposal can become except a draft article.
+ * Publish stays a separate, fully manual action exactly like every other
+ * article on this site. Fase G (auto-publish) is explicitly NOT part of
+ * this — no code path anywhere in this section ever sets pages.status.
+ */
+
+/**
+ * Saves AI-generated image bytes to disk — same uploads/media/{Y}/{m}/
+ * directory layout, guard-file (index.php 403), and safe-filename
+ * convention (sanitized base + random hex suffix) as
+ * pages/media-library.php's own upload handler, so a generated cover image
+ * is indistinguishable on disk from a manually uploaded one and shows up
+ * in Media Library normally. Deliberately NOT reusing
+ * cms_process_file_uploads() itself — that helper is built around
+ * $_FILES/move_uploaded_file() for real HTTP uploads; this writes raw
+ * decoded bytes instead, so only the directory/naming conventions are
+ * shared, not the file-transfer mechanism.
+ *
+ * Never throws — returns null on any failure (bad base64, disk full,
+ * permission error), so a save failure degrades to "draft without a
+ * cover image" rather than aborting the whole draft.
+ *
+ * @return string|null leading-slash relative path (e.g.
+ *         "/uploads/media/2026/08/xxxx.png"), or null on failure.
+ */
+function cms_growth_agent_save_generated_image(string $base64Data): ?string
+{
+    try {
+        $bytes = base64_decode($base64Data, true);
+        if ($bytes === false || $bytes === '') {
+            return null;
+        }
+
+        $projectRoot = CMS_PROJECT_ROOT;
+        $yr = date('Y');
+        $mo = date('m');
+        $relBase = 'uploads/media';
+        $relYear = $relBase . '/' . $yr;
+        $relDir = $relYear . '/' . $mo;
+        $diskDir = $projectRoot . '/' . $relDir;
+
+        if (!is_dir($diskDir) && !mkdir($diskDir, 0755, true) && !is_dir($diskDir)) {
+            return null;
+        }
+
+        // Same 403-on-direct-browse guard as media-library.php's own
+        // upload handler — identical content, kept inline here (not a
+        // shared constant) since that file doesn't expose one either.
+        $guardContent = "<?php\nhttp_response_code(403);\nexit('Forbidden');\n";
+        foreach ([$relBase, $relYear, $relDir] as $guardLevel) {
+            $guardFile = $projectRoot . '/' . $guardLevel . '/index.php';
+            if (!file_exists($guardFile)) {
+                file_put_contents($guardFile, $guardContent);
+                @chmod($guardFile, 0644);
+            }
+        }
+
+        $base = 'ai-cover';
+        do {
+            $safeFilename = $base . '-' . bin2hex(random_bytes(8)) . '.png';
+            $targetPath = $diskDir . '/' . $safeFilename;
+        } while (file_exists($targetPath));
+
+        if (file_put_contents($targetPath, $bytes) === false) {
+            return null;
+        }
+        @chmod($targetPath, 0644);
+
+        return '/' . $relDir . '/' . $safeFilename;
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_save_generated_image] ' . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Extracts likely proper-noun "entities" (player/team/competition names)
+ * from an article title — plain regex/keyword matching, NOT an AI call
+ * (devs brief explicit requirement: no second AI call just to "think up" an
+ * image prompt, that would double token cost for no real benefit here).
+ *
+ * Relies on this site's own title-casing convention (confirmed against
+ * real stored titles): connector words ("ke", "untuk", "dan", "di", "yang",
+ * ...) stay lowercase even inside an otherwise Title Case headline, so a
+ * capitalized word that ISN'T one of those connectors is a reasonable
+ * proper-noun signal — e.g. "Salah ke Trabzonspor untuk Jadi Juara" ->
+ * ["Salah", "Trabzonspor", "Jadi", "Juara"] before the generic-word filter
+ * below removes "Jadi"/"Juara" (not proper nouns, just happen to be
+ * capitalized here since they start a clause). Not perfect — a heuristic,
+ * same "best effort" framing as the Trending Headlines HTML scraper.
+ *
+ * @return string[] up to $limit entity strings, in title order.
+ */
+function cms_growth_agent_extract_title_entities(string $title, int $limit = 4): array
+{
+    $connectors = [
+        'ke', 'untuk', 'dan', 'di', 'dari', 'yang', 'pada', 'ini', 'itu', 'akan', 'atau', 'jadi',
+        'juara', 'menang', 'kalah', 'cedera', 'gagal', 'sukses', 'resmi', 'usai', 'demi', 'saat',
+        'gara', 'karena', 'setelah', 'sebelum', 'lawan', 'vs', 'para', 'sang', 'tanpa', 'bersama',
+        'dunia', 'pulang', 'tinggalkan', 'gabung', 'pindah', 'kembali', 'siap', 'jelang', 'hadapi',
+        'punya', 'jadi',
+    ];
+
+    $words = preg_split('/\s+/u', trim($title)) ?: [];
+    $entities = [];
+    foreach ($words as $word) {
+        $clean = trim((string) preg_replace('/[^\p{L}\p{N}]+/u', '', $word), ' ');
+        if ($clean === '' || is_numeric($clean)) {
+            continue;
+        }
+        $firstChar = mb_substr($clean, 0, 1);
+        if ($firstChar !== mb_strtoupper($firstChar, 'UTF-8')) {
+            continue; // not capitalized — skip
+        }
+        if (in_array(mb_strtolower($clean, 'UTF-8'), $connectors, true)) {
+            continue; // capitalized only because it starts a clause, not a proper noun
+        }
+        if (!in_array($clean, $entities, true)) {
+            $entities[] = $clean;
+        }
+        if (count($entities) >= $limit) {
+            break;
+        }
+    }
+
+    return $entities;
+}
+
+/**
+ * Maps a title's dominant theme to a short English descriptive phrase for
+ * the image prompt — plain keyword lookup against Indonesian sports-news
+ * vocabulary, not AI. English output regardless of the (Indonesian) title
+ * language: image models are documented to follow English prompts more
+ * reliably, and this is a fixed short phrase, not a translation of
+ * anything copyrighted.
+ */
+function cms_growth_agent_extract_title_context(string $title): string
+{
+    $lower = mb_strtolower($title, 'UTF-8');
+    $themes = [
+        'juara' => 'championship celebration',
+        'menang' => 'victory celebration',
+        'kalah' => 'defeat, dejected mood',
+        'cedera' => 'injury, medical concern on the field',
+        'transfer' => 'transfer signing, new club unveiling',
+        'gagal' => 'setback, disappointment',
+        'rekor' => 'record-breaking achievement',
+        'debut' => 'debut appearance',
+        'comeback' => 'dramatic comeback',
+        'gol' => 'goal-scoring moment',
+        'final' => 'championship final match atmosphere',
+        'pensiun' => 'retirement, farewell moment',
+        'skandal' => 'controversy, tense atmosphere',
+        'gabung' => 'transfer signing, new club unveiling',
+        'pindah' => 'transfer signing, new club unveiling',
+    ];
+
+    foreach ($themes as $keyword => $phrase) {
+        if (str_contains($lower, $keyword)) {
+            return $phrase;
+        }
+    }
+
+    return 'sports news moment';
+}
+
+/**
+ * Builds the final image-generation prompt for one article title —
+ * template text comes from Prompt Control (image_agent/instruction, same
+ * PromptLoader mechanism every other agent uses — see
+ * services/PromptLoader.php), entity/context extraction is pure PHP (the
+ * two functions above). Falls back to a hardcoded default template if
+ * nothing is configured yet in Prompt Control, same "never break because
+ * the DB is empty" convention as cms_ai_resolve_agent()'s own fallback.
+ *
+ * Template placeholders: {entities} and {context}, replaced via
+ * str_replace — no AI call anywhere in this function.
+ */
+function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title): string
+{
+    $defaultTemplate = 'Editorial sports photo, {entities}, {context}, realistic photojournalism style, no text overlay, no watermark, 16:9';
+
+    $template = $defaultTemplate;
+    try {
+        require_once dirname(__DIR__, 2) . '/services/PromptLoader.php';
+        $loader = new PromptLoader($pdo);
+        $configured = trim((string) ($loader->getPrompt('image_agent', 'instruction') ?? ''));
+        if ($configured !== '') {
+            $template = $configured;
+        }
+    } catch (Throwable $e) {
+        // Ignore — falls through to the hardcoded default above.
+    }
+
+    $entities = cms_growth_agent_extract_title_entities($title);
+    $entitiesText = $entities !== [] ? implode(', ', $entities) : 'sports scene';
+    $context = cms_growth_agent_extract_title_context($title);
+
+    return str_replace(['{entities}', '{context}'], [$entitiesText, $context], $template);
+}
+
+/**
+ * Main entry point for Fase F — generates ONE full draft article proposal
+ * (title + body + optional cover image) from a trending headline, logged
+ * as job_type='auto_draft_article'. Called from the Bagian 2 scheduler
+ * (cron/growth_agent_maintenance.php, gated on
+ * opportunity_thresholds_json.auto_draft_automation.enabled) — never called
+ * unconditionally, that config gate lives in the caller, not here.
+ *
+ * Pipeline, each step degrading independently (never throws):
+ *   1. Pick the next trending headline not yet used for this job_type AND
+ *      not already overlapping a published article — reuses
+ *      cms_growth_agent_get_trending_headlines_for_prompt()'s published-
+ *      overlap filter unchanged, only adds the "not already used" check on
+ *      top (scanning existing auto_draft_article jobs' input_brief.source_url
+ *      — same in-PHP dedupe-scan pattern as cms_growth_agent_scan_internal_links()'s
+ *      $existingPairs).
+ *   2. SEO-G0 Gate (unchanged function, unchanged behavior for every
+ *      existing job_type) run against the raw headline, advisory only.
+ *   3. growth_agent AI writes a full ORIGINAL article — the prompt gives
+ *      it only the headline text (never scraped body content, see this
+ *      section's own top note), same copyright boundary as
+ *      cms_growth_agent_generate_article_idea().
+ *   4. Title-vs-headline "aturan keras" check (unchanged function) against
+ *      the ONE headline actually used.
+ *   5. Cover image via image_agent — wrapped in its own try/catch,
+ *      completely independent of steps 1-4 succeeding: an image failure
+ *      (rate limit, API error, unconfigured agent) never blocks the draft
+ *      itself, it just ships without one and the failure reason rides
+ *      along in output_json.cover_image_error for the operator to see.
+ *
+ * Logged status='succeeded' (not 'manual_action') — same convention as
+ * cms_growth_agent_generate_article_idea(): this is a proposal awaiting
+ * human review, not something requiring the manual_action tier's own
+ * distinct pattern (which internal_link_suggestion uses because that
+ * approve path needs a dedicated review page, not a generic list). Shows
+ * up in Perlu Tindakan through the existing generic "succeeded, zero
+ * feedback rows" query — no new UI query needed.
+ *
+ * NEVER sets pages.status='published' anywhere in this function or the
+ * approve-adapter below it — that is Fase G, explicitly out of scope here.
+ *
+ * @return array{ok:bool,job_id:int,error:string}
+ */
+function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
+{
+    try {
+        cms_growth_agent_ensure_schema($pdo);
+        require_once __DIR__ . '/ai-helpers.php';
+
+        $candidates = cms_growth_agent_get_trending_headlines_for_prompt($pdo);
+        if ($candidates === []) {
+            return ['ok' => false, 'job_id' => 0, 'error' => 'Tidak ada headline tren yang tersedia (belum di-fetch, atau semua sudah tumpang tindih artikel published).'];
+        }
+
+        $usedUrls = [];
+        try {
+            $usedRows = $pdo->query("SELECT input_brief FROM growth_agent_jobs WHERE job_type = 'auto_draft_article'")->fetchAll();
+            foreach ($usedRows as $row) {
+                $brief = json_decode((string) $row['input_brief'], true);
+                if (is_array($brief) && !empty($brief['source_url'])) {
+                    $usedUrls[(string) $brief['source_url']] = true;
+                }
+            }
+        } catch (Throwable $e) {
+            // If this scan fails, worst case is re-proposing an already-used
+            // headline once — not worth aborting generation over.
+        }
+
+        $selected = null;
+        foreach ($candidates as $candidate) {
+            if (!isset($usedUrls[$candidate['url']])) {
+                $selected = $candidate;
+                break;
+            }
+        }
+        if ($selected === null) {
+            return ['ok' => false, 'job_id' => 0, 'error' => 'Semua headline tren yang tersedia sudah pernah dipakai untuk draft otomatis.'];
+        }
+
+        $headline = $selected['headline'];
+
+        $defaultSystemPrompt =
+            'You are the Growth Agent content strategist for Sagagoal, an Indonesian-language sports news & ' .
+            'livescore portal (football, basketball/NBA, Formula 1). You are given ONE recent news headline as ' .
+            'context/inspiration only — you do NOT have the source article\'s body text, and must NEVER attempt ' .
+            'to reconstruct or guess its specific quotes/details. Write a COMPLETE, ORIGINAL news or analysis ' .
+            'article in Bahasa Indonesia inspired by the headline\'s general topic — a real title, and a full ' .
+            'body (return as clean HTML using only <p>, <h2>, <h3>, <ul>, <li>, <strong>, <em> tags, no inline ' .
+            'styles, no markdown). If the prompt includes a section listing similar existing articles on this ' .
+            'site, take a DIFFERENT angle — do not duplicate. Your title must NOT be identical or near-identical ' .
+            'to the source headline — reword/reframe it as your own. Respond with ONLY a raw JSON object, no ' .
+            'markdown, no code fences, no commentary, in exactly this shape: {"title": "...", "body_html": "..."}';
+
+        $agent = cms_ai_resolve_agent($pdo, 'growth_agent', $defaultSystemPrompt);
+        if (!$agent['ok']) {
+            return ['ok' => false, 'job_id' => 0, 'error' => $agent['error']];
+        }
+
+        $growthContext = '';
+        try {
+            require_once dirname(__DIR__, 2) . '/services/GrowthAgentPromptBuilder.php';
+            $growthContext = trim((new GrowthAgentPromptBuilder($pdo))->buildContext('growth_agent', 'auto_draft_article'));
+        } catch (Throwable $e) {
+            // Ignore — proceeds on the agent's own system prompt.
+        }
+        $systemPrompt = $growthContext !== ''
+            ? trim($agent['system_prompt'] . "\n\n" . $growthContext)
+            : $agent['system_prompt'];
+
+        $userPromptParts = [
+            "Source headline (context/inspiration only — do NOT copy or reconstruct its content, you were not given its body text):\n" . $headline,
+        ];
+
+        // Same proactive collision-avoidance context as generate_article_idea()
+        // (§ 5) — reuses the exact same helper, same threshold config key.
+        $articleIdeaThresholds = [];
+        try {
+            require_once __DIR__ . '/gsc-api.php';
+            $articleIdeaThresholds = cms_gsc_get_opportunity_thresholds($pdo)['article_idea'] ?? [];
+        } catch (Throwable $e) {
+            // Ignore — falls through to the defaults below.
+        }
+        $minOverlap = (float) ($articleIdeaThresholds['min_overlap_threshold'] ?? 0.5);
+        $contextLimit = max(1, min(30, (int) ($articleIdeaThresholds['context_articles_limit'] ?? 8)));
+        $similarArticles = cms_growth_agent_find_similar_published_articles($pdo, $headline, $minOverlap, $contextLimit);
+        if ($similarArticles !== []) {
+            $similarLines = [];
+            foreach ($similarArticles as $similar) {
+                $desc = $similar['meta_description'] !== '' ? $similar['meta_description'] : $similar['excerpt'];
+                $similarLines[] = '- ' . $similar['title'] . ($desc !== '' ? ' | ' . $desc : '');
+            }
+            $userPromptParts[] =
+                "Existing published articles on this site already close to this topic (take a DIFFERENT angle):\n"
+                . implode("\n", $similarLines);
+        }
+
+        $userPrompt = implode("\n\n", $userPromptParts);
+
+        // SEO-G0 Gate — unchanged function/behavior, run against the raw
+        // headline (same "check the topic itself, not the AI's eventual
+        // title" reasoning as generate_article_idea()).
+        $gateResult = cms_growth_agent_seo_g0_gate($pdo, 'auto_draft_article', $headline);
+
+        $inputBrief = [
+            'source_headline' => $headline,
+            'source_url' => $selected['url'],
+            'source' => $selected['source'],
+            // Same key cms_growth_agent_seo_g0_gate()'s own cross-dedup
+            // check reads for every non-gsc_article_idea job_type — see
+            // that function's updated job_type IN() list above.
+            'missing_topic' => $headline,
+            'seo_g0_gate' => $gateResult,
+            'similar_published_articles' => array_map(
+                static fn (array $a): array => ['page_id' => $a['page_id'], 'title' => $a['title'], 'coefficient' => round($a['coefficient'], 2)],
+                $similarArticles
+            ),
+        ];
+
+        try {
+            $result = cms_ai_call_provider(
+                $agent['provider'], $agent['api_key'], $agent['model'],
+                $userPrompt, $systemPrompt, max($agent['max_tokens'], 2000), $agent['temperature']
+            );
+        } catch (Throwable $e) {
+            return ['ok' => false, 'job_id' => 0, 'error' => $e->getMessage()];
+        }
+
+        $parsed = $result['success'] ? cms_ai_extract_json($result['text']) : null;
+
+        if (!$result['success'] || !is_array($parsed) || !isset($parsed['title'], $parsed['body_html'])) {
+            $errorMessage = $result['success'] ? 'AI response was not in the expected format' : ('AI request failed: ' . $result['error']);
+            $jobId = cms_growth_agent_log_job(
+                $pdo, 'auto_draft_article', 'growth_agent', null, 'failed', $inputBrief, null,
+                $agent['model'], null, null, $result['latency_ms'] ?? null, $errorMessage, 'medium'
+            );
+            return ['ok' => false, 'job_id' => $jobId, 'error' => $errorMessage];
+        }
+
+        $title = (string) $parsed['title'];
+        $bodyHtml = (string) $parsed['body_html'];
+
+        // "Aturan keras" — checked against the ONE headline this prompt
+        // actually used, unchanged function.
+        $inputBrief['title_vs_headline_check'] = cms_growth_agent_check_title_vs_headlines($pdo, $title, [$selected]);
+
+        // Cover image — completely independent failure domain. Never lets
+        // an image problem block or fail the draft itself.
+        $coverImagePath = null;
+        $coverImageError = null;
+        try {
+            $imageAgent = cms_ai_resolve_agent($pdo, 'image_agent', '');
+            if (!$imageAgent['ok']) {
+                $coverImageError = $imageAgent['error'];
+            } else {
+                $imagePrompt = cms_growth_agent_build_cover_image_prompt($pdo, $title);
+                // Model/quality per GROWTH_AGENT_V2_PROPOSAL.md § 6: Mini,
+                // medium quality by default — flagship is far more
+                // expensive for a first-pass cover image an editor may
+                // still replace before publish.
+                $imageResult = cms_ai_call_openai_image($imageAgent['api_key'], $imageAgent['model'], $imagePrompt, 'medium');
+                if (!$imageResult['success']) {
+                    $coverImageError = $imageResult['error'];
+                } else {
+                    $coverImagePath = cms_growth_agent_save_generated_image($imageResult['b64_data']);
+                    if ($coverImagePath === null) {
+                        $coverImageError = 'Gambar berhasil digenerate tapi gagal disimpan ke disk.';
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            $coverImageError = $e->getMessage();
+        }
+
+        $output = [
+            'title' => $title,
+            'body_html' => $bodyHtml,
+            'cover_image_path' => $coverImagePath,
+            'cover_image_error' => $coverImageError,
+        ];
+
+        $jobId = cms_growth_agent_log_job(
+            $pdo, 'auto_draft_article', 'growth_agent', null, 'succeeded', $inputBrief, $output,
+            $agent['model'], null, null, $result['latency_ms'] ?? null, '', 'medium'
+        );
+
+        return ['ok' => true, 'job_id' => $jobId, 'error' => ''];
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_generate_auto_draft_article] ' . $e->getMessage());
+        return ['ok' => false, 'job_id' => 0, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Content Agent Adapter for `auto_draft_article` — same "Approve IS
+ * execute" deliberate exception as
+ * cms_growth_agent_create_article_draft_from_idea() (see that function's
+ * own docblock for why), extended for a job type that already carries a
+ * full body + optional cover image rather than just a title+outline stub.
+ * Still only ever produces a DRAFT — publish stays separate and fully
+ * manual, no code path here ever touches pages.status beyond 'draft'.
+ *
+ * @return array{ok:bool,page_id:int,error:string}
+ */
+function cms_growth_agent_create_article_draft_from_auto_draft(PDO $pdo, array $job, ?int $authorId): array
+{
+    try {
+        $output = json_decode((string) ($job['output_json'] ?? ''), true);
+        $title = is_array($output) ? trim((string) ($output['title'] ?? '')) : '';
+        $bodyHtml = is_array($output) ? trim((string) ($output['body_html'] ?? '')) : '';
+        if ($title === '' || $bodyHtml === '') {
+            return ['ok' => false, 'page_id' => 0, 'error' => 'Job output tidak berisi title/body yang valid.'];
+        }
+        $featuredImage = is_array($output) ? trim((string) ($output['cover_image_path'] ?? '')) : '';
+
+        require_once __DIR__ . '/functions.php';
+        require_once __DIR__ . '/sitemap-service.php';
+
+        $slugBase = cms_slugify($title);
+        if ($slugBase === '') {
+            $slugBase = 'draft-otomatis-' . (int) $job['id'];
+        }
+        $slug = $slugBase;
+        $dupCheck = $pdo->prepare('SELECT COUNT(*) FROM pages WHERE slug = :slug');
+        for ($suffix = 2; ; $suffix++) {
+            $dupCheck->execute(['slug' => $slug]);
+            if ((int) $dupCheck->fetchColumn() === 0) {
+                break;
+            }
+            $slug = $slugBase . '-' . $suffix;
+        }
+
+        $contentHtml = '<p><em>Draft dibuat otomatis oleh Growth Agent (Full Draft Automation, Fase F) — WAJIB dibaca dan diedit sebelum publish, jangan asumsikan semua fakta akurat (resiko halusinasi AI).</em></p>'
+            . $bodyHtml;
+
+        $payload = [
+            'title' => $title,
+            'slug' => $slug,
+            'content' => $contentHtml,
+            'featured_image' => $featuredImage !== '' ? $featuredImage : null,
+            'status' => 'draft',
+            'author_id' => $authorId,
+        ];
+
+        $insert = $pdo->prepare(
+            'INSERT INTO pages (title, slug, content, featured_image, status, author_id, created_at, updated_at)
+             VALUES (:title, :slug, :content, :featured_image, :status, :author_id, NOW(), NOW())'
+        );
+        $insert->execute($payload);
+        $pageId = (int) $pdo->lastInsertId();
+
+        try {
+            cms_sitemap_ensure_schema($pdo);
+            cms_sitemap_on_article_save($pdo, [], $payload + [
+                'page_id' => $pageId,
+                'noindex' => 0,
+                'canonical_url' => null,
+                'published_at' => null,
+            ]);
+        } catch (Throwable $e) {
+            error_log('[cms_growth_agent_create_article_draft_from_auto_draft] Sitemap upsert failed: ' . $e->getMessage());
+        }
+
+        return ['ok' => true, 'page_id' => $pageId, 'error' => ''];
+    } catch (Throwable $e) {
+        return ['ok' => false, 'page_id' => 0, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Minimal 5-field cron expression matcher (minute hour day-of-month month
+ * day-of-week) — supports `*` and comma-separated lists only (e.g.
+ * "0 6,12,18 * * *"), deliberately NOT ranges ("1-5") or step values (every N units):
+ * the one default schedule this feature ships with only needs comma-lists,
+ * and adding syntax nothing currently uses is unjustified complexity. If a
+ * future schedule genuinely needs ranges/steps, extend this function then.
+ *
+ * This does NOT run as a real OS crontab entry — cron/growth_agent_maintenance.php
+ * is the actual (and only) system cron trigger for this whole feature set,
+ * same as every other *_if_stale() step in it; this function just decides
+ * whether THIS particular invocation's current minute matches the
+ * configured schedule closely enough to be eligible to fire.
+ *
+ * Never throws — a malformed expression (wrong field count, non-numeric
+ * value) returns false rather than crashing the cron script.
+ */
+function cms_growth_agent_cron_matches(string $cronExpr, ?DateTimeImmutable $now = null): bool
+{
+    try {
+        $now = $now ?? new DateTimeImmutable('now');
+        $fields = preg_split('/\s+/', trim($cronExpr)) ?: [];
+        if (count($fields) !== 5) {
+            return false;
+        }
+
+        [$minuteExpr, $hourExpr, $domExpr, $monthExpr, $dowExpr] = $fields;
+
+        $matches = static function (string $expr, int $value): bool {
+            if ($expr === '*') {
+                return true;
+            }
+            $allowed = array_map('intval', explode(',', $expr));
+            return in_array($value, $allowed, true);
+        };
+
+        return $matches($minuteExpr, (int) $now->format('i'))
+            && $matches($hourExpr, (int) $now->format('G'))
+            && $matches($domExpr, (int) $now->format('j'))
+            && $matches($monthExpr, (int) $now->format('n'))
+            && $matches($dowExpr, (int) $now->format('w'));
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * Fase H scheduler gate for Fase F — the ONLY place
+ * cms_growth_agent_generate_auto_draft_article() is called from. Checked
+ * in this order, first failure short-circuits with no generation attempt:
+ *   1. opportunity_thresholds_json.auto_draft_automation.enabled === true
+ *      (ships false — see that config block's own note).
+ *   2. schedule_cron matches the current minute (cms_growth_agent_cron_matches()).
+ *   3. This exact minute hasn't already triggered a run (gsc_settings.
+ *      last_auto_draft_run_at) — guards against the underlying system cron
+ *      invoking this script more often than the configured schedule.
+ *
+ * Deliberately NOT wired into growth-agent.php's page load like the
+ * lighter *_if_stale() features (Trending Headlines refresh, Measurement
+ * Loop) — those are cheap reads/aggregates, this triggers a real paid AI
+ * call plus an image-generation call. Only cron/growth_agent_maintenance.php
+ * calls this, so opening the admin dashboard can never accidentally
+ * trigger billable generation.
+ *
+ * Never throws.
+ *
+ * @return array{ran:bool,reason:string,job_id:int}
+ */
+function cms_growth_agent_maybe_generate_auto_draft(PDO $pdo): array
+{
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $config = cms_gsc_get_opportunity_thresholds($pdo)['auto_draft_automation'] ?? [];
+
+        if (($config['enabled'] ?? false) !== true) {
+            return ['ran' => false, 'reason' => 'auto_draft_automation.enabled is not true', 'job_id' => 0];
+        }
+
+        $cronExpr = trim((string) ($config['schedule_cron'] ?? ''));
+        if ($cronExpr === '' || !cms_growth_agent_cron_matches($cronExpr)) {
+            return ['ran' => false, 'reason' => 'current time does not match schedule_cron', 'job_id' => 0];
+        }
+
+        $settings = cms_gsc_get_settings($pdo);
+        $lastRun = $settings['last_auto_draft_run_at'] ?? null;
+        $nowMinute = (new DateTimeImmutable('now'))->format('Y-m-d H:i');
+        if ($lastRun !== null && date('Y-m-d H:i', strtotime((string) $lastRun)) === $nowMinute) {
+            return ['ran' => false, 'reason' => 'already ran for this exact minute', 'job_id' => 0];
+        }
+
+        $pdo->prepare('UPDATE gsc_settings SET last_auto_draft_run_at = NOW() ORDER BY id ASC LIMIT 1')->execute();
+
+        $result = cms_growth_agent_generate_auto_draft_article($pdo);
+
+        return ['ran' => true, 'reason' => $result['ok'] ? 'generated' : ('generation failed: ' . $result['error']), 'job_id' => $result['job_id']];
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_maybe_generate_auto_draft] ' . $e->getMessage());
+        return ['ran' => false, 'reason' => 'exception: ' . $e->getMessage(), 'job_id' => 0];
+    }
 }

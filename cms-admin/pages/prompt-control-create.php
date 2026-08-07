@@ -36,11 +36,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $createdBy  = trim((string) ($_SESSION['cms_admin_name'] ?? 'admin'));
 
     // Validate
+    // Note: this file builds its own INSERT rather than calling
+    // PromptLoader::savePrompt() (which returns null on an invalid
+    // agent_key/prompt_type with no error detail the caller could surface)
+    // — these two checks run first specifically so a bad value always
+    // produces a clear, specific message here instead of ever reaching a
+    // silent null-return path. GROWTH_AGENT_V2_PROPOSAL.md § 6 Fase F.0
+    // flagged this — messages below made specific (which value, which
+    // keys are valid) rather than the previous generic "Invalid agent key."
     if (!in_array($agentKey, PromptLoader::ALLOWED_AGENT_KEYS, true)) {
-        $errors[] = 'Invalid agent key.';
+        $errors[] = 'Invalid agent key: "' . $agentKey . '". Must be one of: ' . implode(', ', PromptLoader::ALLOWED_AGENT_KEYS) . '.';
     }
     if (!in_array($promptType, PromptLoader::ALLOWED_PROMPT_TYPES, true)) {
-        $errors[] = 'Invalid prompt type.';
+        $errors[] = 'Invalid prompt type: "' . $promptType . '". Must be one of: ' . implode(', ', PromptLoader::ALLOWED_PROMPT_TYPES) . '.';
     }
     if ($title === '') {
         $errors[] = 'Title is required.';

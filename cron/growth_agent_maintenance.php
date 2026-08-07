@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Cron: run Growth Agent's seven maintenance/collection steps on a
+ * Cron: run Growth Agent's eight maintenance/collection steps on a
  * schedule, instead of only "lazily" whenever an admin happens to open
  * cms-admin/pages/growth-agent.php.
  *
@@ -140,6 +140,22 @@ if (($after['last_trending_headlines_refresh_at'] ?? null) !== ($before['last_tr
     echo "[growth_agent_maintenance] trending_headlines: Dicoba (data stale) tapi timestamp tidak berubah — kemungkinan semua sumber gagal diambil (situs down/struktur berubah). Cek PHP error log.\n";
 } else {
     echo "[growth_agent_maintenance] trending_headlines: Skipped — belum stale (last_trending_headlines_refresh_at: " . ($before['last_trending_headlines_refresh_at'] ?? 'null') . ").\n";
+}
+
+// ── 8. Full Draft Automation (GROWTH_AGENT_V2_PROPOSAL.md § 6, Fase F/H,
+// 8 Aug 2026) ── The ONLY trigger for
+// cms_growth_agent_generate_auto_draft_article() anywhere in this
+// codebase — deliberately not a lazy page-load call like steps 3-7 above,
+// since this one makes a real paid AI call plus an image-generation call
+// (see cms_growth_agent_maybe_generate_auto_draft()'s own docblock).
+// Ships disabled (auto_draft_automation.enabled=false) — always a clean
+// no-op until an operator turns it on from the Agent & Setelan panel.
+$autoDraftResult = cms_growth_agent_maybe_generate_auto_draft($pdo);
+if ($autoDraftResult['ran']) {
+    echo "[growth_agent_maintenance] auto_draft_article: {$autoDraftResult['reason']}"
+        . ($autoDraftResult['job_id'] > 0 ? " (job_id={$autoDraftResult['job_id']})" : '') . ".\n";
+} else {
+    echo "[growth_agent_maintenance] auto_draft_article: Skipped — {$autoDraftResult['reason']}.\n";
 }
 
 echo "[growth_agent_maintenance] Done.\n";

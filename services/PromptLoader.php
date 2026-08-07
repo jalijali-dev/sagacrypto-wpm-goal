@@ -27,6 +27,21 @@ class PromptLoader
         'seo_agent',
         'account_recovery',
         'prompt_control',
+        // Added 7 Aug 2026 (GROWTH_AGENT_V2_PROPOSAL.md § 6, Fase F.0) —
+        // growth_agent was already the agent_key almost every real
+        // content-generating function in growth-agent-service.php resolves
+        // via cms_ai_resolve_agent($pdo, 'growth_agent', ...), but it was
+        // never added to this whitelist, so PromptLoader::savePrompt()
+        // silently rejected any attempt to manage its prompt through
+        // Prompt Control — the only editable surface was
+        // ai_agent_settings.system_prompt or a hardcoded PHP fallback.
+        'growth_agent',
+        // image_agent — new key, never existed in this system before this
+        // change. Used by the Fase F draft-automation cover-image prompt
+        // template (see cms_growth_agent_build_cover_image_prompt() in
+        // growth-agent-service.php) so an operator can revise the image
+        // style/composition through Prompt Control without a deploy.
+        'image_agent',
     ];
 
     /**

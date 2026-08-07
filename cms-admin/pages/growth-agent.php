@@ -181,6 +181,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $redirect('Draft artikel berhasil dibuat — klik "Edit draft" di Job Terbaru untuk melengkapi & publish.');
         }
 
+        // Full Draft Automation (GROWTH_AGENT_V2_PROPOSAL.md § 6, Fase F,
+        // 8 Aug 2026) — same "Approve IS the execution step" exception as
+        // gsc_article_idea/topic_gap_article/keyword_expansion_topic above.
+        // ALWAYS still lands as pages.status='draft' — publish stays a
+        // fully separate, manual action; this block never sets 'published'.
+        if ($action === 'approve' && $jobRow['job_type'] === 'auto_draft_article' && empty($jobRow['page_id'])) {
+            $draftResult = cms_growth_agent_create_article_draft_from_auto_draft($pdo, $jobRow, $currentAdminId);
+
+            if (!$draftResult['ok']) {
+                $failUpd = $pdo->prepare("UPDATE growth_agent_jobs SET status = 'failed', error_message = :error, updated_at = NOW() WHERE id = :id");
+                $failUpd->execute(['error' => $draftResult['error'], 'id' => $jobId]);
+                $redirect('Gagal membuat draft artikel: ' . $draftResult['error'], 'error');
+            }
+
+            $ins = $pdo->prepare(
+                'INSERT INTO growth_agent_feedback (job_id, action, reviewed_by, created_at)
+                 VALUES (:job_id, :action, :reviewed_by, NOW())'
+            );
+            $ins->execute(['job_id' => $jobId, 'action' => 'approved_as_is', 'reviewed_by' => $currentAdminId]);
+
+            $upd = $pdo->prepare('UPDATE growth_agent_jobs SET status = :status, page_id = :page_id, updated_at = NOW() WHERE id = :id');
+            $upd->execute(['status' => 'succeeded', 'page_id' => $draftResult['page_id'], 'id' => $jobId]);
+
+            $redirect('Draft artikel otomatis berhasil dibuat — WAJIB dibaca & diedit sebelum publish, klik "Edit draft" di Job Terbaru.');
+        }
+
         // SEO Intelligence — content_conflict_proposal: approve is NEVER an
         // execution step here, "Recommendation only" guardrail — this just
         // falls through to the generic feedback+status-flip logic below,
@@ -341,6 +367,64 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $revertResult['ok'] ? 'Link internal yang di-auto-apply berhasil direvert — konten artikel dikembalikan seperti sebelum perubahan.' : 'Gagal revert: ' . $revertResult['error'],
             $revertResult['ok'] ? 'success' : 'error'
         );
+    }
+
+    // Full Draft Automation scheduler (GROWTH_AGENT_V2_PROPOSAL.md § 6,
+    // Fase H, 8 Aug 2026) — one save button for all three settings
+    // (enabled, schedule, source URLs), same "one form, one save" pattern
+    // as every other settings page in this codebase (e.g. site-settings.php)
+    // rather than three separate POST actions for three related fields.
+    if ($action === 'auto_draft_automation_save') {
+        $turnOn = !empty($_POST['enabled']);
+
+        // Hour checkboxes (0-23) translated into a cron expression —
+        // operators pick times of day, not raw cron syntax. Minute fixed
+        // at 0 (run on the hour), day-of-month/month/day-of-week always
+        // "*" — this UI only ever needs to express "which hours of every
+        // day", matching the default schedule's own shape (0 6,12,18 * * *).
+        $hours = array_values(array_unique(array_map('intval', (array) ($_POST['hours'] ?? []))));
+        $hours = array_values(array_filter($hours, static fn (int $h): bool => $h >= 0 && $h <= 23));
+        sort($hours);
+        $scheduleCron = $hours !== [] ? ('0 ' . implode(',', $hours) . ' * * *') : '0 6,12,18 * * *';
+
+        // Source URLs — one per line from the textarea, same
+        // filter_var(FILTER_VALIDATE_URL) check
+        // cms_growth_agent_fetch_trending_source() itself relies on
+        // implicitly (a malformed URL just fails to fetch cleanly there),
+        // applied here instead so the operator gets immediate feedback
+        // rather than a silent "0 headlines" later.
+        $rawUrls = preg_split('/\r\n|\r|\n/', (string) ($_POST['source_urls'] ?? '')) ?: [];
+        $sourceUrls = [];
+        $invalidUrls = [];
+        foreach ($rawUrls as $rawUrl) {
+            $rawUrl = trim($rawUrl);
+            if ($rawUrl === '') {
+                continue;
+            }
+            if (filter_var($rawUrl, FILTER_VALIDATE_URL) === false) {
+                $invalidUrls[] = $rawUrl;
+                continue;
+            }
+            $sourceUrls[] = $rawUrl;
+        }
+        if ($invalidUrls !== []) {
+            $redirect('URL tidak valid, tidak disimpan: ' . implode(', ', $invalidUrls) . '. Perbaiki dan simpan ulang.', 'error');
+        }
+        if ($sourceUrls === []) {
+            $redirect('Minimal satu URL sumber diperlukan.', 'error');
+        }
+
+        $saved = cms_gsc_set_opportunity_threshold_key($pdo, 'auto_draft_automation', [
+            'enabled' => $turnOn,
+            'schedule_cron' => $scheduleCron,
+            'source_urls' => $sourceUrls,
+        ]);
+        if (!$saved) {
+            $redirect('Gagal menyimpan pengaturan Full Draft Automation.', 'error');
+        }
+        $redirect($turnOn
+            ? 'Full Draft Automation DINYALAKAN — draft artikel otomatis akan dibuat sesuai jadwal (belum publish, tetap butuh review manual).'
+            : 'Full Draft Automation DIMATIKAN — cron tidak akan generate draft baru.');
     }
 
     // ── Technical SEO Auditor (Fase B item 3, 5 Agu 2026) — pure REPORT,
@@ -1159,7 +1243,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </td>
             <td class="jobs-table__col-time muted"><?= cms_esc((string) $job['created_at']) ?></td>
             <td class="jobs-table__col-actions table-actions">
-                <?php if ($job['job_type'] === 'gsc_article_idea' && !empty($job['page_id'])) : ?>
+                <?php if (in_array($job['job_type'], ['gsc_article_idea', 'auto_draft_article'], true) && !empty($job['page_id'])) : ?>
                     <a class="admin-btn admin-btn--sm admin-btn--secondary" href="pages.php?edit=<?= (int) $job['page_id'] ?>">Edit draft</a>
                 <?php elseif ($canReviewSeo) : ?>
                     <a class="admin-btn admin-btn--sm admin-btn--primary" href="seo-recommendation-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
@@ -1844,6 +1928,67 @@ require dirname(__DIR__) . '/includes/alerts.php';
     </div>
 
     <div class="ga-page-tab-panel" data-ga-page-tab="settings">
+    <?php
+    // ── Full Draft Automation scheduler (GROWTH_AGENT_V2_PROPOSAL.md § 6,
+    // Fase H, 8 Aug 2026) — read-only-until-submitted panel state. Ships
+    // OFF (see cron/growth_agent_maintenance.php's own step 8 note) — an
+    // operator turns this on only once Fase F's draft quality has been
+    // manually reviewed for a while.
+    $autoDraftConfig = cms_gsc_get_opportunity_thresholds($pdo)['auto_draft_automation'] ?? [];
+    $autoDraftEnabled = ($autoDraftConfig['enabled'] ?? false) === true;
+    $autoDraftScheduleCron = (string) ($autoDraftConfig['schedule_cron'] ?? '0 6,12,18 * * *');
+    $autoDraftSelectedHours = [];
+    if (preg_match('/^\S+\s+(\S+)\s/', $autoDraftScheduleCron, $cronMatch)) {
+        $autoDraftSelectedHours = array_map('intval', explode(',', $cronMatch[1]));
+    }
+    $autoDraftSourceUrls = is_array($autoDraftConfig['source_urls'] ?? null) ? $autoDraftConfig['source_urls'] : [];
+    ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Full Draft Automation — Jadwal &amp; Sumber</h3>
+            <span class="pill pill--<?= $autoDraftEnabled ? 'ok' : 'muted' ?>"><?= $autoDraftEnabled ? 'AKTIF' : 'NONAKTIF' ?></span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Kalau dinyalakan, sesuai jadwal di bawah, sistem otomatis ambil headline tren, generate draft artikel
+            lengkap (judul + isi + gambar cover) lewat AI, dan masukkan ke "Job Terbaru" sebagai
+            <code>auto_draft_article</code> — status "draft siap review" di tab Perlu Tindakan.
+            <strong>TIDAK ADA auto-publish</strong> — setiap draft wajib dibuka, dibaca, diedit kalau perlu, baru
+            di-publish manual oleh editor.
+        </p>
+        <form method="post" action="<?= cms_esc($selfUrl) ?>" class="form-stack" style="padding:0 20px 20px;">
+            <?= cms_csrf_field() ?>
+            <input type="hidden" name="action" value="auto_draft_automation_save">
+
+            <label class="field" style="display:flex;align-items:center;gap:8px;flex-direction:row;">
+                <input type="checkbox" name="enabled" value="1" <?= $autoDraftEnabled ? 'checked' : '' ?>>
+                <span>Nyalakan Full Draft Automation</span>
+            </label>
+
+            <div class="field">
+                <span>Jadwal (jam berapa saja per hari, WIB/server time)</span>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+                    <?php for ($h = 0; $h < 24; $h++) : ?>
+                        <label style="display:flex;align-items:center;gap:4px;font-size:12px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;">
+                            <input type="checkbox" name="hours[]" value="<?= $h ?>" <?= in_array($h, $autoDraftSelectedHours, true) ? 'checked' : '' ?>>
+                            <?= sprintf('%02d', $h) ?>
+                        </label>
+                    <?php endfor; ?>
+                </div>
+                <small class="muted">Cron aktif saat ini: <code><?= cms_esc($autoDraftScheduleCron) ?></code></small>
+            </div>
+
+            <label class="field">
+                <span>Daftar URL sumber (satu per baris)</span>
+                <textarea name="source_urls" rows="4" style="width:100%;font-family:monospace;font-size:12px;"><?= cms_esc(implode("\n", $autoDraftSourceUrls)) ?></textarea>
+                <small class="muted">Sama seperti Trending Headlines — sistem coba RSS dulu (<code>/rss</code>, <code>/feed</code>), fallback scraping HTML generik kalau tidak ada.</small>
+            </label>
+
+            <div class="toolbar__right">
+                <button type="submit" class="admin-btn admin-btn--primary">Simpan Pengaturan</button>
+            </div>
+        </form>
+    </div>
+
     <?php if ($gscConnected) : ?>
     <div class="panel">
         <div class="panel__head">

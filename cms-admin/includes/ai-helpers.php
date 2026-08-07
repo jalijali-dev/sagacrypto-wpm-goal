@@ -303,6 +303,78 @@ function cms_ai_call_openai(
 }
 
 /**
+ * OpenAI Images API (GROWTH_AGENT_V2_PROPOSAL.md § 6, Fase F, 8 Aug 2026) —
+ * the first image-generation call anywhere in this codebase. Separate
+ * endpoint from cms_ai_call_openai() (chat/completions) — images/generations
+ * has a different request/response shape entirely, so this is a dedicated
+ * function rather than a branch inside the text one.
+ *
+ * gpt-image-1 (and the -mini variant) only ever returns base64-encoded
+ * image bytes (b64_json) — there is no url response_format option for this
+ * model family, unlike the older DALL-E API. Caller is responsible for
+ * decoding and persisting the bytes (see
+ * cms_growth_agent_save_generated_image() in growth-agent-service.php) —
+ * this function only talks to the API.
+ *
+ * @return array{success:bool,b64_data:string,http_status:int,latency_ms:int,error:string}
+ */
+function cms_ai_call_openai_image(
+    string $apiKey,
+    string $model,
+    string $prompt,
+    string $quality = 'medium',
+    string $size = '1536x1024'
+): array {
+    $start = (int) round(microtime(true) * 1000);
+
+    $body = [
+        'model' => $model,
+        'prompt' => $prompt,
+        'quality' => $quality,
+        'size' => $size,
+        'n' => 1,
+    ];
+
+    $ch = curl_init('https://api.openai.com/v1/images/generations');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $apiKey,
+        ],
+        CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE),
+        // Image generation is far slower than a chat completion — same
+        // "this endpoint genuinely needs longer" reasoning as PageSpeed
+        // Insights elsewhere in this codebase (gsc-api.php).
+        CURLOPT_TIMEOUT => 90,
+    ]);
+    $response = curl_exec($ch);
+    $httpStatus = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    $latency = (int) round(microtime(true) * 1000) - $start;
+
+    if ($response === false) {
+        return ['success' => false, 'b64_data' => '', 'http_status' => 0, 'latency_ms' => $latency, 'error' => $curlError ?: 'cURL request failed.'];
+    }
+
+    $decoded = json_decode($response, true);
+    if ($httpStatus < 200 || $httpStatus >= 300) {
+        $errMsg = is_array($decoded) ? ($decoded['error']['message'] ?? $response) : $response;
+        return ['success' => false, 'b64_data' => '', 'http_status' => $httpStatus, 'latency_ms' => $latency, 'error' => (string) $errMsg];
+    }
+
+    $b64 = (string) ($decoded['data'][0]['b64_json'] ?? '');
+    if ($b64 === '') {
+        return ['success' => false, 'b64_data' => '', 'http_status' => $httpStatus, 'latency_ms' => $latency, 'error' => 'Response did not include image data.'];
+    }
+
+    return ['success' => true, 'b64_data' => $b64, 'http_status' => $httpStatus, 'latency_ms' => $latency, 'error' => ''];
+}
+
+/**
  * Dispatch to the right provider call based on a provider string.
  */
 function cms_ai_call_provider(

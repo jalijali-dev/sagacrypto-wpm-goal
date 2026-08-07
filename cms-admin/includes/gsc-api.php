@@ -69,6 +69,14 @@ if (!function_exists('cms_gsc_ensure_schema')) {
         // cms_growth_agent_refresh_trending_headlines_if_stale() in
         // growth-agent-service.php.
         cms_ensure_column($pdo, 'gsc_settings', 'last_trending_headlines_refresh_at', 'TIMESTAMP NULL DEFAULT NULL AFTER `last_performance_snapshot_at`');
+        // Full Draft Automation scheduler (GROWTH_AGENT_V2_PROPOSAL.md § 6,
+        // Fase H, 8 Aug 2026) — records the last MINUTE a scheduled draft
+        // generation actually ran, so the cron step (which may itself be
+        // invoked more often than the configured schedule) never fires
+        // twice for the same matching minute. See
+        // cms_growth_agent_maybe_generate_auto_draft() in
+        // growth-agent-service.php.
+        cms_ensure_column($pdo, 'gsc_settings', 'last_auto_draft_run_at', 'TIMESTAMP NULL DEFAULT NULL AFTER `last_trending_headlines_refresh_at`');
 
         cms_ensure_table(
             $pdo,
@@ -1356,6 +1364,38 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                 // trailing 7 days — see
                 // cms_growth_agent_autonomous_maybe_apply_internal_link().
                 'weekly_limit' => 3,
+            ],
+
+            // Full Draft Automation scheduler (GROWTH_AGENT_V2_PROPOSAL.md
+            // § 6, Fase H, 8 Aug 2026) — gates
+            // cms_growth_agent_generate_auto_draft_article() (Fase F) being
+            // called at all from cron/growth_agent_maintenance.php. Ships
+            // OFF (same reasoning as autonomous_mode above: no track record
+            // yet to justify running unattended) and with zero configured
+            // schedule until an operator sets one via the Agent & Setelan
+            // panel — see that panel's own POST handler in growth-agent.php.
+            'auto_draft_automation' => [
+                'enabled' => false,
+                // Standard 5-field cron expression, evaluated by the cron
+                // step itself (not a real system crontab entry — this repo
+                // already runs everything through ONE actual cron trigger,
+                // cron/growth_agent_maintenance.php, same as every other
+                // *_if_stale() feature; this string just decides which of
+                // that script's invocations are eligible to actually
+                // generate a draft). Default: 3x/day (06:00, 12:00, 18:00).
+                'schedule_cron' => '0 6,12,18 * * *',
+                // Same reasoning as trending_headlines.sources above — a
+                // configurable list, not one hardcoded site. Deliberately a
+                // SEPARATE list from trending_headlines.sources (not
+                // reused as-is) — an operator may want draft-automation to
+                // pull from a narrower/different set of sources than the
+                // general trending-headlines context feed, even though
+                // both go through the same fetcher
+                // (cms_growth_agent_fetch_trending_source()).
+                'source_urls' => [
+                    'https://www.detik.com/tag/sepak-bola',
+                    'https://www.cnnindonesia.com/olahraga',
+                ],
             ],
         ];
     }
