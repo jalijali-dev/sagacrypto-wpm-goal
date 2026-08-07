@@ -249,6 +249,17 @@ function cms_asset_url(string $relativePath): string
 }
 
 /**
+ * Absolute URL to the cms-admin/ root itself (unlike BASE_URL, which
+ * intentionally points to the project root for asset/upload resolution —
+ * see config/app.php). Used anywhere we need a link INTO the admin panel
+ * from outside a browser session (e.g. Telegram digest, webhook payloads).
+ */
+function cms_admin_base_url(): string
+{
+    return rtrim(BASE_URL, '/') . '/cms-admin/';
+}
+
+/**
  * Prefix that reaches the public front-end (project root) from wherever the
  * current admin script lives.
  *

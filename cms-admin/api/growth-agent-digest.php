@@ -152,7 +152,7 @@ $contentConflictsOpen = $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_age
 // ── last analysis — identical query to $lastAnalysisAt on growth-agent.php.
 $lastAnalysisAt = $safeScalar($pdo, 'SELECT MAX(created_at) AS m FROM growth_agent_jobs', 'm');
 
-$adminUrl = rtrim(BASE_URL, '/') . '/pages/growth-agent.php';
+$adminUrl = cms_admin_base_url() . 'pages/growth-agent.php';
 
 $summaryLines = [
     '📊 Digest Growth Agent Sagagoal',

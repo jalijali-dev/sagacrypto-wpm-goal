@@ -2408,7 +2408,7 @@ function cms_growth_agent_autonomous_notify(PDO $pdo, int $jobId): void
         $targetTitle = is_array($brief) ? (string) ($brief['target_title'] ?? '') : '';
         $anchorText = is_array($brief) ? (string) ($brief['anchor_text'] ?? '') : '';
 
-        $adminUrl = rtrim(BASE_URL, '/') . '/pages/growth-agent.php';
+        $adminUrl = cms_admin_base_url() . 'pages/growth-agent.php';
         $text = "🤖 Internal link diterapkan otomatis\n"
             . 'Artikel: ' . (string) $job['title'] . "\n"
             . 'Anchor: "' . $anchorText . '" → ' . $targetTitle . "\n"
