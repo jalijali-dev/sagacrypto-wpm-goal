@@ -201,9 +201,10 @@ function cms_action_href(string $actionFilename): string
  * Prefix to reach cms-admin/api/*.php (AI content-generation endpoints)
  * from the current script. Same topology-agnostic pattern as
  * cms_action_href() — detected from the on-disk script location, so it
- * resolves correctly whether cms-admin/ is nested under a project root
- * (local dev) or served as its own (sub)domain's document root
- * (production, e.g. wpm.sagagoal.com).
+ * resolves correctly regardless of hosting topology (nested path under
+ * the main domain, e.g. sagagoal.com/cms-admin/ — current production
+ * setup since 7 Aug 2026 — or the older split-subdomain setup this
+ * project used before that, e.g. wpm.sagagoal.com).
  */
 function cms_api_href(string $apiFilename): string
 {
@@ -237,9 +238,11 @@ function cms_asset_url(string $relativePath): string
 {
     // Relative to the current script (not SCRIPT_NAME string-matching), so this
     // works whether cms-admin/ is served as a nested folder (local dev, e.g.
-    // domain.test/cms-admin/pages/x.php) OR as the document root of its own
-    // (sub)domain (production, e.g. wpm.sagagoal.com/pages/x.php) — both
-    // cases are detected purely from the on-disk script location.
+    // domain.test/cms-admin/pages/x.php, OR production since 7 Aug 2026, e.g.
+    // sagagoal.com/cms-admin/pages/x.php) OR as the document root of its own
+    // (sub)domain (the older production setup this project used before that,
+    // e.g. wpm.sagagoal.com/pages/x.php) — both cases are detected purely
+    // from the on-disk script location.
     $relativePath = ltrim($relativePath, '/');
     $prefix = cms_is_pages_subdirectory() ? '../assets/' : 'assets/';
     return $prefix . $relativePath;
@@ -249,13 +252,18 @@ function cms_asset_url(string $relativePath): string
  * Prefix that reaches the public front-end (project root) from wherever the
  * current admin script lives.
  *
- * - Local dev (cms-admin/ nested under the project root, same host): a plain
- *   relative "../" (or "../../" from pages/) is enough.
- * - Production (wpm.sagagoal.com's document root pointed straight at
- *   cms-admin/, so the public site is a *different* host entirely — a
- *   relative path can never reach it): build an absolute URL by stripping
- *   the "wpm." prefix off the current host, e.g.
- *   wpm.sagagoal.com -> sagagoal.com.
+ * - Local dev, and production since 7 Aug 2026 (cms-admin/ nested under
+ *   the project root / main domain, same host — e.g.
+ *   sagagoal.com/cms-admin/pages/x.php): a plain relative "../" (or
+ *   "../../" from pages/) is enough.
+ * - The older production setup this project used before 7 Aug 2026
+ *   (wpm.sagagoal.com's document root pointed straight at cms-admin/,
+ *   so the public site was a *different* host entirely — a relative
+ *   path could never reach it): build an absolute URL by stripping the
+ *   "wpm." prefix off the current host, e.g. wpm.sagagoal.com ->
+ *   sagagoal.com. Kept as a fallback branch below in case that DNS/vhost
+ *   setup is ever reintroduced — harmless no-op under the current
+ *   nested-path topology since HTTP_HOST no longer starts with "wpm.".
  */
 function cms_public_base_prefix(): string
 {

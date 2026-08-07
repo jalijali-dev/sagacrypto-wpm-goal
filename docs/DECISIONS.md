@@ -69,6 +69,22 @@ wajib, bukan cuma konvensi tersirat.
 **Alternatif yang dipertimbangkan:** Pakai `BASE_URL` langsung — sudah
 dicoba (itu penyebab bug-nya), terbukti salah untuk topologi split-subdomain.
 
+> ⚠️ **Update topologi 7 Agu 2026:** subdomain admin `wpm.sagagoal.com`
+> sudah **tidak dipakai lagi** — admin sekarang diakses lewat path di
+> domain utama, `https://sagagoal.com/cms-admin/`. Ini bukan lagi
+> split-subdomain (dua host HTTP berbeda), tapi nested-path di host yang
+> sama — persis topologi "local dev" yang disebut di kode
+> `cms_public_base_prefix()`. Keputusan wajib pakai
+> `cms_public_base_prefix()` di atas **tetap berlaku dan tetap aman**
+> (fungsinya deteksi otomatis dari `HTTP_HOST`/lokasi file, self-healing
+> ke topologi baru tanpa perlu ubah kode). Yang **wajib dicek manual** di
+> `config/app.php` production: konstanta `BASE_URL` harus
+> `https://sagagoal.com/cms-admin` (bukan cuma `https://sagagoal.com`)
+> — kalau lupa diupdate, field `admin_url` di endpoint
+> `growth-agent-digest.php` (dipakai notifikasi Telegram) jadi kepotong
+> gak ada `/cms-admin/`-nya, link di Telegram 404. Ketauan &
+> diperbaiki 7 Agu 2026.
+
 ---
 
 ## 2026-07-13 — Migrasi SQL formal (`cms-admin/migrations/`) sebagai pelengkap, bukan pengganti, auto-migration PHP

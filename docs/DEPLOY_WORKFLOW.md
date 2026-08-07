@@ -30,9 +30,22 @@ repo, dan domain dikonfirmasi ulang 28 Jul 2026):
   ├── repositories/sagacrypto-wpm-goal/   ← working copy git, di LUAR public_html, aman
   └── public_html/                         ← docroot utama (sagagoal.com)
        ├── index.php, artikel.php, dst   ← FRONTEND, cp langsung ke sini
-       └── cms-admin/                     ← docroot ADMIN (wpm.sagagoal.com)
+       └── cms-admin/                     ← ADMIN, diakses lewat sagagoal.com/cms-admin/
             ├── pages/, assets/, includes/, dst
 ```
+
+> ⚠️ **Update 7 Agu 2026 — domain admin ganti, struktur folder TIDAK
+> berubah:** subdomain `wpm.sagagoal.com` yang dulu dipakai buat admin
+> sudah pensiun. Admin sekarang diakses lewat path di domain utama:
+> **`https://sagagoal.com/cms-admin/`**. Ini murni perubahan
+> DNS/vhost — struktur `cp` di bawah (§ 3) **sama sekali tidak berubah**,
+> `cms-admin/` tetap di-`cp` ke `~/public_html/cms-admin/` seperti biasa.
+> Yang WAJIB dicek manual sekali di server: konstanta `BASE_URL` di
+> `~/public_html/cms-admin/config/app.php` harus
+> `https://sagagoal.com/cms-admin` (bukan `https://sagagoal.com` polos)
+> — kalau salah, link balik ke admin di notifikasi Telegram (lewat
+> `growth-agent-digest.php`) jadi 404. Detail insiden & perbaikannya di
+> `docs/DECISIONS.md` entri 2026-07-15 (update).
 
 Jadi:
 

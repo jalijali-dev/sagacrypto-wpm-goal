@@ -302,8 +302,9 @@ require dirname(__DIR__) . '/includes/alerts.php';
   // Must match the base app_asset_preview_url() used server-side for the
   // initial <img src> (cms_public_base_prefix() when available) — otherwise
   // this script clobbers a correct preview with a stale BASE_URL-based one
-  // that 404s under the split-subdomain topology (wpm.sagagoal.com admin
-  // vs sagagoal.com frontend).
+  // that 404s under the older split-subdomain topology this project used
+  // before 7 Aug 2026 (wpm.sagagoal.com admin vs sagagoal.com frontend —
+  // admin now lives at sagagoal.com/cms-admin/, same host as frontend).
   var cmsBaseUrl = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : BASE_URL, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?>;
   function previewUrl(path) {
     path = (path || '').trim();

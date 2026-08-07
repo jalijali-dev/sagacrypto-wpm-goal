@@ -227,9 +227,11 @@ require dirname(__DIR__) . '/includes/alerts.php';
   // app_asset_preview_url() (cms_public_base_prefix() when available) —
   // must match exactly, otherwise this script overwrites a correct
   // server-rendered preview with a stale BASE_URL-based one that 404s
-  // under the split-subdomain topology (wpm.sagagoal.com admin vs
-  // sagagoal.com frontend), which is what silently hid the logo/favicon
-  // preview in production while local dev (single-domain) looked fine.
+  // under the older split-subdomain topology this project used before
+  // 7 Aug 2026 (wpm.sagagoal.com admin vs sagagoal.com frontend — admin
+  // now lives at sagagoal.com/cms-admin/, same host as frontend), which
+  // is what silently hid the logo/favicon preview in production while
+  // local dev (single-domain) looked fine.
   var cmsBaseUrl = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : BASE_URL, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?>;
   function previewUrl(path) {
     path = (path || '').trim();
