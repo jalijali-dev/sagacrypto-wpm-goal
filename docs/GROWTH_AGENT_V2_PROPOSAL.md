@@ -650,6 +650,145 @@ Diurutkan dari yang paling fundamental:
 
 ---
 
+## 5. Peningkatan tambahan (di luar Fase A-E) — ✅ KODE SELESAI 6 Agu 2026, belum di-deploy
+
+Fase A-E (§ 3) semuanya udah selesai per 6 Agu 2026. Item di bawah ini
+bukan fase baru — perbaikan kualitas ke fitur yang udah ada, dipicu
+diskusi user dengan referensi eksternal (bukan project sibling, bukan
+"Val's Cake" — ide dari sumber lain, ditinjau ulang biar cocok sama
+arsitektur Sagagoal).
+
+- **Article Idea — proaktif hindarin tabrakan judul.** Ide awal: "agent
+  draft proposal" yang analisis artikel published dulu sebelum ngajuin
+  judul, biar gak tabrakan. Setelah ditinjau: ini **bukan agent/modul
+  baru**, dan Keyword Expansion Agent (§ Fase B) sudah lebih dulu
+  ngelakuin ini — dia kirim 50 artikel published terbaru ke prompt AI-nya
+  biar gak tabrakan topik. Yang **belum** kelakuan itu adalah
+  `cms_growth_agent_generate_article_idea()` (job_type `gsc_article_idea`
+  — sumber ide artikel yang paling sering kepake, dari GSC opportunity
+  gap) — flow ini generate judul **buta**, cuma dikasih tau query +
+  impression + posisi, gak tau artikel yang udah published. SEO-G0 Gate
+  baru ngecek SETELAH AI generate, sebagai peringatan doang (§ Fase A),
+  bukan mempengaruhi generation-nya.
+
+  **Desain (keputusan user 6 Agu 2026):** beda dari Keyword Expansion
+  yang kirim 50 artikel terbaru (relevan buat dia karena nganalisis niche
+  secara luas), `generate_article_idea()` targetnya SATU query spesifik —
+  jadi reuse `cms_growth_agent_g0_tokenize()`/`cms_growth_agent_g0_overlap()`
+  (punya SEO-G0 Gate, bukan tokenizer baru) buat nyari artikel published
+  yang **paling mirip topiknya** ke query yang diproses, bukan sekadar
+  artikel terbaru. Kalau ada yang overlap di atas ambang, judul +
+  ringkasannya dikirim ke prompt AI dengan instruksi eksplisit: usulin
+  angle/judul yang beda, bukan yang sama. Kalau topiknya beneran baru
+  (nol artikel overlap), gak ada konteks tambahan dikirim — prompt tetap
+  ringan.
+
+  Config baru (nama key belum final, devs yang tentuin sesuai konvensi
+  `opportunity_thresholds_json`): `context_articles_limit` (default kecil,
+  5-10 — jauh lebih kecil dari 50 punya Keyword Expansion karena
+  per-query bukan per-niche) dan `min_overlap_threshold`.
+
+  **SEO-G0 Gate TETAP jalan setelahnya, gak dihapus** — jaring pengaman
+  kedua kalau AI tetep kepeleset meski udah dikasih konteks. Nol menu/UI
+  baru — hasilnya tetap masuk ke panel "Job Terbaru" yang sudah ada,
+  cuma kualitas judul yang diusulin yang membaik.
+
+  **⬆️ Digabung 6 Agu 2026 dengan item kedua di bawah** — konteks yang
+  dikirim ke prompt sekarang dua sumber: artikel Sagagoal sendiri (buat
+  cegah tabrakan) + headline berita tren eksternal (buat AI dapet
+  gambaran kejadian terkini).
+
+- **Sinyal Tren Berita — headline eksternal jadi konteks/inspirasi, bukan
+  disalin.** Dipicu pertanyaan user: bisa gak ambil data berita olahraga
+  terbaru dari luar? **Jawaban: bisa, TAPI bukan buat republish/copy-paste**
+  — itu dua masalah (hak cipta konten bukan milik kita, dan Google
+  menghukum duplicate content, situs bisa turun ranking bukan naik).
+  Yang dipakai cuma **judul + ringkasan headline** sebagai sinyal/inspirasi
+  ke prompt AI — AI tetap nulis 100% orisinal.
+
+  Dicoba fetch langsung ke `sport.detik.com` (6 Agu 2026) — berhasil,
+  struktur halamannya punya section "News Feed" yang jelas (judul + link
+  + waktu publish per item), gampang di-parsing. Tapi ini **scraping HTML,
+  bukan RSS resmi** — lebih rapuh dari RSS (bisa rusak kalau situs sumber
+  ganti desain), dipakai karena RSS resmi susah diverifikasi cepat (URL
+  yang ditemukan dari referensi lama, belum tentu masih hidup).
+
+  **Keputusan user: sumbernya harus bisa diatur banyak (daftar URL), gak
+  boleh di-hardcode ke satu situs (detik.com) doang.** Desain: config baru
+  `trending_sources` (array URL) di `opportunity_thresholds_json`, admin
+  bisa nambah/kurang sumber tanpa ubah kode. Fetcher coba RSS dulu (path
+  umum `/rss`/`/feed`, lebih stabil) per sumber, fallback ke scraping HTML
+  generik (DOMDocument, cari link berpola artikel — teks panjang, di area
+  konten utama, bukan navigasi/footer) kalau RSS gak ketemu. **Bukan janji
+  "URL apa aja pasti kebaca otomatis"** — realistanya beda situs beda
+  struktur, mulai dari 2-3 sumber yang strukturnya udah diverifikasi
+  (detik.com/sport confirmed 6 Agu 2026), desainnya dibikin gampang nambah
+  situs baru belakangan.
+
+  Tabel baru `growth_agent_technical_audits`-style (`growth_agent_trending_headlines`
+  — `headline`, `source`, `url`, `published_at`, `fetched_at`, `dedupe_hash`),
+  di-refresh berkala (pola `*_if_stale()`, bukan fetch live tiap generate)
+  lewat lazy call `growth-agent.php` + step baru `cron/growth_agent_maintenance.php`.
+  Sebelum masuk prompt, headline difilter — yang topiknya udah overlap ke
+  artikel published dibuang (reuse fungsi overlap yang sama), biar gak
+  nyaranin topik yang padahal udah pernah ditulis.
+
+  Alur setelahnya TIDAK BERUBAH: tetap lewat SEO-G0 Gate → job
+  `gsc_article_idea`/`keyword_expansion_topic` → Action Queue → approve
+  → draft. Nol job/agent baru — ini pengayaan konteks ke flow yang udah
+  ada, bukan modul baru.
+
+  **⚠️ Aturan keras tambahan (ditekankan ulang user 6 Agu 2026): judul
+  yang diusulin AI TIDAK BOLEH sama persis/nyaris identik sama headline
+  sumber — wajib ada poles/parafrase.** Ini bukan cuma soal "jangan
+  disalin isi artikelnya" (§ di atas), tapi soal judul-nya sendiri:
+  headline media itu juga karya (judul bisa dianggap bagian dari
+  ciptaannya), judul kembar/nyaris kembar tetap beresiko hak cipta &
+  keliatan gak orisinal di mata Google. Instruksi prompt-nya harus
+  eksplisit nyuruh AI reword/parafrase, bukan cuma "boleh terinspirasi".
+  Kalau devs sempat, ada baiknya ditambah pengecekan otomatis: kalau
+  judul hasil AI overlap-nya terlalu tinggi (reuse `g0_overlap()` lagi,
+  kali ini bandingin ke headline sumber bukan artikel Sagagoal) —
+  tandain/tolak, jangan lolos diam-diam ke Action Queue.
+
+  **✅ Implementasi selesai 6 Agu 2026.** Ringkasan teknis:
+  - Bagian 1: `cms_growth_agent_find_similar_published_articles()` (reuse
+    `g0_tokenize()`/`g0_overlap()` tanpa modifikasi), wired sebelum prompt
+    dibangun. Config `article_idea.min_overlap_threshold` (0.5),
+    `context_articles_limit` (8). `seo_g0_gate()` di baris asli **byte-for-byte
+    gak berubah** (diverifikasi diff).
+  - Bagian 2: tabel `growth_agent_trending_headlines` — sengaja **lebih
+    konservatif dari brief**: cuma simpen `headline`/`source`/`url`/
+    `published_at`/`fetched_at`/`dedupe_hash`, nol kolom ringkasan/isi
+    sama sekali (brief sendiri masih ngebolehin "judul + ringkasan
+    pendek"). Fetcher coba `{source}/rss` → `{source}/feed`, fallback
+    scraper generik.
+  - **Koreksi temuan devs terhadap asumsi dokumen ini:** `sport.detik.com/rss`
+    ternyata **beneran ada dan jalan bersih** — asumsi dokumen ini
+    ("kemungkinan perlu HTML-scraping") itu keliru, gak pernah dicek
+    RSS-nya dulu sebelum nulis brief. Sumber ke-2 yang diverifikasi:
+    `cnnindonesia.com/olahraga` (juga RSS, bukan `detik.com` yang kedua
+    seperti draft awal). Kedua sumber default gak pernah kepake jalur
+    fallback scraping HTML sama sekali.
+  - Bug nyata ketemu & dibenerin: `DOMNode::$textContent` PHP nggabungin
+    node bersebelahan tanpa spasi, hasilnya headline rusak kayak
+    `"07 Agu 2026 07:51Manchester United..."` — dibenerin pakai text
+    extractor custom yang nyisipin spasi antar node.
+  - Aturan keras judul: `cms_growth_agent_check_title_vs_headlines()`
+    ngecek ulang judul hasil AI cuma ke headline yang MEMANG ditampilin
+    di prompt itu (bukan semua headline di DB) — flag di `input_brief`,
+    gak nge-blok, muncul di UI Job Terbaru persis pola badge SEO-G0.
+  - **Deviasi disengaja dari brief:** konteks tren berita gak dimasukin
+    ke prompt Keyword Expansion — brief sendiri nulis itu opsional
+    ("boleh juga"), scope dipersempit ke yang wajib doang.
+  - Belum bisa dites end-to-end pakai AI sungguhan (kredensial lokal
+    dikosongkan by design) — dikonfirmasi gate kredensial gagal bersih
+    sebelum nyentuh kode baru, dan tiap fungsi baru diverifikasi terpisah
+    pakai data nyata. Data test (30 headline hasil fetch + timestamp)
+    udah dibersihkan.
+
+---
+
 ## Aturan pakai dokumen ini
 
 Begitu satu fase/item dari sini mulai dikerjakan beneran (bukan cuma

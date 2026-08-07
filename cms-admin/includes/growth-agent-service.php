@@ -159,6 +159,35 @@ function cms_growth_agent_ensure_schema(PDO $pdo): void
     // Autonomous Mode (GROWTH_AGENT_V2_PROPOSAL.md § Fase E, 6 Aug 2026) —
     // see cms_growth_agent_ensure_autonomous_schema()'s own docblock.
     cms_growth_agent_ensure_autonomous_schema($pdo);
+
+    // Trending Headlines (GROWTH_AGENT_V2_PROPOSAL.md § 5, 6 Aug 2026) —
+    // headline + link + publish time ONLY, one row per external article,
+    // fed into the Article Idea prompt as inspiration/context (see
+    // cms_growth_agent_get_trending_headlines_for_prompt()). Deliberately
+    // NOT storing full article body anywhere — copyright risk the proposal
+    // doc is explicit about; the fetcher itself
+    // (cms_growth_agent_fetch_trending_source()) never even parses full
+    // article content, only feed/listing-page metadata.
+    //
+    // dedupe_hash = md5(url) — a source's RSS/listing page is re-fetched on
+    // every refresh, so the same headline would otherwise be inserted again
+    // each time; the URL is the one field guaranteed both present and
+    // stable per external article. UNIQUE + upsert-by-hash (see that
+    // fetcher's own INSERT ... ON DUPLICATE KEY UPDATE) means a
+    // re-fetched headline just refreshes fetched_at, never duplicates.
+    cms_ensure_table(
+        $pdo,
+        'growth_agent_trending_headlines',
+        "id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+         headline VARCHAR(500) NOT NULL,
+         source VARCHAR(255) NOT NULL COMMENT 'the configured source URL this came from, e.g. https://sport.detik.com',
+         url VARCHAR(500) NOT NULL,
+         published_at DATETIME DEFAULT NULL COMMENT 'NULL if the source did not expose a parseable timestamp',
+         fetched_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+         dedupe_hash CHAR(32) NOT NULL,
+         UNIQUE KEY uniq_gath_dedupe (dedupe_hash),
+         KEY idx_gath_fetched (fetched_at)"
+    );
 }
 
 /**
@@ -947,6 +976,542 @@ function cms_growth_agent_seo_g0_gate(PDO $pdo, string $jobType, string $topicTe
     }
 
     return ['warnings' => $warnings];
+}
+
+/**
+ * Article Idea — proactive collision avoidance (GROWTH_AGENT_V2_PROPOSAL.md
+ * § 5, 6 Aug 2026). Finds the published articles most topically similar to
+ * $topicText, reusing the exact same cms_growth_agent_g0_tokenize()/
+ * cms_growth_agent_g0_overlap() the SEO-G0 Gate uses — no new tokenizer, no
+ * new similarity metric. Used by cms_growth_agent_generate_article_idea()
+ * to decide what (if anything) to tell the AI about already-published
+ * coverage BEFORE it writes a title, unlike the gate above which only
+ * checks AFTER.
+ *
+ * Full-table scan over `pages` + PHP-side scoring — identical approach to
+ * cms_growth_agent_seo_g0_gate()'s own check B, not a smarter DB-level
+ * pre-filter, for the same reason: token overlap can't be expressed as a
+ * SQL WHERE clause without duplicating the tokenizer in SQL.
+ *
+ * Never throws — returns [] on any failure, so a broken query never blocks
+ * article-idea generation, it just proceeds with no context (same as if
+ * every article scored below threshold).
+ *
+ * @return list<array{page_id:int,title:string,meta_description:string,excerpt:string,coefficient:float}>
+ *         ordered by coefficient descending, capped at $limit.
+ */
+function cms_growth_agent_find_similar_published_articles(PDO $pdo, string $topicText, float $minOverlap, int $limit): array
+{
+    try {
+        $topicTokens = cms_growth_agent_g0_tokenize($topicText);
+        if ($topicTokens === []) {
+            return [];
+        }
+
+        $pages = $pdo->query("SELECT page_id, title, meta_description, excerpt FROM pages WHERE status = 'published'")->fetchAll();
+
+        $scored = [];
+        foreach ($pages as $page) {
+            $overlap = cms_growth_agent_g0_overlap($topicTokens, cms_growth_agent_g0_tokenize((string) $page['title']));
+            if ($overlap['coefficient'] >= $minOverlap) {
+                $scored[] = [
+                    'page_id' => (int) $page['page_id'],
+                    'title' => (string) $page['title'],
+                    'meta_description' => (string) ($page['meta_description'] ?? ''),
+                    'excerpt' => (string) ($page['excerpt'] ?? ''),
+                    'coefficient' => $overlap['coefficient'],
+                ];
+            }
+        }
+
+        usort($scored, static fn (array $a, array $b): int => $b['coefficient'] <=> $a['coefficient']);
+
+        return array_slice($scored, 0, max(0, $limit));
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
+ * ── Trending Headlines (GROWTH_AGENT_V2_PROPOSAL.md § 5, 6 Aug 2026) ──
+ *
+ * External sports-news headlines folded into the Article Idea prompt as
+ * inspiration/context — NEVER content to copy. Legal boundary, enforced by
+ * what this section physically stores: headline text + link + publish
+ * time only (growth_agent_trending_headlines — see
+ * cms_growth_agent_ensure_schema()). No function anywhere in this section
+ * reads or persists a source's full article body; the RSS parser only
+ * touches <title>/<link>/<pubDate>, and the HTML-scrape fallback only
+ * touches anchor text + href, never page body content.
+ *
+ * Two-tier fetch per configured source (opportunity_thresholds_json.
+ * trending_headlines.sources):
+ *   1. RSS first — tries "{source}/rss" then "{source}/feed" via
+ *      SimpleXML. Preferred: a real feed's <item> shape is stable and
+ *      standard, unlike a site's HTML markup which can change on any
+ *      redesign.
+ *   2. Generic HTML scrape fallback (DOMDocument) — only reached if
+ *      neither RSS path returns a parseable feed. Heuristic, not a
+ *      guarantee: looks for anchor tags with reasonably long link text
+ *      outside <nav>/<header>/<footer>, since navigation/UI links are
+ *      short ("Home", "Login") while headline links are not. This WILL
+ *      miss headlines or pick up noise on sites whose markup doesn't fit
+ *      that shape — verified manually per source before being added to
+ *      the default list (see 'sources' config's own note on which two are
+ *      verified today), not something that works for "any URL" by
+ *      construction.
+ *
+ * Both defaults (sport.detik.com, cnnindonesia.com/olahraga) were verified
+ * 7 Aug 2026 to have a working "{source}/rss" feed, so in practice neither
+ * exercises the scrape fallback today — it exists for sources an admin
+ * adds later that don't publish RSS.
+ */
+
+/**
+ * Fetches and parses ONE trending source — tries RSS first, falls back to
+ * HTML scraping. Never throws (every failure path returns []) so one bad/
+ * down/restructured source can never break the batch refresh that calls
+ * this per-source in a loop.
+ *
+ * @return list<array{headline:string,url:string,published_at:?string}>
+ */
+function cms_growth_agent_fetch_trending_source(string $sourceUrl, int $maxHeadlines): array
+{
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $sourceUrl = rtrim($sourceUrl, '/');
+
+        foreach (['/rss', '/feed'] as $feedPath) {
+            $rss = cms_growth_agent_parse_rss_feed($sourceUrl . $feedPath, $maxHeadlines);
+            if ($rss !== []) {
+                return $rss;
+            }
+        }
+
+        return cms_growth_agent_scrape_headlines_generic($sourceUrl, $maxHeadlines);
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_fetch_trending_source] ' . $sourceUrl . ': ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * RSS 2.0 parser via SimpleXML — chosen over a hand-rolled regex/DOM parse
+ * specifically because RSS is a standard, well-formed XML format; SimpleXML
+ * is more robust against the minor structural variation between different
+ * sites' feeds (namespaced elements, optional fields) than string matching
+ * would be. Only ever reads <title>, <link> (or <guid> as fallback — some
+ * feeds' <link> is relative/empty while <guid> holds the real absolute
+ * URL), and <pubDate>. Never reads <description>/<content:encoded> at
+ * all — those often contain a short summary or even a snippet of body
+ * HTML, and this function has no legitimate use for them (see this
+ * section's top note on what's stored).
+ *
+ * Returns [] (not a partial/garbage result) on anything from "URL doesn't
+ * exist" to "response isn't valid RSS" to "libxml choked" — the caller
+ * treats an empty return as "try the next fallback", so this must never
+ * throw or return junk that looks like real headlines.
+ */
+function cms_growth_agent_parse_rss_feed(string $feedUrl, int $maxHeadlines): array
+{
+    try {
+        $response = cms_gsc_http_request('GET', $feedUrl, null, [], 12);
+        if (!$response['ok'] || trim($response['body']) === '') {
+            return [];
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        $xml = simplexml_load_string($response['body']);
+        libxml_use_internal_errors($previous);
+
+        if ($xml === false || !isset($xml->channel->item)) {
+            return [];
+        }
+
+        $headlines = [];
+        foreach ($xml->channel->item as $item) {
+            if (count($headlines) >= $maxHeadlines) {
+                break;
+            }
+
+            $title = trim((string) $item->title);
+            $link = trim((string) $item->link);
+            if ($link === '') {
+                $link = trim((string) $item->guid);
+            }
+            if ($title === '' || $link === '' || !filter_var($link, FILTER_VALIDATE_URL)) {
+                continue;
+            }
+
+            $pubDateRaw = trim((string) $item->pubDate);
+            $pubDateTs = $pubDateRaw !== '' ? strtotime($pubDateRaw) : false;
+
+            $headlines[] = [
+                'headline' => $title,
+                'url' => $link,
+                'published_at' => $pubDateTs !== false ? date('Y-m-d H:i:s', $pubDateTs) : null,
+            ];
+        }
+
+        return $headlines;
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
+ * Generic HTML-scrape fallback — DOMDocument (same UTF-8-safe "<?xml
+ * encoding=...>" prefix trick as cms_growth_agent_tsa_check_schema_markup()
+ * above, not a coincidence, same trap applies here). Heuristic only:
+ * collects <a> tags whose visible text is long enough to plausibly be a
+ * headline (>= 25 characters — filters out nav items like "Home"/"Login"/
+ * "Olahraga" without needing a per-site selector), skips any anchor whose
+ * ancestor chain includes <nav>/<header>/<footer>/<aside> (typical
+ * chrome/ad-rail placement), and resolves relative hrefs against the
+ * source's own origin.
+ *
+ * No publish-time extraction here — unlike RSS's structured <pubDate>,
+ * there is no generic, reliable way to find a timestamp in arbitrary HTML,
+ * so published_at is always null for scraped results (the DB column is
+ * nullable specifically for this).
+ *
+ * Never throws. This is explicitly a best-effort fallback, not a promise
+ * that any given site's markup will yield clean results — see this
+ * section's own top note.
+ */
+function cms_growth_agent_scrape_headlines_generic(string $pageUrl, int $maxHeadlines): array
+{
+    try {
+        $response = cms_gsc_http_request('GET', $pageUrl, null, [], 12);
+        if (!$response['ok'] || trim($response['body']) === '') {
+            return [];
+        }
+
+        $dom = new DOMDocument('1.0', 'UTF-8');
+        $previous = libxml_use_internal_errors(true);
+        $dom->loadHTML('<?xml encoding="UTF-8">' . $response['body']);
+        libxml_use_internal_errors($previous);
+
+        $parsedSource = parse_url($pageUrl);
+        $origin = ($parsedSource['scheme'] ?? 'https') . '://' . ($parsedSource['host'] ?? '');
+
+        $excludedAncestorTags = ['nav', 'header', 'footer', 'aside'];
+        // Common non-article listing-page path segments across Indonesian
+        // news sites generally (tag/category/topic index pages, not a
+        // single headline) — a mild, generic exclusion, not per-site
+        // special-casing. Verified necessary during testing: without this,
+        // a site's own "Piala Dunia 2026 tag page" promo link (long text,
+        // outside nav/footer) was indistinguishable from a real headline.
+        $excludedPathSegments = ['/tag/', '/topic/', '/kategori/', '/category/'];
+        $seen = [];
+        $headlines = [];
+
+        foreach ($dom->getElementsByTagName('a') as $anchor) {
+            if (count($headlines) >= $maxHeadlines) {
+                break;
+            }
+
+            // Joins each direct text/element child with a single space
+            // rather than $anchor->textContent (which concatenates
+            // adjacent nodes with NO separator at all) — sites commonly
+            // nest a timestamp <span> directly beside the headline text
+            // with no whitespace text node between them in the source
+            // HTML, which produced results like "07 Agu 2026
+            // 07:51Manchester United..." (a timestamp glued onto the
+            // headline) before this fix.
+            $text = cms_growth_agent_dom_node_text($anchor);
+            if (mb_strlen($text) < 25) {
+                continue;
+            }
+
+            $inExcludedAncestor = false;
+            for ($ancestor = $anchor->parentNode; $ancestor !== null; $ancestor = $ancestor->parentNode) {
+                if ($ancestor instanceof DOMElement && in_array(strtolower($ancestor->tagName), $excludedAncestorTags, true)) {
+                    $inExcludedAncestor = true;
+                    break;
+                }
+            }
+            if ($inExcludedAncestor) {
+                continue;
+            }
+
+            $href = trim((string) $anchor->getAttribute('href'));
+            if ($href === '' || str_starts_with($href, '#') || str_starts_with($href, 'javascript:')) {
+                continue;
+            }
+            foreach ($excludedPathSegments as $segment) {
+                if (str_contains($href, $segment)) {
+                    continue 2;
+                }
+            }
+            $absoluteUrl = str_starts_with($href, 'http') ? $href : ($origin . '/' . ltrim($href, '/'));
+            if (!filter_var($absoluteUrl, FILTER_VALIDATE_URL) || isset($seen[$absoluteUrl])) {
+                continue;
+            }
+            $seen[$absoluteUrl] = true;
+
+            $headlines[] = ['headline' => $text, 'url' => $absoluteUrl, 'published_at' => null];
+        }
+
+        return $headlines;
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
+ * Extracts an element's visible text with a space inserted BETWEEN each
+ * direct child node — unlike DOMNode::$textContent, which concatenates
+ * every descendant's text with no separator, so two adjacent elements with
+ * no whitespace text node between them in the source HTML (e.g. a
+ * timestamp <span> immediately followed by the headline text) come out
+ * glued together with no boundary. Used only by
+ * cms_growth_agent_scrape_headlines_generic() above.
+ */
+function cms_growth_agent_dom_node_text(DOMNode $node): string
+{
+    $parts = [];
+    foreach ($node->childNodes as $child) {
+        $parts[] = $child->nodeType === XML_TEXT_NODE ? $child->textContent : cms_growth_agent_dom_node_text($child);
+    }
+
+    return trim(preg_replace('/\s+/u', ' ', implode(' ', $parts)) ?? '');
+}
+
+/**
+ * Fetches every configured trending source and upserts results into
+ * growth_agent_trending_headlines. Per-source isolation: one source
+ * throwing/timing out/returning garbage must never stop the others from
+ * being fetched — matches every other multi-item scan in this file (Internal
+ * Linking Agent, Technical SEO Auditor). Never throws overall either.
+ *
+ * Upsert-by-dedupe_hash (md5 of the URL — see that column's own comment in
+ * cms_growth_agent_ensure_schema()): a source's feed/listing page is
+ * re-fetched on every refresh and will naturally re-list the same recent
+ * headlines, so this must refresh fetched_at on an existing row rather
+ * than insert a duplicate.
+ *
+ * @return array{sources_ok:int,sources_failed:int,headlines_upserted:int}
+ */
+function cms_growth_agent_refresh_trending_headlines(PDO $pdo): array
+{
+    $stats = ['sources_ok' => 0, 'sources_failed' => 0, 'headlines_upserted' => 0];
+
+    try {
+        cms_growth_agent_ensure_schema($pdo);
+        require_once __DIR__ . '/gsc-api.php';
+        $config = cms_gsc_get_opportunity_thresholds($pdo)['trending_headlines'] ?? [];
+        $sources = is_array($config['sources'] ?? null) ? array_values(array_filter($config['sources'], 'is_string')) : [];
+        $maxPerSource = max(1, min(50, (int) ($config['max_headlines_per_source'] ?? 15)));
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_refresh_trending_headlines] setup failed: ' . $e->getMessage());
+        return $stats;
+    }
+
+    $upsertStmt = $pdo->prepare(
+        'INSERT INTO growth_agent_trending_headlines (headline, source, url, published_at, dedupe_hash, fetched_at)
+         VALUES (:headline, :source, :url, :published_at, :dedupe_hash, NOW())
+         ON DUPLICATE KEY UPDATE fetched_at = NOW()'
+    );
+
+    foreach ($sources as $sourceUrl) {
+        try {
+            $headlines = cms_growth_agent_fetch_trending_source($sourceUrl, $maxPerSource);
+            if ($headlines === []) {
+                $stats['sources_failed']++;
+                continue;
+            }
+
+            foreach ($headlines as $headline) {
+                try {
+                    $upsertStmt->execute([
+                        'headline' => mb_substr($headline['headline'], 0, 500),
+                        'source' => mb_substr($sourceUrl, 0, 255),
+                        'url' => mb_substr($headline['url'], 0, 500),
+                        'published_at' => $headline['published_at'],
+                        'dedupe_hash' => md5($headline['url']),
+                    ]);
+                    $stats['headlines_upserted']++;
+                } catch (Throwable $e) {
+                    // One bad row must not stop the rest of this source's headlines.
+                }
+            }
+            $stats['sources_ok']++;
+        } catch (Throwable $e) {
+            error_log('[cms_growth_agent_refresh_trending_headlines] source failed: ' . $sourceUrl . ': ' . $e->getMessage());
+            $stats['sources_failed']++;
+        }
+    }
+
+    return $stats;
+}
+
+/**
+ * Lazy trigger for cms_growth_agent_refresh_trending_headlines() — no cron
+ * guaranteed to run in this codebase, mirrors cms_gsc_fetch_if_stale()/
+ * cms_growth_agent_snapshot_performance_if_stale()'s "check last-run
+ * timestamp, run only if past the configured interval" pattern exactly,
+ * keyed off gsc_settings.last_trending_headlines_refresh_at and
+ * opportunity_thresholds_json.trending_headlines.refresh_interval_hours
+ * (default 12). Called from growth-agent.php's page load. Never throws.
+ */
+function cms_growth_agent_refresh_trending_headlines_if_stale(PDO $pdo): void
+{
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $settings = cms_gsc_get_settings($pdo);
+        $config = cms_gsc_get_opportunity_thresholds($pdo)['trending_headlines'] ?? [];
+        $maxAgeHours = max(1, (int) ($config['refresh_interval_hours'] ?? 12));
+
+        $lastRun = $settings['last_trending_headlines_refresh_at'] ?? null;
+        $isStale = $lastRun === null
+            || (time() - strtotime((string) $lastRun)) >= ($maxAgeHours * 3600);
+
+        if (!$isStale) {
+            return;
+        }
+
+        cms_growth_agent_refresh_trending_headlines($pdo);
+
+        $pdo->prepare('UPDATE gsc_settings SET last_trending_headlines_refresh_at = NOW() ORDER BY id ASC LIMIT 1')->execute();
+    } catch (Throwable $e) {
+        // A lazy background refresh must never break the page it's attached to.
+    }
+}
+
+/**
+ * Selects trending headlines fit to send into the Article Idea prompt —
+ * most recent first, EXCLUDING any whose topic already overlaps a
+ * published article (reuses cms_growth_agent_g0_tokenize()/
+ * cms_growth_agent_g0_overlap() a third time in this file, same metric as
+ * the SEO-G0 Gate and cms_growth_agent_find_similar_published_articles()
+ * above — no new similarity logic). Without this filter, the prompt could
+ * suggest "here's a trending story" for something Sagagoal already covered
+ * days ago, which defeats the whole point of Bagian 1's collision
+ * avoidance for the SAME generate call.
+ *
+ * Pulls a pool of the most recent stored headlines (4x the final limit, so
+ * filtering out covered ones still usually leaves enough) and checks each
+ * against every published article's title — same O(headlines × articles)
+ * full-scan approach as cms_growth_agent_seo_g0_gate()'s own check B, at
+ * the same small site scale that's already proven fine for.
+ *
+ * Never throws — returns [] on any failure (including "table doesn't have
+ * any rows yet because the fetch hasn't run"), so the prompt just proceeds
+ * without a trending-headlines section, same graceful degradation as
+ * "topic is genuinely new" in the collision-avoidance context above.
+ *
+ * @return list<array{headline:string,url:string,source:string}>
+ */
+function cms_growth_agent_get_trending_headlines_for_prompt(PDO $pdo): array
+{
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $config = cms_gsc_get_opportunity_thresholds($pdo)['trending_headlines'] ?? [];
+        $overlapThreshold = (float) ($config['published_overlap_threshold'] ?? 0.5);
+        $limit = max(1, min(20, (int) ($config['headlines_in_prompt'] ?? 5)));
+
+        $headlineRows = $pdo->query(
+            "SELECT headline, url, source FROM growth_agent_trending_headlines
+              ORDER BY fetched_at DESC, published_at DESC
+              LIMIT " . ($limit * 4)
+        )->fetchAll();
+        if ($headlineRows === []) {
+            return [];
+        }
+
+        $publishedTitles = $pdo->query("SELECT title FROM pages WHERE status = 'published'")->fetchAll(PDO::FETCH_COLUMN, 0);
+        $publishedTokenSets = array_map('cms_growth_agent_g0_tokenize', $publishedTitles);
+
+        $selected = [];
+        foreach ($headlineRows as $row) {
+            if (count($selected) >= $limit) {
+                break;
+            }
+
+            $headlineTokens = cms_growth_agent_g0_tokenize((string) $row['headline']);
+            if ($headlineTokens === []) {
+                continue;
+            }
+
+            $coveredByPublished = false;
+            foreach ($publishedTokenSets as $pubTokens) {
+                $overlap = cms_growth_agent_g0_overlap($headlineTokens, $pubTokens);
+                if ($overlap['coefficient'] >= $overlapThreshold) {
+                    $coveredByPublished = true;
+                    break;
+                }
+            }
+            if ($coveredByPublished) {
+                continue;
+            }
+
+            $selected[] = [
+                'headline' => (string) $row['headline'],
+                'url' => (string) $row['url'],
+                'source' => (string) $row['source'],
+            ];
+        }
+
+        return $selected;
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
+ * "Aturan keras" — checks the AI-generated title against the SOURCE
+ * HEADLINES actually shown to it in this same prompt (user explicit
+ * requirement, GROWTH_AGENT_V2_PROPOSAL.md § 5: a near-duplicate of a
+ * source headline is a copyright/originality risk in its own right, not
+ * just copying the article body would be). Fourth use of
+ * cms_growth_agent_g0_tokenize()/cms_growth_agent_g0_overlap() in this
+ * file — still no new similarity metric.
+ *
+ * Deliberately compares against ONLY $headlines (the specific ones this
+ * job's prompt contained), not the whole growth_agent_trending_headlines
+ * table — a title can only "copy" what it was actually shown.
+ *
+ * Same "advisory, never blocking" posture as cms_growth_agent_seo_g0_gate()
+ * (the devs brief explicitly says "mirip pola SEO-G0 Gate") — the job is
+ * still created either way; this only decides whether it carries a
+ * visible flag for the operator, mirrored in growth-agent.php's Job
+ * Terbaru row the same way _g0_warnings already is. Never throws.
+ *
+ * @param list<array{headline:string,url:string,source:string}> $headlines
+ * @return array{flagged:bool,matches:array<int,array{headline:string,url:string,coefficient:float}>}
+ */
+function cms_growth_agent_check_title_vs_headlines(PDO $pdo, string $title, array $headlines): array
+{
+    try {
+        if ($headlines === []) {
+            return ['flagged' => false, 'matches' => []];
+        }
+
+        require_once __DIR__ . '/gsc-api.php';
+        $threshold = (float) (cms_gsc_get_opportunity_thresholds($pdo)['trending_headlines']['title_vs_headline_max_overlap'] ?? 0.75);
+
+        $titleTokens = cms_growth_agent_g0_tokenize($title);
+        if ($titleTokens === []) {
+            return ['flagged' => false, 'matches' => []];
+        }
+
+        $matches = [];
+        foreach ($headlines as $headline) {
+            $overlap = cms_growth_agent_g0_overlap($titleTokens, cms_growth_agent_g0_tokenize($headline['headline']));
+            if ($overlap['coefficient'] >= $threshold) {
+                $matches[] = [
+                    'headline' => $headline['headline'],
+                    'url' => $headline['url'],
+                    'coefficient' => round($overlap['coefficient'], 2),
+                ];
+            }
+        }
+
+        return ['flagged' => $matches !== [], 'matches' => $matches];
+    } catch (Throwable $e) {
+        return ['flagged' => false, 'matches' => []];
+    }
 }
 
 /**
@@ -3398,8 +3963,13 @@ function cms_growth_agent_generate_article_idea(PDO $pdo, array $queryData, stri
         'impressions but has NO existing article on the site addressing it. Propose a new article idea: a ' .
         'compelling title, and a short outline (3-6 bullet points) covering what the article should ' .
         'include. Keep it realistic for a sports news/livescore site — not a generic listicle. Respond in ' .
-        'the same language as the query (default Bahasa Indonesia). Respond with ONLY a raw JSON object, ' .
-        'no markdown, no code fences, no commentary, in exactly this shape: {"title": "...", "outline": ["...", "..."]}';
+        'the same language as the query (default Bahasa Indonesia). If the prompt includes a section listing ' .
+        'similar existing articles on this site, propose a DIFFERENT angle or framing, not a near-duplicate ' .
+        'of any of them. If the prompt includes a section of recent external headlines, treat them ONLY as ' .
+        'inspiration/context for what is currently happening — never copy or closely paraphrase a headline\'s ' .
+        'exact wording as your title; write a fully original title in your own words. Respond with ONLY a ' .
+        'raw JSON object, no markdown, no code fences, no commentary, in exactly this shape: ' .
+        '{"title": "...", "outline": ["...", "..."]}';
 
     $agent = cms_ai_resolve_agent($pdo, 'growth_agent', $defaultSystemPrompt);
     if (!$agent['ok']) {
@@ -3417,15 +3987,70 @@ function cms_growth_agent_generate_article_idea(PDO $pdo, array $queryData, stri
         ? trim($agent['system_prompt'] . "\n\n" . $growthContext)
         : $agent['system_prompt'];
 
-    $userPrompt = "Search query: {$query}\n" .
+    $userPromptParts = [
+        "Search query: {$query}\n" .
         "Total impressions (recent window): {$impressions}\n" .
-        "Average position: " . round($avgPosition, 1);
+        "Average position: " . round($avgPosition, 1),
+    ];
+
+    // Proactive collision avoidance (GROWTH_AGENT_V2_PROPOSAL.md § 5, 6 Aug
+    // 2026) — reuses the SEO-G0 Gate's own tokenizer/overlap, scoped to
+    // THIS query specifically (small top-K), unlike Keyword Expansion's
+    // "50 most recent articles" (surveys a whole niche, different purpose).
+    // If nothing scores above threshold, no section is added at all — the
+    // prompt stays exactly as light as it was before this feature existed.
+    $articleIdeaThresholds = [];
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $articleIdeaThresholds = cms_gsc_get_opportunity_thresholds($pdo)['article_idea'] ?? [];
+    } catch (Throwable $e) {
+        // Ignore — falls through to the defaults below.
+    }
+    $minOverlap = (float) ($articleIdeaThresholds['min_overlap_threshold'] ?? 0.5);
+    $contextLimit = max(1, min(30, (int) ($articleIdeaThresholds['context_articles_limit'] ?? 8)));
+
+    $similarArticles = cms_growth_agent_find_similar_published_articles($pdo, $query, $minOverlap, $contextLimit);
+    if ($similarArticles !== []) {
+        $similarLines = [];
+        foreach ($similarArticles as $similar) {
+            $desc = $similar['meta_description'] !== '' ? $similar['meta_description'] : $similar['excerpt'];
+            $similarLines[] = '- ' . $similar['title'] . ($desc !== '' ? ' | ' . $desc : '');
+        }
+        $userPromptParts[] =
+            "Existing published articles on this site already close to this topic (propose a DIFFERENT angle, not a duplicate):\n"
+            . implode("\n", $similarLines);
+    }
+
+    // Trending Headlines (GROWTH_AGENT_V2_PROPOSAL.md § 5, 6 Aug 2026) —
+    // recent external headlines, already filtered to exclude anything
+    // overlapping a published article (see
+    // cms_growth_agent_get_trending_headlines_for_prompt()). Inspiration/
+    // context only — the system prompt above already instructs the AI to
+    // never copy or closely paraphrase these; $usedHeadlines is also kept
+    // here so the post-generation title-vs-headline overlap check below
+    // can compare the AI's title against the EXACT headlines this specific
+    // call showed it, not the whole table.
+    $usedHeadlines = cms_growth_agent_get_trending_headlines_for_prompt($pdo);
+    if ($usedHeadlines !== []) {
+        $headlineLines = [];
+        foreach ($usedHeadlines as $headline) {
+            $headlineLines[] = '- ' . $headline['headline'];
+        }
+        $userPromptParts[] =
+            "Recent sports news headlines (context/inspiration only — do NOT copy or closely paraphrase any of these as your title, write something fully original in your own words):\n"
+            . implode("\n", $headlineLines);
+    }
+
+    $userPrompt = implode("\n\n", $userPromptParts);
 
     // SEO-G0 Gate (GROWTH_AGENT_V2_PROPOSAL.md Fase A item 3) — run against
     // the raw query BEFORE the AI call, since the gate exists to catch
     // overlap in the underlying topic itself, not in whatever title the AI
     // happens to phrase. Advisory only: never affects whether generation
     // proceeds, just rides along in input_brief for the operator's review.
+    // UNCHANGED by the collision-avoidance context above — still the exact
+    // same second-safety-net check it always was, in case the AI still
+    // slips despite now being shown this context.
     $gateResult = cms_growth_agent_seo_g0_gate($pdo, 'gsc_article_idea', $query);
 
     $inputBrief = [
@@ -3433,6 +4058,18 @@ function cms_growth_agent_generate_article_idea(PDO $pdo, array $queryData, stri
         'gsc_impressions' => $impressions,
         'avg_position' => round($avgPosition, 1),
         'seo_g0_gate' => $gateResult,
+        // Recorded for operator transparency (why did the AI pick this
+        // angle?) and reused by the post-generation title-vs-headline
+        // overlap check below — NOT a second gate, just an audit trail of
+        // what the prompt actually contained.
+        'similar_published_articles' => array_map(
+            static fn (array $a): array => ['page_id' => $a['page_id'], 'title' => $a['title'], 'coefficient' => round($a['coefficient'], 2)],
+            $similarArticles
+        ),
+        // Same audit-trail reasoning as similar_published_articles above —
+        // exactly which trending headlines this call's prompt contained,
+        // reused a few lines below for the title-vs-headline overlap check.
+        'trending_headlines_used' => $usedHeadlines,
     ];
 
     try {
@@ -3454,6 +4091,14 @@ function cms_growth_agent_generate_article_idea(PDO $pdo, array $queryData, stri
         );
         return ['ok' => false, 'job_id' => $jobId, 'error' => $errorMessage];
     }
+
+    // "Aturan keras" — the AI's actual title, checked against the exact
+    // headlines this prompt showed it. Advisory only (same posture as
+    // seo_g0_gate above) — added to input_brief AFTER the fact rather than
+    // computed earlier, since there's nothing to check until the AI has
+    // actually returned a title. See cms_growth_agent_check_title_vs_headlines()'s
+    // own docblock.
+    $inputBrief['title_vs_headline_check'] = cms_growth_agent_check_title_vs_headlines($pdo, (string) $parsed['title'], $usedHeadlines);
 
     $jobId = cms_growth_agent_log_job(
         $pdo, 'gsc_article_idea', 'growth_agent', null, 'succeeded', $inputBrief, $parsed,

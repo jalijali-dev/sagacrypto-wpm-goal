@@ -64,6 +64,11 @@ if (!function_exists('cms_gsc_ensure_schema')) {
         // bookkeeping for cms_growth_agent_snapshot_performance_if_stale(),
         // same convention as last_fetch_at/last_memory_detection_at.
         cms_ensure_column($pdo, 'gsc_settings', 'last_performance_snapshot_at', 'TIMESTAMP NULL DEFAULT NULL AFTER `last_memory_detection_at`');
+        // Trending Headlines (GROWTH_AGENT_V2_PROPOSAL.md § 5, 6 Aug 2026) —
+        // same lazy-trigger bookkeeping convention, for
+        // cms_growth_agent_refresh_trending_headlines_if_stale() in
+        // growth-agent-service.php.
+        cms_ensure_column($pdo, 'gsc_settings', 'last_trending_headlines_refresh_at', 'TIMESTAMP NULL DEFAULT NULL AFTER `last_performance_snapshot_at`');
 
         cms_ensure_table(
             $pdo,
@@ -1021,6 +1026,106 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                 // one shared team name) tripping the threshold by itself
                 // when one side only has 1-2 tokens after stopword removal.
                 'min_overlap_tokens' => 2,
+            ],
+
+            // Article Idea — proactive collision avoidance (GROWTH_AGENT_V2_
+            // PROPOSAL.md § 5, 6 Aug 2026). Reuses the SEO-G0 Gate's own
+            // cms_growth_agent_g0_tokenize()/cms_growth_agent_g0_overlap()
+            // (no new tokenizer) to find published articles most similar to
+            // the GSC query being turned into a proposal, BEFORE the AI
+            // prompt is built — see
+            // cms_growth_agent_generate_article_idea() in
+            // growth-agent-service.php. Distinct from 'seo_g0_gate' above:
+            // that one is a POST-hoc advisory warning against the AI's
+            // eventual title; this one actively shapes what the AI is told
+            // before it writes anything.
+            'article_idea' => [
+                // Overlap coefficient threshold — same metric/scale as
+                // seo_g0_gate.similarity_threshold, but deliberately its own
+                // separate key (not shared) so the two can be tuned
+                // independently: this one decides "worth mentioning as
+                // context", the gate's decides "worth warning the operator
+                // about" — different purposes, no reason they must move
+                // together.
+                'min_overlap_threshold' => 0.5,
+                // How many top-matching published articles get sent into
+                // the prompt as context, at most. Deliberately far smaller
+                // than Keyword Expansion's context_articles_limit (default
+                // 50) — that scan sends its 50 most-RECENT articles to
+                // survey a whole niche; this sends only the handful most
+                // TOPICALLY SIMILAR to one specific query, so a small
+                // number is both cheaper and more relevant.
+                'context_articles_limit' => 8,
+            ],
+
+            // Trending Headlines (GROWTH_AGENT_V2_PROPOSAL.md § 5, 6 Aug
+            // 2026) — external headline+link+time signal folded into the
+            // Article Idea prompt as inspiration/context, never as content
+            // to copy. See cms_growth_agent_refresh_trending_headlines_if_stale()
+            // and cms_growth_agent_get_trending_headlines_for_prompt() in
+            // growth-agent-service.php.
+            'trending_headlines' => [
+                // Deliberately an array of URLs, not one hardcoded site —
+                // user's explicit instruction: admin must be able to
+                // add/remove sources without a code change. Each entry is a
+                // site's homepage/section URL (e.g. a sports section), not
+                // a feed URL directly — the fetcher tries well-known feed
+                // paths per source first (see
+                // cms_growth_agent_fetch_trending_source()). Both entries
+                // below verified LIVE 7 Aug 2026 by actually fetching
+                // {source}/rss and confirming a real RSS 2.0 response
+                // (title/link/pubDate items) — NOT the doc's original
+                // assumption that detik.com needed HTML scraping; that
+                // assumption turned out to be wrong; detik's /rss path
+                // works cleanly, so the HTML-scrape fallback is exercised
+                // by neither of these two defaults today, only by whatever
+                // a future source without an /rss or /feed path needs. This
+                // is NOT a claim that any arbitrary URL added here will
+                // parse correctly — structure varies per site and the
+                // scrape fallback is a best effort, not a guarantee.
+                'sources' => [
+                    'https://sport.detik.com',
+                    'https://www.cnnindonesia.com/olahraga',
+                ],
+                // How old the LAST successful refresh can be before
+                // cms_growth_agent_refresh_trending_headlines_if_stale()
+                // fetches again — same "*_if_stale()" convention as GSC
+                // fetch/memory detection/performance snapshot. Headlines are
+                // context/inspiration, not time-critical breaking news, so a
+                // slower cadence than GSC's own 24h is fine.
+                'refresh_interval_hours' => 12,
+                // Hard cap on how many headline rows one source can
+                // contribute per fetch — same "bounded batch" reasoning as
+                // every other scan in this file, and keeps one noisy source
+                // from crowding out the others in the stored table.
+                'max_headlines_per_source' => 15,
+                // How many headlines actually get sent into the Article
+                // Idea prompt per generate call (after the overlap filter
+                // below removes ones already covered by a published
+                // article) — kept small on purpose, this is meant to be
+                // "recent context", not a news digest.
+                'headlines_in_prompt' => 5,
+                // Overlap threshold for filtering OUT headlines whose topic
+                // is already covered by a published article, before they
+                // ever reach the prompt — reuses the exact same
+                // g0_overlap() metric as 'article_idea.min_overlap_threshold'
+                // above, kept as its own separate tunable for the same
+                // independent-purposes reasoning.
+                'published_overlap_threshold' => 0.5,
+                // The "aturan keras" check — AFTER the AI returns a title,
+                // its overlap against the SOURCE HEADLINES actually shown in
+                // that prompt is measured with the same g0_overlap()
+                // function again (third independent use of it in this
+                // file). At or above this, the title is flagged in
+                // input_brief rather than silently passed through — see
+                // cms_growth_agent_check_title_vs_headlines() in
+                // growth-agent-service.php. Deliberately HIGHER than
+                // article_idea.min_overlap_threshold (0.5) — that threshold
+                // decides "similar enough to mention as inspiration"; this
+                // one decides "similar enough to be a near-duplicate title",
+                // a much stricter bar since a false positive here would
+                // wrongly flag a legitimately-reworded title.
+                'title_vs_headline_max_overlap' => 0.75,
             ],
 
             // Internal Linking Agent (GROWTH_AGENT_V2_PROPOSAL.md Fase B

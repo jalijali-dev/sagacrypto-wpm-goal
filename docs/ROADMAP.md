@@ -223,6 +223,16 @@ Agent v1 yang sudah berjalan. Fase E tidak melanggar prinsip ini karena
 publish tetap manual; yang di-skip cuma approval untuk internal link
 (reversible), bukan publish itu sendiri.
 
+**✅ KODE SELESAI 6 Agu 2026, belum di-deploy — di luar Fase A-E:** Article
+Idea (`gsc_article_idea`) sekarang proaktif ngindarin tabrakan judul, baik
+ke artikel Sagagoal sendiri (reuse overlap-scoring SEO-G0 Gate) maupun ke
+headline berita eksternal (`growth_agent_trending_headlines`, RSS dari
+`sport.detik.com` + `cnnindonesia.com/olahraga`, cuma judul disimpen, nol
+isi artikel). Judul AI wajib dipoles — dicek ulang otomatis kalau nyaris
+sama sama headline sumber, ditandain di panel Job Terbaru (gak nge-blok).
+Bukan modul/menu baru. SEO-G0 Gate tetap jaring pengaman kedua. Detail di
+`docs/GROWTH_AGENT_V2_PROPOSAL.md` § 5.
+
 **Aturan arsitektur wajib (ditetapkan 2 Agu 2026, diperjelas 5 Agu 2026
 soal Fase E):** semua agent — lama maupun baru — cuma boleh menulis
 usulan ke Action Queue (`growth_agent_jobs`), dibedakan lewat

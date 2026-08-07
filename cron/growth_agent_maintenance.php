@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 /**
- * Cron: run Growth Agent's six maintenance/collection steps on a schedule,
- * instead of only "lazily" whenever an admin happens to open
+ * Cron: run Growth Agent's seven maintenance/collection steps on a
+ * schedule, instead of only "lazily" whenever an admin happens to open
  * cms-admin/pages/growth-agent.php.
  *
  * Thin CLI wrapper — no logic lives here. It calls the exact same shared
@@ -12,7 +12,8 @@ declare(strict_types=1);
  * load: cms_growth_agent_ensure_schema(), cms_growth_agent_cleanup_old_jobs(),
  * cms_gsc_fetch_if_stale(), cms_growth_agent_detect_memory_if_stale(),
  * cms_growth_agent_snapshot_performance_if_stale(),
- * cms_growth_agent_run_measurement_loop() — all in
+ * cms_growth_agent_run_measurement_loop(),
+ * cms_growth_agent_refresh_trending_headlines_if_stale() — all in
  * cms-admin/includes/growth-agent-service.php and gsc-api.php. Both callers
  * run identical code, same as sync_fixtures.php vs the admin "Sync Sekarang"
  * button.
@@ -122,6 +123,24 @@ $measurement = cms_growth_agent_run_measurement_loop($pdo);
 echo "[growth_agent_maintenance] measurement_loop: {$measurement['checked']} job dicek, "
     . "{$measurement['measured']} ditandai measured_at ({$measurement['insufficient_data']} di antaranya insufficient_data), "
     . "{$measurement['errors']} error (measured_at dibiarkan kosong, dicoba lagi run berikutnya).\n";
+
+// ── 7. Trending Headlines refresh (GROWTH_AGENT_V2_PROPOSAL.md § 5, 6 Aug
+// 2026) ── Back to the *_if_stale() before/after-timestamp reporting shape
+// (steps 3-5) — this one IS gated by a "last run" timestamp
+// (last_trending_headlines_refresh_at), unlike step 6.
+$before = cms_gsc_get_settings($pdo);
+$trendingConfig = cms_gsc_get_opportunity_thresholds($pdo)['trending_headlines'] ?? [];
+$wasStale = $isStale($before['last_trending_headlines_refresh_at'] ?? null, max(1, (int) ($trendingConfig['refresh_interval_hours'] ?? 12)));
+
+cms_growth_agent_refresh_trending_headlines_if_stale($pdo);
+$after = cms_gsc_get_settings($pdo);
+if (($after['last_trending_headlines_refresh_at'] ?? null) !== ($before['last_trending_headlines_refresh_at'] ?? null)) {
+    echo "[growth_agent_maintenance] trending_headlines: Ran — last_trending_headlines_refresh_at diperbarui ke {$after['last_trending_headlines_refresh_at']}.\n";
+} elseif ($wasStale) {
+    echo "[growth_agent_maintenance] trending_headlines: Dicoba (data stale) tapi timestamp tidak berubah — kemungkinan semua sumber gagal diambil (situs down/struktur berubah). Cek PHP error log.\n";
+} else {
+    echo "[growth_agent_maintenance] trending_headlines: Skipped — belum stale (last_trending_headlines_refresh_at: " . ($before['last_trending_headlines_refresh_at'] ?? 'null') . ").\n";
+}
 
 echo "[growth_agent_maintenance] Done.\n";
 exit($exitCode);

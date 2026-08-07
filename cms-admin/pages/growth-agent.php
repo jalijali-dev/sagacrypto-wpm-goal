@@ -52,6 +52,15 @@ cms_growth_agent_snapshot_performance_if_stale($pdo, 24);
 // opportunity_thresholds_json.measurement_loop.batch_size. Never throws.
 cms_growth_agent_run_measurement_loop($pdo);
 
+// Lazy Trending Headlines refresh (GROWTH_AGENT_V2_PROPOSAL.md § 5, 6 Aug
+// 2026) — same *_if_stale() pattern as the calls above, gated on
+// gsc_settings.last_trending_headlines_refresh_at vs
+// opportunity_thresholds_json.trending_headlines.refresh_interval_hours
+// (default 12h). Fetches external headlines for context only — see
+// cms_growth_agent_refresh_trending_headlines()'s own docblock on the
+// headline-only, no-full-article storage boundary. Never throws.
+cms_growth_agent_refresh_trending_headlines_if_stale($pdo);
+
 $pageTitle = 'Growth Agent';
 $currentNav = 'growth-agent';
 $breadcrumbs = [
@@ -658,14 +667,23 @@ $jobs = $jobsStmt->fetchAll();
 // growth-agent-service.php). Decoded once here, not per-row, and only for
 // the job types that can carry it — every other job type's input_brief is
 // left completely alone.
+// Title-vs-headline "aturan keras" (GROWTH_AGENT_V2_PROPOSAL.md § 5, 6 Aug
+// 2026) — same ride-along-in-input_brief shape as seo_g0_gate above, only
+// ever present for 'gsc_article_idea' (the only job type Trending
+// Headlines context feeds today — see
+// cms_growth_agent_check_title_vs_headlines() in growth-agent-service.php).
 foreach ($jobs as &$jobForGate) {
     $jobForGate['_g0_warnings'] = [];
+    $jobForGate['_title_headline_flag'] = null;
     if (!in_array($jobForGate['job_type'], ['gsc_article_idea', 'topic_gap_article', 'keyword_expansion_topic'], true)) {
         continue;
     }
     $briefDecoded = json_decode((string) $jobForGate['input_brief'], true);
     if (is_array($briefDecoded) && is_array($briefDecoded['seo_g0_gate']['warnings'] ?? null)) {
         $jobForGate['_g0_warnings'] = $briefDecoded['seo_g0_gate']['warnings'];
+    }
+    if (is_array($briefDecoded) && ($briefDecoded['title_vs_headline_check']['flagged'] ?? false) === true) {
+        $jobForGate['_title_headline_flag'] = $briefDecoded['title_vs_headline_check']['matches'] ?? [];
     }
 }
 unset($jobForGate);
@@ -1080,6 +1098,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         $canReviewInternalLink = $job['_can_review_internal_link'];
         ?>
         <?php $g0Warnings = $job['_g0_warnings'] ?? []; ?>
+        <?php $titleHeadlineFlag = $job['_title_headline_flag'] ?? null; ?>
         <tr>
             <td class="jobs-table__col-job">
                 <strong><?= cms_esc((string) $job['job_type']) ?></strong><br>
@@ -1092,6 +1111,18 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         <div class="muted" style="font-size:11px;margin-top:4px;">
                             <?php foreach ($g0Warnings as $g0Warning) : ?>
                                 <div style="margin-top:2px;">• <?= cms_esc((string) ($g0Warning['message'] ?? '')) ?></div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                <?php if ($titleHeadlineFlag !== null) : ?>
+                    <div style="margin-top:6px;">
+                        <span class="pill pill--warn" title="Judul usulan AI ini mirip banget sama salah satu headline sumber tren yang dikasih ke prompt — cek dulu sebelum approve, pastikan bukan sekadar reword tipis.">
+                            ⚠ Mirip headline sumber: <?= count($titleHeadlineFlag) ?>
+                        </span>
+                        <div class="muted" style="font-size:11px;margin-top:4px;">
+                            <?php foreach ($titleHeadlineFlag as $flagMatch) : ?>
+                                <div style="margin-top:2px;">• "<?= cms_esc((string) ($flagMatch['headline'] ?? '')) ?>" (overlap <?= cms_esc((string) ($flagMatch['coefficient'] ?? '')) ?>)</div>
                             <?php endforeach; ?>
                         </div>
                     </div>
