@@ -6173,7 +6173,8 @@ function cms_growth_agent_create_article_draft_from_auto_draft(PDO $pdo, array $
 function cms_growth_agent_cron_matches(string $cronExpr, ?DateTimeImmutable $now = null): bool
 {
     try {
-        $now = $now ?? new DateTimeImmutable('now');
+        require_once __DIR__ . '/../../includes/TimeHelpers.php';
+        $now = $now ?? DateTimeImmutable::createFromMutable(wpm_now_wib());
         $fields = preg_split('/\s+/', trim($cronExpr)) ?: [];
         if (count($fields) !== 5) {
             return false;
@@ -6213,13 +6214,15 @@ function cms_growth_agent_cron_matches(string $cronExpr, ?DateTimeImmutable $now
  *      schedule_cron, so an operator can schedule many hourly attempts
  *      while still bounding how many drafts land in the review queue per
  *      day. Counts every 'auto_draft_article' job created today
- *      (server-local CURDATE(), same timezone cms_growth_agent_cron_matches()
- *      already uses via DateTimeImmutable('now') — no separate TZ handling
- *      needed since both read PHP's default timezone), regardless of
- *      status — a failed generation still consumed one AI call attempt,
- *      so it still counts against the cap. 0 = no cap (an operator's
- *      explicit choice, not the shipped default — see that config key's
- *      own note on why the default is 3, not 0).
+ *      (MySQL server-local CURDATE(), which this host runs in UTC — NOT
+ *      the same "today" boundary as cms_growth_agent_cron_matches(), which
+ *      as of 8 Aug 2026 uses wpm_now_wib()/Asia-Jakarta instead of PHP's
+ *      UTC default tz. So this cap's day resets at UTC midnight, i.e.
+ *      07:00 WIB, ~7h after the WIB schedule itself rolls to a new day.
+ *      Known gap, not yet reconciled), regardless of status — a failed generation still
+ *      consumed one AI call attempt, so it still counts against the cap.
+ *      0 = no cap (an operator's explicit choice, not the shipped default
+ *      — see that config key's own note on why the default is 3, not 0).
  *   4. This exact minute hasn't already triggered a run (gsc_settings.
  *      last_auto_draft_run_at) — guards against the underlying system cron
  *      invoking this script more often than the configured schedule.
