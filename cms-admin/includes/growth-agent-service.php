@@ -6058,11 +6058,22 @@ function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
             $coverImageError = $e->getMessage();
         }
 
+        // Fallback sementara (8 Aug 2026) — operator mau draft yang
+        // kepublish tetap punya cover, bukan kosong, selama image_agent
+        // belum dikonfigurasi API key-nya. cover_image_error TETAP disimpan
+        // apa adanya di bawah, jadi UI masih bisa bedain "gambar AI asli"
+        // vs "fallback logo situs" via cover_image_is_fallback.
+        $coverImageIsFallback = $coverImagePath === null;
+        if ($coverImageIsFallback) {
+            $coverImagePath = '/assets/img/logo.png';
+        }
+
         $output = [
             'title' => $title,
             'body_html' => $bodyHtml,
             'cover_image_path' => $coverImagePath,
             'cover_image_error' => $coverImageError,
+            'cover_image_is_fallback' => $coverImageIsFallback,
         ];
 
         $jobId = cms_growth_agent_log_job(
