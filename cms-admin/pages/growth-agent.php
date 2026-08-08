@@ -1109,6 +1109,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         <button type="button" class="admin-btn admin-btn--sm ga-page-tab-btn" data-ga-page-tab="health">Kesehatan Teknis<?php if ($tabTechIssueCount > 0) : ?> <span class="pill pill--warn"><?= $tabTechIssueCount ?></span><?php endif; ?></button>
         <button type="button" class="admin-btn admin-btn--sm ga-page-tab-btn" data-ga-page-tab="data">Data &amp; Performa</button>
         <button type="button" class="admin-btn admin-btn--sm ga-page-tab-btn" data-ga-page-tab="settings">Agent &amp; Setelan</button>
+        <button type="button" class="admin-btn admin-btn--sm ga-page-tab-btn" data-ga-page-tab="automation">Otomatisasi</button>
     </div>
 
     <div class="ga-page-tab-panel" data-ga-page-tab="action">
@@ -1353,88 +1354,6 @@ require dirname(__DIR__) . '/includes/alerts.php';
         });
     })();
     </script>
-
-    <?php
-    // ── Autonomous Mode (GROWTH_AGENT_V2_PROPOSAL.md § Fase E, 6 Aug 2026)
-    // — read-only-until-submitted panel state. Presented as ONE switch
-    // (see the autonomous_toggle handler above for why enabled +
-    // job_types.internal_link_suggestion are always written together).
-    // Ships OFF — the oldest internal_link_suggestion job in this install
-    // is nowhere near the Measurement Loop's 28-day window yet, so there is
-    // no before/after evidence to justify turning this on. That decision
-    // belongs to an operator, later, not to this deploy.
-    $autonomousConfig = cms_gsc_get_opportunity_thresholds($pdo)['autonomous_mode'] ?? [];
-    $autonomousEnabled = ($autonomousConfig['enabled'] ?? false) === true
-        && (($autonomousConfig['job_types'] ?? [])['internal_link_suggestion'] ?? false) === true;
-    $autonomousWeeklyLimit = max(0, (int) ($autonomousConfig['weekly_limit'] ?? 3));
-    $autonomousWeeklyUsed = cms_growth_agent_autonomous_weekly_used($pdo);
-    $autonomousRecentLinks = cms_growth_agent_get_recent_auto_applied_links($pdo, 10);
-    ?>
-    <div class="panel">
-        <div class="panel__head">
-            <h3 class="panel__title">Mode Otonom — Internal Linking</h3>
-            <span class="pill pill--<?= $autonomousEnabled ? 'ok' : 'muted' ?>"><?= $autonomousEnabled ? 'AKTIF' : 'NONAKTIF' ?></span>
-        </div>
-        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
-            Kalau dinyalakan, usulan link internal baru (job_type <code>internal_link_suggestion</code>) langsung
-            diterapkan otomatis lewat fungsi yang sama persis dengan tombol "Apply" manual — tanpa menunggu review.
-            Rekomendasi meta SEO (<code>seo_recommendation</code>) TIDAK PERNAH ikut, itu tetap manual selamanya.
-            Dibatasi <?= $autonomousWeeklyLimit ?> auto-apply per minggu, dan tiap perubahan bisa direvert di bawah
-            kalau hasilnya keliru.
-        </p>
-        <div class="toolbar" style="padding:0 20px 16px;">
-            <div class="toolbar__left">
-                <p class="muted" style="margin:0;font-size:13px;">
-                    Dipakai minggu ini: <strong><?= $autonomousWeeklyUsed ?> / <?= $autonomousWeeklyLimit ?></strong>
-                </p>
-            </div>
-            <div class="toolbar__right">
-                <form method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('<?= $autonomousEnabled ? 'Matikan' : 'Nyalakan' ?> Mode Otonom Internal Linking?');">
-                    <?= cms_csrf_field() ?>
-                    <input type="hidden" name="action" value="autonomous_toggle">
-                    <input type="hidden" name="enabled" value="<?= $autonomousEnabled ? '0' : '1' ?>">
-                    <button type="submit" class="admin-btn admin-btn--sm <?= $autonomousEnabled ? 'admin-btn--ghost' : 'admin-btn--primary' ?>">
-                        <?= $autonomousEnabled ? 'Matikan' : 'Nyalakan' ?>
-                    </button>
-                </form>
-            </div>
-        </div>
-        <div class="table-wrap">
-            <table class="admin-table">
-                <thead>
-                    <tr>
-                        <th>Artikel</th>
-                        <th>Link Ditambahkan</th>
-                        <th>Diterapkan</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($autonomousRecentLinks === []) : ?>
-                        <tr><td colspan="4" class="muted">Belum ada link yang diterapkan otomatis.</td></tr>
-                    <?php endif; ?>
-                    <?php foreach ($autonomousRecentLinks as $autoLink) : ?>
-                        <tr>
-                            <td><?= cms_esc($autoLink['page_title']) ?></td>
-                            <td>
-                                <span class="muted">"<?= cms_esc($autoLink['anchor_text']) ?>"</span>
-                                &rarr; <?= cms_esc($autoLink['target_title']) ?>
-                            </td>
-                            <td class="muted"><?= cms_esc($autoLink['applied_at']) ?></td>
-                            <td class="table-actions">
-                                <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Revert link ini? Konten artikel akan dikembalikan seperti sebelum link ditambahkan.');">
-                                    <?= cms_csrf_field() ?>
-                                    <input type="hidden" name="action" value="revert_auto_applied_link">
-                                    <input type="hidden" name="job_id" value="<?= $autoLink['job_id'] ?>">
-                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Revert</button>
-                                </form>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
 
     <?php if ($gscConnected) : ?>
     <div class="panel">
@@ -1928,67 +1847,6 @@ require dirname(__DIR__) . '/includes/alerts.php';
     </div>
 
     <div class="ga-page-tab-panel" data-ga-page-tab="settings">
-    <?php
-    // ── Full Draft Automation scheduler (GROWTH_AGENT_V2_PROPOSAL.md § 6,
-    // Fase H, 8 Aug 2026) — read-only-until-submitted panel state. Ships
-    // OFF (see cron/growth_agent_maintenance.php's own step 8 note) — an
-    // operator turns this on only once Fase F's draft quality has been
-    // manually reviewed for a while.
-    $autoDraftConfig = cms_gsc_get_opportunity_thresholds($pdo)['auto_draft_automation'] ?? [];
-    $autoDraftEnabled = ($autoDraftConfig['enabled'] ?? false) === true;
-    $autoDraftScheduleCron = (string) ($autoDraftConfig['schedule_cron'] ?? '0 6,12,18 * * *');
-    $autoDraftSelectedHours = [];
-    if (preg_match('/^\S+\s+(\S+)\s/', $autoDraftScheduleCron, $cronMatch)) {
-        $autoDraftSelectedHours = array_map('intval', explode(',', $cronMatch[1]));
-    }
-    $autoDraftSourceUrls = is_array($autoDraftConfig['source_urls'] ?? null) ? $autoDraftConfig['source_urls'] : [];
-    ?>
-    <div class="panel">
-        <div class="panel__head">
-            <h3 class="panel__title">Full Draft Automation — Jadwal &amp; Sumber</h3>
-            <span class="pill pill--<?= $autoDraftEnabled ? 'ok' : 'muted' ?>"><?= $autoDraftEnabled ? 'AKTIF' : 'NONAKTIF' ?></span>
-        </div>
-        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
-            Kalau dinyalakan, sesuai jadwal di bawah, sistem otomatis ambil headline tren, generate draft artikel
-            lengkap (judul + isi + gambar cover) lewat AI, dan masukkan ke "Job Terbaru" sebagai
-            <code>auto_draft_article</code> — status "draft siap review" di tab Perlu Tindakan.
-            <strong>TIDAK ADA auto-publish</strong> — setiap draft wajib dibuka, dibaca, diedit kalau perlu, baru
-            di-publish manual oleh editor.
-        </p>
-        <form method="post" action="<?= cms_esc($selfUrl) ?>" class="form-stack" style="padding:0 20px 20px;">
-            <?= cms_csrf_field() ?>
-            <input type="hidden" name="action" value="auto_draft_automation_save">
-
-            <label class="field" style="display:flex;align-items:center;gap:8px;flex-direction:row;">
-                <input type="checkbox" name="enabled" value="1" <?= $autoDraftEnabled ? 'checked' : '' ?>>
-                <span>Nyalakan Full Draft Automation</span>
-            </label>
-
-            <div class="field">
-                <span>Jadwal (jam berapa saja per hari, WIB/server time)</span>
-                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
-                    <?php for ($h = 0; $h < 24; $h++) : ?>
-                        <label style="display:flex;align-items:center;gap:4px;font-size:12px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;">
-                            <input type="checkbox" name="hours[]" value="<?= $h ?>" <?= in_array($h, $autoDraftSelectedHours, true) ? 'checked' : '' ?>>
-                            <?= sprintf('%02d', $h) ?>
-                        </label>
-                    <?php endfor; ?>
-                </div>
-                <small class="muted">Cron aktif saat ini: <code><?= cms_esc($autoDraftScheduleCron) ?></code></small>
-            </div>
-
-            <label class="field">
-                <span>Daftar URL sumber (satu per baris)</span>
-                <textarea name="source_urls" rows="4" style="width:100%;font-family:monospace;font-size:12px;"><?= cms_esc(implode("\n", $autoDraftSourceUrls)) ?></textarea>
-                <small class="muted">Sama seperti Trending Headlines — sistem coba RSS dulu (<code>/rss</code>, <code>/feed</code>), fallback scraping HTML generik kalau tidak ada.</small>
-            </label>
-
-            <div class="toolbar__right">
-                <button type="submit" class="admin-btn admin-btn--primary">Simpan Pengaturan</button>
-            </div>
-        </form>
-    </div>
-
     <?php if ($gscConnected) : ?>
     <div class="panel">
         <div class="panel__head">
@@ -2134,6 +1992,151 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <input type="number" name="days" value="30" min="7" max="365" style="width:80px;">
             <span class="muted" style="font-size:13px;">hari</span>
             <button type="submit" class="admin-btn admin-btn--ghost">Bersihkan sekarang</button>
+        </form>
+    </div>
+    </div>
+
+    <div class="ga-page-tab-panel" data-ga-page-tab="automation">
+    <?php
+    // ── Autonomous Mode (GROWTH_AGENT_V2_PROPOSAL.md § Fase E, 6 Aug 2026)
+    // — read-only-until-submitted panel state. Presented as ONE switch
+    // (see the autonomous_toggle handler above for why enabled +
+    // job_types.internal_link_suggestion are always written together).
+    // Ships OFF — the oldest internal_link_suggestion job in this install
+    // is nowhere near the Measurement Loop's 28-day window yet, so there is
+    // no before/after evidence to justify turning this on. That decision
+    // belongs to an operator, later, not to this deploy.
+    $autonomousConfig = cms_gsc_get_opportunity_thresholds($pdo)['autonomous_mode'] ?? [];
+    $autonomousEnabled = ($autonomousConfig['enabled'] ?? false) === true
+        && (($autonomousConfig['job_types'] ?? [])['internal_link_suggestion'] ?? false) === true;
+    $autonomousWeeklyLimit = max(0, (int) ($autonomousConfig['weekly_limit'] ?? 3));
+    $autonomousWeeklyUsed = cms_growth_agent_autonomous_weekly_used($pdo);
+    $autonomousRecentLinks = cms_growth_agent_get_recent_auto_applied_links($pdo, 10);
+    ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Mode Otonom — Internal Linking</h3>
+            <span class="pill pill--<?= $autonomousEnabled ? 'ok' : 'muted' ?>"><?= $autonomousEnabled ? 'AKTIF' : 'NONAKTIF' ?></span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Kalau dinyalakan, usulan link internal baru (job_type <code>internal_link_suggestion</code>) langsung
+            diterapkan otomatis lewat fungsi yang sama persis dengan tombol "Apply" manual — tanpa menunggu review.
+            Rekomendasi meta SEO (<code>seo_recommendation</code>) TIDAK PERNAH ikut, itu tetap manual selamanya.
+            Dibatasi <?= $autonomousWeeklyLimit ?> auto-apply per minggu, dan tiap perubahan bisa direvert di bawah
+            kalau hasilnya keliru.
+        </p>
+        <div class="toolbar" style="padding:0 20px 16px;">
+            <div class="toolbar__left">
+                <p class="muted" style="margin:0;font-size:13px;">
+                    Dipakai minggu ini: <strong><?= $autonomousWeeklyUsed ?> / <?= $autonomousWeeklyLimit ?></strong>
+                </p>
+            </div>
+            <div class="toolbar__right">
+                <form method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('<?= $autonomousEnabled ? 'Matikan' : 'Nyalakan' ?> Mode Otonom Internal Linking?');">
+                    <?= cms_csrf_field() ?>
+                    <input type="hidden" name="action" value="autonomous_toggle">
+                    <input type="hidden" name="enabled" value="<?= $autonomousEnabled ? '0' : '1' ?>">
+                    <button type="submit" class="admin-btn admin-btn--sm <?= $autonomousEnabled ? 'admin-btn--ghost' : 'admin-btn--primary' ?>">
+                        <?= $autonomousEnabled ? 'Matikan' : 'Nyalakan' ?>
+                    </button>
+                </form>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Artikel</th>
+                        <th>Link Ditambahkan</th>
+                        <th>Diterapkan</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($autonomousRecentLinks === []) : ?>
+                        <tr><td colspan="4" class="muted">Belum ada link yang diterapkan otomatis.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($autonomousRecentLinks as $autoLink) : ?>
+                        <tr>
+                            <td><?= cms_esc($autoLink['page_title']) ?></td>
+                            <td>
+                                <span class="muted">"<?= cms_esc($autoLink['anchor_text']) ?>"</span>
+                                &rarr; <?= cms_esc($autoLink['target_title']) ?>
+                            </td>
+                            <td class="muted"><?= cms_esc($autoLink['applied_at']) ?></td>
+                            <td class="table-actions">
+                                <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Revert link ini? Konten artikel akan dikembalikan seperti sebelum link ditambahkan.');">
+                                    <?= cms_csrf_field() ?>
+                                    <input type="hidden" name="action" value="revert_auto_applied_link">
+                                    <input type="hidden" name="job_id" value="<?= $autoLink['job_id'] ?>">
+                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--ghost">Revert</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <?php
+    // ── Full Draft Automation scheduler (GROWTH_AGENT_V2_PROPOSAL.md § 6,
+    // Fase H, 8 Aug 2026) — read-only-until-submitted panel state. Ships
+    // OFF (see cron/growth_agent_maintenance.php's own step 8 note) — an
+    // operator turns this on only once Fase F's draft quality has been
+    // manually reviewed for a while.
+    $autoDraftConfig = cms_gsc_get_opportunity_thresholds($pdo)['auto_draft_automation'] ?? [];
+    $autoDraftEnabled = ($autoDraftConfig['enabled'] ?? false) === true;
+    $autoDraftScheduleCron = (string) ($autoDraftConfig['schedule_cron'] ?? '0 6,12,18 * * *');
+    $autoDraftSelectedHours = [];
+    if (preg_match('/^\S+\s+(\S+)\s/', $autoDraftScheduleCron, $cronMatch)) {
+        $autoDraftSelectedHours = array_map('intval', explode(',', $cronMatch[1]));
+    }
+    $autoDraftSourceUrls = is_array($autoDraftConfig['source_urls'] ?? null) ? $autoDraftConfig['source_urls'] : [];
+    ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Full Draft Automation — Jadwal &amp; Sumber</h3>
+            <span class="pill pill--<?= $autoDraftEnabled ? 'ok' : 'muted' ?>"><?= $autoDraftEnabled ? 'AKTIF' : 'NONAKTIF' ?></span>
+        </div>
+        <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
+            Kalau dinyalakan, sesuai jadwal di bawah, sistem otomatis ambil headline tren, generate draft artikel
+            lengkap (judul + isi + gambar cover) lewat AI, dan masukkan ke "Job Terbaru" sebagai
+            <code>auto_draft_article</code> — status "draft siap review" di tab Perlu Tindakan.
+            <strong>TIDAK ADA auto-publish</strong> — setiap draft wajib dibuka, dibaca, diedit kalau perlu, baru
+            di-publish manual oleh editor.
+        </p>
+        <form method="post" action="<?= cms_esc($selfUrl) ?>" class="form-stack" style="padding:0 20px 20px;">
+            <?= cms_csrf_field() ?>
+            <input type="hidden" name="action" value="auto_draft_automation_save">
+
+            <label class="field" style="display:flex;align-items:center;gap:8px;flex-direction:row;">
+                <input type="checkbox" name="enabled" value="1" <?= $autoDraftEnabled ? 'checked' : '' ?>>
+                <span>Nyalakan Full Draft Automation</span>
+            </label>
+
+            <div class="field">
+                <span>Jadwal (jam berapa saja per hari, WIB/server time)</span>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+                    <?php for ($h = 0; $h < 24; $h++) : ?>
+                        <label style="display:flex;align-items:center;gap:4px;font-size:12px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;">
+                            <input type="checkbox" name="hours[]" value="<?= $h ?>" <?= in_array($h, $autoDraftSelectedHours, true) ? 'checked' : '' ?>>
+                            <?= sprintf('%02d', $h) ?>
+                        </label>
+                    <?php endfor; ?>
+                </div>
+                <small class="muted">Cron aktif saat ini: <code><?= cms_esc($autoDraftScheduleCron) ?></code></small>
+            </div>
+
+            <label class="field">
+                <span>Daftar URL sumber (satu per baris)</span>
+                <textarea name="source_urls" rows="4" style="width:100%;font-family:monospace;font-size:12px;"><?= cms_esc(implode("\n", $autoDraftSourceUrls)) ?></textarea>
+                <small class="muted">Sama seperti Trending Headlines — sistem coba RSS dulu (<code>/rss</code>, <code>/feed</code>), fallback scraping HTML generik kalau tidak ada.</small>
+            </label>
+
+            <div class="toolbar__right">
+                <button type="submit" class="admin-btn admin-btn--primary">Simpan Pengaturan</button>
+            </div>
         </form>
     </div>
     </div>
