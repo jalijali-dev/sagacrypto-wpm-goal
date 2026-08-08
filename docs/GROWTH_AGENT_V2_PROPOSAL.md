@@ -789,6 +789,85 @@ arsitektur Sagagoal).
 
 ---
 
+## 6. Full Draft Automation — Fase F/G/H (disetujui masuk antrian, 7 Agu 2026)
+
+Milestone baru yang diminta user: dari scrape sumber luar sampai artikel
+tayang, jalan sendiri sesuai schedule — tapi dibangun **bertahap**, bukan
+langsung full-auto, karena ini lompatan risiko yang jauh lebih besar dari
+Fase A-E (dulu cuma nempel link, sekarang nulis + publish konten baru).
+
+**Soal hak cipta — dikonfirmasi aman:** pola tetap sama seperti Article Idea
+yang sudah ada — scraper cuma ambil JUDUL/headline sebagai konteks, AI
+nulis isi artikel dari nol (bukan rewrite/parafrase paragraf sumber). Tidak
+ada perubahan pola di sini, cuma diperpanjang: dulu AI cuma ngasih ide
+judul, sekarang AI juga nulis draft body + gambar-nya.
+
+### Fase F.0 — Prasyarat: fix gap Prompt Control (ditemukan 7 Agu 2026)
+
+`services/PromptLoader.php` cuma whitelist agent key `global`,
+`seo_agent`, `account_recovery`, `prompt_control` — TIDAK ADA
+`growth_agent`, padahal itu agent key yang beneran dipakai hampir semua
+fungsi generate konten di `growth-agent-service.php`. Akibatnya prompt
+`growth_agent` gak bisa diedit lewat UI Prompt Control sama sekali (cuma
+lewat kolom `system_prompt` di AI Agent Settings atau fallback hardcode
+PHP). Harus dibenerin (tambah `growth_agent` + `image_agent` baru ke
+whitelist, plus fix silent-fail di `prompt-control-create.php`) SEBELUM
+Fase F mulai — biar prompt artikel & gambar bisa direview/direvisi
+operator dulu, bukan baru ketahuan pas full-auto udah jalan. Detail di
+brief `prompt-brief-full-milestone.md`.
+
+### Fase F — Draft otomatis (artikel + gambar), publish tetap manual
+
+- Scraper (pola sama seperti Trending Headlines, multi-URL, sudah
+  dikonfigurasi via `opportunity_thresholds_json.trending_sources`) jalan
+  sesuai schedule cron.
+- AI generate draft artikel LENGKAP (judul + body), bukan cuma judul
+  seperti Article Idea sekarang. Tetap lewat SEO-G0 gate + cek
+  title-vs-headline yang sudah ada.
+- Generate gambar cover pakai GPT Image (model **Mini**, quality medium
+  sebagai default — ~$0.02-0.03/gambar, jauh lebih murah dari model
+  flagship, lihat perbandingan harga di `docs/DECISIONS.md`).
+- Hasilnya masuk `growth_agent_jobs` sebagai job baru
+  (`job_type = auto_draft_article`), status "draft siap review", muncul
+  di tab **Perlu Tindakan**. Editor buka, baca, edit kalau perlu, baru klik
+  publish manual — TIDAK auto-publish di fase ini.
+- Tujuan fase ini: validasi kualitas tulisan + gambar AI dulu beberapa
+  minggu sebelum kasih izin auto-publish.
+
+### Fase G — Auto-publish (setelah Fase F terbukti kualitasnya bagus)
+
+- Pakai pola yang sama seperti Fase E (autonomous mode): toggle on/off
+  khusus `job_type = auto_draft_article`, kill switch, revert/unpublish
+  kalau hasilnya jelek, notifikasi Telegram tiap kali auto-publish jalan.
+- **Rate limit WAJIB bisa di-setting dari UI** (bukan hardcode kayak Fase E
+  yang defaultnya 3x/minggu) — taruh sebagai field baru di
+  `opportunity_thresholds_json.autonomous_mode.job_types.auto_draft_article`,
+  misal `{ enabled: false, rate_limit_per_day: 2 }`, diedit lewat halaman
+  Agent & Setelan.
+- Dibatasi ke jenis konten yang risiko faktanya rendah dulu (artikel
+  analisis/evergreen) — BUKAN berita hasil pertandingan/skor real-time,
+  itu tetap wajib lewat manusia karena resiko halusinasi fakta AI paling
+  tinggi di jenis konten ini.
+
+### Fase H — Scheduler UI (semi-otomatis, nyala kalau sudah "aman")
+
+- Panel setting baru: jadwal on/off (jam/hari), pengaturan daftar URL
+  sumber scrape (bukan hardcode satu situs), semuanya di tab **Agent &
+  Setelan**.
+- Dikerjain PARALEL sama Fase F (schedulernya sama aja dipakai baik mode
+  draft-only maupun nanti mode auto-publish) — bukan nunggu Fase G kelar
+  dulu.
+- "Nyala penuh" (auto scrape → draft → publish jalan sendiri sesuai
+  jadwal) baru diaktifkan operator setelah Fase G sudah cukup lama
+  terbukti aman, sama seperti keputusan nyalain Fase E yang nunggu data
+  Measurement Loop dulu.
+
+**Urutan kerja:** Fase F dan H (scheduler) dikerjain bareng dulu. Fase G
+(auto-publish) MENUNGGU hasil Fase F terbukti bagus — jangan dikerjain
+sekaligus.
+
+---
+
 ## Aturan pakai dokumen ini
 
 Begitu satu fase/item dari sini mulai dikerjakan beneran (bukan cuma

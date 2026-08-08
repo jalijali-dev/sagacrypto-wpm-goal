@@ -24,6 +24,40 @@ Terakhir diperbarui: **5 Agustus 2026** (digest mingguan Growth Agent ke Telegra
 
 Prioritas berjalan / yang paling butuh perhatian saat ini.
 
+- ⚠️ **Ditemukan 8 Agu 2026 — Full Draft Automation gak pernah jalan,
+  cron interval mismatch (BUKAN bug kode, infra config).** Toggle "Nyalakan
+  Full Draft Automation" sudah aktif dari deploy Fase F/H (`docs/GROWTH_AGENT_V2_PROPOSAL.md`
+  § 6), jadwal jam sudah dipilih di UI, tapi nol job `auto_draft_article`
+  pernah muncul. Root cause: `cms_growth_agent_maybe_generate_auto_draft()`
+  (`cms-admin/includes/growth-agent-service.php`) sudah benar — dia
+  men-gate berdasarkan jam SAAT DIPANGGIL vs `schedule_cron` yang dipilih
+  user. Tapi cron cPanel yang manggil `cron/growth_agent_maintenance.php`
+  (step 8, satu-satunya trigger fungsi ini) didaftarkan `0 4 * * *` — sekali
+  sehari jam 04:00 — dicatat sebagai keputusan sengaja di entri "Fase A item 1"
+  di bawah, dari SEBELUM Fase F/H ada (waktu itu jam 4 pagi cukup untuk
+  5 langkah maintenance yang semuanya `*_if_stale()`). Jam 4 pagi tidak
+  pernah cocok sama jam manapun yang bisa dipilih di UI penjadwal (yang
+  masuk akal dipilih user, mis. 06/09/10/12/18 WIB) — jadi gate-nya SELALU
+  `false`, setiap hari, sejak Fase F/H di-deploy. Tidak kelihatan sebagai
+  error karena output `echo` step 8 (`"...Skipped — {$reason}."`) hilang —
+  entri cron `0 4 * * *` itu ternyata TIDAK punya redirect log (`>> ... 2>&1`)
+  sama sekali di cPanel, walau baris "Fase A item 1" di bawah mencatat
+  "log ke `~/logs/growth_agent_maintenance.log`" — dua-duanya sudah
+  tidak sinkron dengan kondisi live, catatan ini jadi koreksinya.
+  **Fix yang direkomendasikan** (brief lengkap:
+  `docs/brief-fix-auto-draft-cron-mismatch.md`): ubah entri cron cPanel
+  jadi tiap jam + tambah log redirect:
+  ```
+  0 * * * * /usr/local/bin/php /home/sagagoal/public_html/cron/growth_agent_maintenance.php >> /home/sagagoal/logs/cron/growth_agent_maintenance.log 2>&1
+  ```
+  Aman dipanggil lebih sering — langkah 1-7 sudah `*_if_stale()` (no-op
+  kalau data masih fresh), langkah 8 sendiri sudah punya dedup guard
+  (`gsc_settings.last_auto_draft_run_at`). **Nol perubahan kode** — ini
+  murni entri cron di cPanel, di luar jangkauan akses Claude/Cowork ke
+  production (lihat § atas), jadi HARUS diubah manual oleh user lewat
+  cPanel → Cron Jobs. Setelah diubah: tunggu satu jam yang cocok jadwal,
+  cek tab Perlu Tindakan untuk job `auto_draft_article` baru, dan cek log
+  barunya buat pastikan step 8 `ran: true`.
 - ✅ **Selesai (dikonfirmasi user 28 Jul 2026)** — 3 migrasi SQL destructive
   (`008_remove_products.sql`, `012_cleanup_unused_tables_columns.sql`,
   `013_remove_livescore_module.sql`) sudah dijalankan manual ke database
