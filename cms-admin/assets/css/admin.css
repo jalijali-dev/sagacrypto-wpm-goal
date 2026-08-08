@@ -1699,6 +1699,17 @@ body.admin-body {
   gap: 22px;
 }
 
+/* The unconditional `display: flex` above overrides the browser's own
+   `[hidden] { display: none }` UA-stylesheet rule, so a panel the tab
+   switcher JS correctly sets hidden="true" on still visually rendered as
+   flex — every tab's content stacked on top of each other in one long
+   scroll, even though only one tab was "active" by data/JS. This selector
+   (class + attribute) is more specific than the bare class above, so it
+   wins the cascade without needing !important. */
+.ga-page-tab-panel[hidden] {
+  display: none;
+}
+
 /* Row of scan-action buttons/forms below the Growth Agent intro paragraph
    (moved out of .toolbar__right — 3 long labels never fit that row without
    wrapping awkwardly against the title). Reuses .toolbar__right's own gap
