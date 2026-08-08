@@ -6253,6 +6253,7 @@ function cms_growth_agent_maybe_generate_auto_draft(PDO $pdo): array
 {
     try {
         require_once __DIR__ . '/gsc-api.php';
+        cms_gsc_ensure_schema($pdo);
         $config = cms_gsc_get_opportunity_thresholds($pdo)['auto_draft_automation'] ?? [];
 
         if (($config['enabled'] ?? false) !== true) {

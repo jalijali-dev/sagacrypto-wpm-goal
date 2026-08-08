@@ -47,6 +47,7 @@ $exitCode = 0;
 // exit so cPanel's cron failure email actually fires.
 try {
     cms_growth_agent_ensure_schema($pdo);
+    cms_gsc_ensure_schema($pdo);
     echo "[growth_agent_maintenance] ensure_schema: OK.\n";
 } catch (Throwable $e) {
     echo "[growth_agent_maintenance] ensure_schema: FAILED — {$e->getMessage()}\n";
