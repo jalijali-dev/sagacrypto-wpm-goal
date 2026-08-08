@@ -1396,6 +1396,26 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                     'https://www.detik.com/tag/sepak-bola',
                     'https://www.cnnindonesia.com/olahraga',
                 ],
+                // Hard daily cap, INDEPENDENT of how many hours are checked
+                // in schedule_cron (8 Aug 2026 — requested by project owner:
+                // budget isn't the concern, flexible control over daily
+                // review-queue volume is). Same field the proposal doc
+                // already reserved for Fase G's own rate limit (§ 6,
+                // 'rate_limit_per_day' under autonomous_mode.job_types.
+                // auto_draft_article) — deliberately a DIFFERENT key name
+                // here (max_drafts_per_day) so this Fase F draft-only cap
+                // and Fase G's future auto-PUBLISH cap can never be
+                // confused for the same setting once Fase G exists.
+                // Default 3, not 0/unlimited — this is the first time this
+                // codebase has ever generated unattended draft content, and
+                // there's no track record yet for how many drafts/day an
+                // editor can actually review. 3 matches the old default
+                // schedule's own hour count (06,12,18), so upgrading
+                // existing installs doesn't silently change behavior. An
+                // operator can raise/lower this, or explicitly set 0 to
+                // remove the cap, once draft quality has been reviewed for
+                // a while and 3/day proves too conservative.
+                'max_drafts_per_day' => 3,
             ],
         ];
     }

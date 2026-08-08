@@ -414,10 +414,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $redirect('Minimal satu URL sumber diperlukan.', 'error');
         }
 
+        // Daily draft cap (8 Aug 2026) — plain text input (not <input
+        // type="number">), so range validation MUST happen server-side,
+        // never trusted from the browser alone. Empty/non-numeric input
+        // casts to 0 via (int), which the clamp below then floors at 0
+        // anyway — same "0 = no cap" meaning as an explicit 0, so there's
+        // no separate "fall back to 3" branch needed here.
+        $maxDraftsPerDay = (int) ($_POST['max_drafts_per_day'] ?? 3);
+        $maxDraftsPerDay = max(0, min(1000, $maxDraftsPerDay));
+
         $saved = cms_gsc_set_opportunity_threshold_key($pdo, 'auto_draft_automation', [
             'enabled' => $turnOn,
             'schedule_cron' => $scheduleCron,
             'source_urls' => $sourceUrls,
+            'max_drafts_per_day' => $maxDraftsPerDay,
         ]);
         if (!$saved) {
             $redirect('Gagal menyimpan pengaturan Full Draft Automation.', 'error');
@@ -2093,6 +2103,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         $autoDraftSelectedHours = array_map('intval', explode(',', $cronMatch[1]));
     }
     $autoDraftSourceUrls = is_array($autoDraftConfig['source_urls'] ?? null) ? $autoDraftConfig['source_urls'] : [];
+    $autoDraftMaxPerDay = (int) ($autoDraftConfig['max_drafts_per_day'] ?? 3);
     ?>
     <div class="panel">
         <div class="panel__head">
@@ -2127,6 +2138,17 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 </div>
                 <small class="muted">Cron aktif saat ini: <code><?= cms_esc($autoDraftScheduleCron) ?></code></small>
             </div>
+
+            <label class="field">
+                <span>Batas maksimal draft per hari</span>
+                <input type="text" inputmode="numeric" pattern="[0-9]*" name="max_drafts_per_day"
+                       value="<?= (int) $autoDraftMaxPerDay ?>" style="width:120px;">
+                <small class="muted">
+                    Default 3/hari. Isi angka 0–1000 (0 = tidak dibatasi, tidak direkomendasikan sampai kualitas
+                    draft AI sudah divalidasi beberapa minggu). Sisa jadwal hari itu otomatis di-skip begitu
+                    batas tercapai, terlepas dari berapa banyak jam yang dicentang di atas.
+                </small>
+            </label>
 
             <label class="field">
                 <span>Daftar URL sumber (satu per baris)</span>

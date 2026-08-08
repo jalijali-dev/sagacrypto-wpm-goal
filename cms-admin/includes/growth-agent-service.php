@@ -6202,11 +6202,25 @@ function cms_growth_agent_cron_matches(string $cronExpr, ?DateTimeImmutable $now
 /**
  * Fase H scheduler gate for Fase F — the ONLY place
  * cms_growth_agent_generate_auto_draft_article() is called from. Checked
- * in this order, first failure short-circuits with no generation attempt:
+ * in this order, first failure short-circuits with no generation attempt
+ * (cheapest checks first, same convention as every other multi-condition
+ * gate in this file):
  *   1. opportunity_thresholds_json.auto_draft_automation.enabled === true
  *      (ships false — see that config block's own note).
  *   2. schedule_cron matches the current minute (cms_growth_agent_cron_matches()).
- *   3. This exact minute hasn't already triggered a run (gsc_settings.
+ *   3. max_drafts_per_day (8 Aug 2026, requested by project owner) — a hard
+ *      daily cap INDEPENDENT of how many hours are checked in
+ *      schedule_cron, so an operator can schedule many hourly attempts
+ *      while still bounding how many drafts land in the review queue per
+ *      day. Counts every 'auto_draft_article' job created today
+ *      (server-local CURDATE(), same timezone cms_growth_agent_cron_matches()
+ *      already uses via DateTimeImmutable('now') — no separate TZ handling
+ *      needed since both read PHP's default timezone), regardless of
+ *      status — a failed generation still consumed one AI call attempt,
+ *      so it still counts against the cap. 0 = no cap (an operator's
+ *      explicit choice, not the shipped default — see that config key's
+ *      own note on why the default is 3, not 0).
+ *   4. This exact minute hasn't already triggered a run (gsc_settings.
  *      last_auto_draft_run_at) — guards against the underlying system cron
  *      invoking this script more often than the configured schedule.
  *
@@ -6234,6 +6248,17 @@ function cms_growth_agent_maybe_generate_auto_draft(PDO $pdo): array
         $cronExpr = trim((string) ($config['schedule_cron'] ?? ''));
         if ($cronExpr === '' || !cms_growth_agent_cron_matches($cronExpr)) {
             return ['ran' => false, 'reason' => 'current time does not match schedule_cron', 'job_id' => 0];
+        }
+
+        $maxPerDay = (int) ($config['max_drafts_per_day'] ?? 0);
+        if ($maxPerDay > 0) {
+            $todayCount = (int) $pdo->query(
+                "SELECT COUNT(*) FROM growth_agent_jobs
+                  WHERE job_type = 'auto_draft_article' AND DATE(created_at) = CURDATE()"
+            )->fetchColumn();
+            if ($todayCount >= $maxPerDay) {
+                return ['ran' => false, 'reason' => "daily limit reached ({$todayCount}/{$maxPerDay})", 'job_id' => 0];
+            }
         }
 
         $settings = cms_gsc_get_settings($pdo);
