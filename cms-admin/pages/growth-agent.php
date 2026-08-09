@@ -1048,8 +1048,10 @@ $allStatsCards = array_merge($summaryCards, $statsCards);
 // anywhere today): cms_growth_agent_notifications() (the same count that
 // already drives the navbar bell — failed/manual_action jobs) OR GSC's
 // own last_fetch_status being 'failed'. Either signal alone is enough to
-// flip the badge red.
-$healthNotifCount = cms_growth_agent_notifications($pdo)['count'];
+// flip the badge red. Deliberately action_needed_count, NOT the combined
+// 'count' (9 Aug 2026) — a pile of newly auto-published articles is good
+// news, it must never flip this "needs attention" badge red on its own.
+$healthNotifCount = cms_growth_agent_notifications($pdo)['action_needed_count'];
 $healthGscFailed = $gscConnected && ($gscSettings['last_fetch_status'] ?? '') === 'failed';
 $healthNeedsAttention = $healthNotifCount > 0 || $healthGscFailed;
 

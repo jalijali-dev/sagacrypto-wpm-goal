@@ -197,9 +197,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $noindex      = !empty($_POST['noindex']) ? 1 : 0;
     $tagsRaw      = trim((string) ($_POST['tags'] ?? ''));
 
-    // Auto-fill published_at when publishing without a date — keeps draft saves clean
+    // Auto-fill published_at when publishing without a date — keeps draft saves clean.
+    // wpm_now_wib(), NOT date() (9 Aug 2026 fix, same class as the Growth
+    // Agent auto-publish timezone bug, docs/DECISIONS.md) — every reader
+    // of published_at (artikel.php's wpm_format_date()/wpm_time_ago(),
+    // JSON-LD datePublished) now explicitly treats it as WIB, so the write
+    // side must actually store WIB, not this server's UTC default.
     if ($status === 'published' && $publishedAt === null) {
-        $publishedAt = date('Y-m-d H:i:s');
+        require_once dirname(__DIR__) . '/../includes/TimeHelpers.php';
+        $publishedAt = wpm_now_wib()->format('Y-m-d H:i:s');
     }
 
     // Validate faq_json only when provided — empty is always allowed.

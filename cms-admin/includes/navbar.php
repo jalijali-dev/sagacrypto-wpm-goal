@@ -11,7 +11,7 @@ $pageTitle = $pageTitle ?? 'Dashboard';
 require_once dirname(__DIR__) . '/includes/growth-agent-service.php';
 $cmsGrowthNotif = (isset($pdo) && $pdo instanceof PDO)
     ? cms_growth_agent_notifications($pdo, 8)
-    : ['count' => 0, 'items' => []];
+    : ['count' => 0, 'action_needed_count' => 0, 'new_article_count' => 0, 'items' => []];
 ?>
 <div class="admin-main">
     <header class="admin-navbar">
@@ -51,25 +51,32 @@ $cmsGrowthNotif = (isset($pdo) && $pdo instanceof PDO)
                 <div class="admin-notif__panel" id="admin-notif-panel" hidden>
                     <div class="admin-notif__head">
                         <span>Growth Agent</span>
-                        <?php if ($cmsGrowthNotif['count'] > 0) : ?>
-                            <span class="pill pill--warn"><?= (int) $cmsGrowthNotif['count'] ?> perlu perhatian</span>
+                        <?php if ($cmsGrowthNotif['action_needed_count'] > 0) : ?>
+                            <span class="pill pill--warn"><?= (int) $cmsGrowthNotif['action_needed_count'] ?> perlu perhatian</span>
+                        <?php endif; ?>
+                        <?php if ($cmsGrowthNotif['new_article_count'] > 0) : ?>
+                            <span class="pill pill--ok"><?= (int) $cmsGrowthNotif['new_article_count'] ?> artikel baru</span>
                         <?php endif; ?>
                     </div>
                     <?php if ($cmsGrowthNotif['items'] === []) : ?>
-                        <div class="admin-notif__empty">Tidak ada job yang gagal atau menunggu review saat ini.</div>
+                        <div class="admin-notif__empty">Tidak ada job yang gagal, menunggu review, atau artikel baru dalam 24 jam terakhir.</div>
                     <?php else : ?>
                         <?php foreach ($cmsGrowthNotif['items'] as $notifJob) : ?>
                             <?php
+                            $notifIsNewArticle = $notifJob['notif_type'] === 'new_article';
                             $notifIsSeoRec = $notifJob['job_type'] === 'seo_recommendation' && $notifJob['status'] === 'manual_action';
-                            $notifHref = $notifIsSeoRec
-                                ? cms_nav_href('seo-recommendation-review.php') . '?job_id=' . (int) $notifJob['id']
-                                : cms_nav_href('growth-agent.php');
-                            $notifPill = $notifJob['status'] === 'failed' ? 'warn' : 'info';
-                            $notifLabel = $notifJob['status'] === 'failed' ? 'Gagal' : 'Perlu direview';
+                            $notifHref = $notifIsNewArticle
+                                ? cms_nav_href('pages.php') . '?edit=' . (int) $notifJob['page_id']
+                                : ($notifIsSeoRec
+                                    ? cms_nav_href('seo-recommendation-review.php') . '?job_id=' . (int) $notifJob['id']
+                                    : cms_nav_href('growth-agent.php'));
+                            $notifPill = $notifIsNewArticle ? 'ok' : ($notifJob['status'] === 'failed' ? 'warn' : 'info');
+                            $notifLabel = $notifIsNewArticle ? '🆕 Baru' : ($notifJob['status'] === 'failed' ? 'Gagal' : 'Perlu direview');
+                            $notifTitle = $notifJob['page_title'] ? cms_esc((string) $notifJob['page_title']) : cms_esc((string) $notifJob['job_type']);
                             ?>
-                            <a class="admin-notif__item" href="<?= cms_esc($notifHref) ?>">
+                            <a class="admin-notif__item<?= $notifIsNewArticle ? ' admin-notif__item--new' : '' ?>" href="<?= cms_esc($notifHref) ?>">
                                 <span class="admin-notif__item-title">
-                                    <?= $notifJob['page_title'] ? cms_esc((string) $notifJob['page_title']) : cms_esc((string) $notifJob['job_type']) ?>
+                                    <?= $notifIsNewArticle ? 'Artikel baru dipublikasikan: ' . $notifTitle : $notifTitle ?>
                                 </span>
                                 <span class="admin-notif__item-meta">
                                     <span class="pill pill--<?= $notifPill ?>"><?= cms_esc($notifLabel) ?></span>

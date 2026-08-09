@@ -5592,29 +5592,75 @@ function cms_growth_agent_cleanup_old_jobs(PDO $pdo, int $retentionDays = 90): i
  *
  * @return array{count:int, items:array<int, array<string, mixed>>}
  */
+/**
+ * Fase G follow-up (9 Aug 2026) — a second, DELIBERATELY DIFFERENT-toned
+ * notification category alongside the original failed/manual_action one:
+ * articles that auto-published (or were manually approved) via
+ * job_type='auto_draft_article' in the last 24h. That window is the whole
+ * "expiry" mechanism — no read/unread state, a notification just stops
+ * qualifying once its job is a day old, same trade-off already accepted
+ * elsewhere in this codebase for "good news, not a queue to clear".
+ *
+ * 'new_article' items require p.status = 'published' (not just page_id
+ * being set) — a manually-approved auto_draft_article job also gets a
+ * page_id immediately, but that page is still sitting as an unpublished
+ * DRAFT until an editor separately publishes it. Notifying "Artikel baru
+ * dipublikasikan" for something that isn't actually live yet would be a
+ * false positive, so this only fires for genuinely published articles
+ * (which today means Fase G auto-publish, but stays correct if a manual
+ * approve+immediate-publish path is ever added later).
+ *
+ * $result shape: 'count' (combined, drives the bell's dot), 'action_
+ * needed_count' / 'new_article_count' (the two panel-head pills — kept
+ * separate so a pile of good-news items can never make the "perlu
+ * perhatian" pill look more urgent than it is, or vice versa), 'items'
+ * (merged, ORDER BY created_at DESC, capped at $limit) — each item
+ * carries 'notif_type' ('action_needed' | 'new_article') so navbar.php
+ * can style/word them differently.
+ */
 function cms_growth_agent_notifications(PDO $pdo, int $limit = 8): array
 {
-    $result = ['count' => 0, 'items' => []];
+    $result = ['count' => 0, 'action_needed_count' => 0, 'new_article_count' => 0, 'items' => []];
 
     try {
         cms_growth_agent_ensure_schema($pdo);
 
         $countRow = $pdo->query(
-            "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status IN ('failed', 'manual_action')"
+            "SELECT
+                (SELECT COUNT(*) FROM growth_agent_jobs WHERE status IN ('failed', 'manual_action')) AS action_needed_count,
+                (SELECT COUNT(*)
+                   FROM growth_agent_jobs j
+                   JOIN pages p ON p.page_id = j.page_id
+                  WHERE j.job_type = 'auto_draft_article'
+                    AND j.page_id IS NOT NULL
+                    AND p.status = 'published'
+                    AND j.created_at >= NOW() - INTERVAL 1 DAY) AS new_article_count"
         )->fetch();
-        $result['count'] = (int) ($countRow['cnt'] ?? 0);
+        $result['action_needed_count'] = (int) ($countRow['action_needed_count'] ?? 0);
+        $result['new_article_count'] = (int) ($countRow['new_article_count'] ?? 0);
+        $result['count'] = $result['action_needed_count'] + $result['new_article_count'];
 
         if ($result['count'] === 0) {
             return $result;
         }
 
         $stmt = $pdo->prepare(
-            "SELECT j.id, j.job_type, j.status, j.created_at, p.title AS page_title
-               FROM growth_agent_jobs j
-               LEFT JOIN pages p ON p.page_id = j.page_id
-              WHERE j.status IN ('failed', 'manual_action')
-              ORDER BY j.created_at DESC
-              LIMIT " . max(1, $limit)
+            "(SELECT j.id, j.job_type, j.status, j.created_at, p.title AS page_title, j.page_id,
+                     'action_needed' AS notif_type
+                FROM growth_agent_jobs j
+                LEFT JOIN pages p ON p.page_id = j.page_id
+               WHERE j.status IN ('failed', 'manual_action'))
+             UNION ALL
+             (SELECT j.id, j.job_type, j.status, j.created_at, p.title AS page_title, j.page_id,
+                     'new_article' AS notif_type
+                FROM growth_agent_jobs j
+                JOIN pages p ON p.page_id = j.page_id
+               WHERE j.job_type = 'auto_draft_article'
+                 AND j.page_id IS NOT NULL
+                 AND p.status = 'published'
+                 AND j.created_at >= NOW() - INTERVAL 1 DAY)
+             ORDER BY created_at DESC
+             LIMIT " . max(1, $limit)
         );
         $stmt->execute();
         $result['items'] = $stmt->fetchAll() ?: [];
@@ -5655,21 +5701,37 @@ function cms_growth_agent_notifications(PDO $pdo, int $limit = 8): array
  * directory layout, guard-file (index.php 403), and safe-filename
  * convention (sanitized base + random hex suffix) as
  * pages/media-library.php's own upload handler, so a generated cover image
- * is indistinguishable on disk from a manually uploaded one and shows up
- * in Media Library normally. Deliberately NOT reusing
+ * is indistinguishable on disk from a manually uploaded one. Also inserts
+ * a matching row into `media_library` (9 Aug 2026 fix) — a PREVIOUS
+ * version of this docblock claimed the file "shows up in Media Library
+ * normally", which was false: that page lists rows from the
+ * `media_library` TABLE, not a filesystem scan, and this function used to
+ * only write bytes to disk, never insert a row. The image worked fine as
+ * a `pages.featured_image` regardless (that column just stores a path),
+ * it just never appeared in the catalog UI. Deliberately NOT reusing
  * cms_process_file_uploads() itself — that helper is built around
  * $_FILES/move_uploaded_file() for real HTTP uploads; this writes raw
  * decoded bytes instead, so only the directory/naming conventions are
  * shared, not the file-transfer mechanism.
  *
+ * The media_library INSERT is best-effort and never fails the caller —
+ * see the try/catch around it below. A generated image that saved fine to
+ * disk must still work as a cover image even if the catalog insert fails
+ * for some reason (e.g. a future required column this function doesn't
+ * know about yet); the article should never lose its cover over a
+ * bookkeeping row.
+ *
  * Never throws — returns null on any failure (bad base64, disk full,
  * permission error), so a save failure degrades to "draft without a
  * cover image" rather than aborting the whole draft.
  *
+ * @param string $altTextSource Optional text (e.g. the article title) to
+ *        use as the media_library row's alt_text — falls back to a
+ *        generic label if empty.
  * @return string|null leading-slash relative path (e.g.
  *         "/uploads/media/2026/08/xxxx.png"), or null on failure.
  */
-function cms_growth_agent_save_generated_image(string $base64Data): ?string
+function cms_growth_agent_save_generated_image(PDO $pdo, string $base64Data, string $altTextSource = ''): ?string
 {
     try {
         $bytes = base64_decode($base64Data, true);
@@ -5712,7 +5774,35 @@ function cms_growth_agent_save_generated_image(string $base64Data): ?string
         }
         @chmod($targetPath, 0644);
 
-        return '/' . $relDir . '/' . $safeFilename;
+        $relPath = '/' . $relDir . '/' . $safeFilename;
+
+        try {
+            $insert = $pdo->prepare(
+                'INSERT INTO media_library (
+                    file_name, file_path, file_type, mime_type, file_size_kb,
+                    alt_text, caption, is_active, created_at, updated_at
+                ) VALUES (
+                    :file_name, :file_path, :file_type, :mime_type, :file_size_kb,
+                    :alt_text, :caption, :is_active, NOW(), NOW()
+                )'
+            );
+            $insert->execute([
+                'file_name' => $safeFilename,
+                'file_path' => $relPath,
+                'file_type' => 'image',
+                'mime_type' => 'image/png',
+                'file_size_kb' => (int) round(strlen($bytes) / 1024),
+                'alt_text' => $altTextSource !== '' ? mb_substr($altTextSource, 0, 255) : 'Cover artikel (AI-generated)',
+                'caption' => 'Digenerate otomatis oleh Growth Agent (Full Draft Automation)',
+                'is_active' => 1,
+            ]);
+        } catch (Throwable $e) {
+            // Never lets a catalog bookkeeping failure take down the cover
+            // image itself — see this function's own docblock.
+            error_log('[cms_growth_agent_save_generated_image] Gagal insert media_library: ' . $e->getMessage());
+        }
+
+        return $relPath;
     } catch (Throwable $e) {
         error_log('[cms_growth_agent_save_generated_image] ' . $e->getMessage());
         return null;
@@ -5801,6 +5891,14 @@ function cms_growth_agent_extract_title_context(string $title): string
         'pindah' => 'transfer signing, new club unveiling',
     ];
 
+    // Deliberately str_contains(), NOT word-boundary regex (9 Aug 2026 —
+    // tried \b here, reverted after testing): Indonesian is agglutinative
+    // — "menang" (win) legitimately appears with zero word boundary
+    // inside "kemenangan" (victory, ke-...-an), "dimenangkan" (won,
+    // di-...-kan), "memenangkan" (to win, me-...-kan), etc. \b treats
+    // those as non-matches (tested: "Timnas Raih Kemenangan Besar" fell
+    // through to the generic fallback instead of "victory celebration"),
+    // which is a real regression, not a fix, for this language.
     foreach ($themes as $keyword => $phrase) {
         if (str_contains($lower, $keyword)) {
             return $phrase;
@@ -5814,17 +5912,39 @@ function cms_growth_agent_extract_title_context(string $title): string
  * Builds the final image-generation prompt for one article title —
  * template text comes from Prompt Control (image_agent/instruction, same
  * PromptLoader mechanism every other agent uses — see
- * services/PromptLoader.php), entity/context extraction is pure PHP (the
- * two functions above). Falls back to a hardcoded default template if
- * nothing is configured yet in Prompt Control, same "never break because
- * the DB is empty" convention as cms_ai_resolve_agent()'s own fallback.
+ * services/PromptLoader.php), entity/context/sport-visual extraction is
+ * pure PHP. Falls back to a hardcoded default template if nothing is
+ * configured yet in Prompt Control, same "never break because the DB is
+ * empty" convention as cms_ai_resolve_agent()'s own fallback.
  *
- * Template placeholders: {entities} and {context}, replaced via
- * str_replace — no AI call anywhere in this function.
+ * Template placeholders: {entities}, {context}, {sport_visual} — replaced
+ * via str_replace, no AI call anywhere in this function.
+ *
+ * $sportKey (9 Aug 2026 fix) — the article's already-validated sport_key
+ * (see cms_growth_agent_generate_auto_draft_article(), which resolves it
+ * against the `sports` table before this is ever called), used as the
+ * PRIMARY signal for what kind of sports scene to depict. Before this
+ * fix, the prompt had NO sport signal at all — only mood/theme keywords
+ * (e.g. "victory celebration") plus capitalized entities pulled from the
+ * title, which let the image model misread ambiguous words: job 203's
+ * title contained "Sprint Race" (MotoGP terminology) and the model
+ * rendered literal track-and-field sprinting, because nothing in the
+ * prompt said "motorsport" anywhere.
+ *
+ * Sport keys here are matched against the LIVE `sports.key` values
+ * (confirmed via DB, NOT assumed — this codebase's current values are
+ * 'football'/'basketball'/'motorsport', not the slug-style guesses a
+ * first pass might reach for) plus the 'general' escape hatch already
+ * established elsewhere (pages.php's $pgSportKeyGeneral). An operator
+ * adding a new row to `sports` later needs a matching entry added here
+ * too — this map is intentionally NOT dynamic like the sport_key
+ * PICKLIST sent to the article-writing prompt, since a visual style
+ * description is an editorial/design judgment call, not something to
+ * infer automatically from a sport's name.
  */
-function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title): string
+function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title, string $sportKey = 'general'): string
 {
-    $defaultTemplate = 'Editorial sports photo, {entities}, {context}, realistic photojournalism style, no text overlay, no watermark, 16:9';
+    $defaultTemplate = 'Editorial sports photo, {sport_visual}, {entities}, {context}, realistic photojournalism style, no text overlay, no watermark, 16:9';
 
     $template = $defaultTemplate;
     try {
@@ -5838,11 +5958,23 @@ function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title): str
         // Ignore — falls through to the hardcoded default above.
     }
 
+    $sportVisuals = [
+        'football' => 'football/soccer match scene, stadium, pitch',
+        'basketball' => 'basketball game scene, indoor court, arena',
+        'motorsport' => 'motorsport racing scene, racetrack, race car or motorcycle',
+        'general' => 'general sports scene',
+    ];
+    $sportVisual = $sportVisuals[$sportKey] ?? $sportVisuals['general'];
+
     $entities = cms_growth_agent_extract_title_entities($title);
     $entitiesText = $entities !== [] ? implode(', ', $entities) : 'sports scene';
     $context = cms_growth_agent_extract_title_context($title);
 
-    return str_replace(['{entities}', '{context}'], [$entitiesText, $context], $template);
+    return str_replace(
+        ['{sport_visual}', '{entities}', '{context}'],
+        [$sportVisual, $entitiesText, $context],
+        $template
+    );
 }
 
 /**
@@ -6119,7 +6251,7 @@ function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
             if (!$imageAgent['ok']) {
                 $coverImageError = $imageAgent['error'];
             } else {
-                $imagePrompt = cms_growth_agent_build_cover_image_prompt($pdo, $title);
+                $imagePrompt = cms_growth_agent_build_cover_image_prompt($pdo, $title, $sportKey);
                 // Model/quality per GROWTH_AGENT_V2_PROPOSAL.md § 6: Mini,
                 // medium quality by default — flagship is far more
                 // expensive for a first-pass cover image an editor may
@@ -6128,7 +6260,7 @@ function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
                 if (!$imageResult['success']) {
                     $coverImageError = $imageResult['error'];
                 } else {
-                    $coverImagePath = cms_growth_agent_save_generated_image($imageResult['b64_data']);
+                    $coverImagePath = cms_growth_agent_save_generated_image($pdo, $imageResult['b64_data'], $title);
                     if ($coverImagePath === null) {
                         $coverImageError = 'Gambar berhasil digenerate tapi gagal disimpan ke disk.';
                     }
@@ -6246,7 +6378,14 @@ function cms_growth_agent_auto_publish_draft(PDO $pdo, int $jobId, array $output
         }
 
         $pageId = $draftResult['page_id'];
-        $publishedAt = date('Y-m-d H:i:s');
+        // wpm_now_wib(), NOT date() — same UTC-vs-WIB bug already fixed
+        // once in cms_growth_agent_cron_matches() (commit 3f23a35, docs/
+        // DECISIONS.md): this server's PHP CLI default timezone is UTC,
+        // and published_at is a value an operator actually reads in
+        // pages.php, not just an internal comparison — date() without an
+        // explicit timezone silently stored a WIB-minus-7h timestamp.
+        require_once dirname(__DIR__, 2) . '/includes/TimeHelpers.php';
+        $publishedAt = wpm_now_wib()->format('Y-m-d H:i:s');
         $pdo->prepare("UPDATE pages SET status = 'published', published_at = :published_at, updated_at = NOW() WHERE page_id = :id")
             ->execute(['published_at' => $publishedAt, 'id' => $pageId]);
 

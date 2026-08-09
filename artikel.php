@@ -132,12 +132,20 @@ $ogType = 'article';
  * $extraHead — see that file's own docblock for the convention. Separate
  * from the FAQPage block further down in the body; that one is untouched.
  */
+// Asia/Jakarta-explicit (9 Aug 2026 fix, same class as wpm_format_date()
+// in site-bootstrap.php) — pages.published_at/updated_at are WIB
+// wall-clock strings; DATE_ATOM's offset suffix (+00:00 vs +07:00) must
+// actually match what the naive timestamp means, or search engines read
+// the wrong absolute moment for datePublished/dateModified.
 $wpmIso8601 = static function (?string $value): ?string {
     if ($value === null || $value === '') {
         return null;
     }
-    $ts = strtotime($value);
-    return $ts !== false ? date(DATE_ATOM, $ts) : null;
+    try {
+        return (new DateTime($value, new DateTimeZone(WPM_MATCH_TZ)))->format(DATE_ATOM);
+    } catch (Throwable $e) {
+        return null;
+    }
 };
 
 $schemaSiteSettings = wpm_site_settings($pdo);

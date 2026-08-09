@@ -1151,6 +1151,15 @@ body.admin-body {
   background: var(--surface-soft);
 }
 
+/* "Artikel baru dipublikasikan" items (9 Aug 2026, Fase G follow-up) —
+   a positive/green left accent, deliberately distinct from the default
+   (warning-toned) item look above, so good news doesn't read as one more
+   thing needing attention. */
+.admin-notif__item--new {
+  border-left: 3px solid var(--success-border);
+  padding-left: 7px;
+}
+
 .admin-notif__item-title {
   font-size: 13px;
   font-weight: 600;

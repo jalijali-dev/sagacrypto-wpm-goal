@@ -76,28 +76,55 @@ function wpm_excerpt(string $html, int $len = 160): string
     return mb_substr($text, 0, $len) . '…';
 }
 
-/** Human date formatter shared by every article/listing/match card. */
+/**
+ * Human date formatter for article/page timestamps (pages.published_at/
+ * created_at) ONLY — despite the old "shared by every ... match card"
+ * claim in this docblock, match/game/race kickoff times use the SEPARATE
+ * wpm_format_match_time()/wpm_match_time_wib() helpers in TimeHelpers.php
+ * (those are stored naive-UTC, a different convention — see that file's
+ * own docblock). Conflating the two here would silently mis-render
+ * whichever one doesn't match this function's assumption.
+ *
+ * $value is treated as an Asia/Jakarta wall-clock string (WIB) — pages.
+ * published_at is written that way (cms_growth_agent_auto_publish_draft(),
+ * pages.php's own publish handler), so parsing must say so EXPLICITLY
+ * rather than relying on strtotime()'s implicit PHP-default-timezone
+ * interpretation (9 Aug 2026 fix — a naive strtotime()/date() round-trip
+ * happens to come out correct whenever the read and write side both
+ * default to the exact same timezone, which made this bug invisible in
+ * this environment specifically, but not something to depend on being
+ * true everywhere this code runs).
+ */
 function wpm_format_date(?string $value, string $fmt = 'd M Y'): string
 {
     if ($value === null || $value === '') {
         return '—';
     }
-    $ts = strtotime($value);
-    return $ts !== false ? date($fmt, $ts) : $value;
+    try {
+        return (new DateTime($value, new DateTimeZone(WPM_MATCH_TZ)))->format($fmt);
+    } catch (Throwable $e) {
+        return $value;
+    }
 }
 
 /**
  * Relative time in Bahasa Indonesia (e.g. "5 menit yang lalu", "3 jam yang
  * lalu", "2 hari yang lalu"). Falls back to an absolute date once older
  * than a week, since "52 minggu yang lalu" stops being useful.
+ *
+ * Same Asia/Jakarta-explicit parsing as wpm_format_date() above, same
+ * 9 Aug 2026 fix, same reasoning — $ts needs to be the correct absolute
+ * moment (not shifted by whatever the default timezone happens to be) for
+ * the time()-$ts diff below to produce a truthful "N jam/hari yang lalu".
  */
 function wpm_time_ago(?string $value): string
 {
     if ($value === null || $value === '') {
         return '—';
     }
-    $ts = strtotime($value);
-    if ($ts === false) {
+    try {
+        $ts = (new DateTime($value, new DateTimeZone(WPM_MATCH_TZ)))->getTimestamp();
+    } catch (Throwable $e) {
         return $value;
     }
     $diff = time() - $ts;
