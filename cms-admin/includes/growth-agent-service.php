@@ -5697,6 +5697,61 @@ function cms_growth_agent_notifications(PDO $pdo, int $limit = 8): array
  */
 
 /**
+ * Converts PNG bytes (what gpt-image-1-mini always returns — see
+ * cms_ai_call_openai_image()'s own docblock, no url/JPEG response_format
+ * option exists for this model family) to compressed JPEG, targeting
+ * $maxBytes (9 Aug 2026 fix — operator flagged 1.96/2.19 MB PNGs as too
+ * large; the site's own featured-image size hint is 1200x630, this brings
+ * the on-disk file down to match that expectation).
+ *
+ * Returns null if GD isn't available or decoding fails — caller MUST
+ * treat that as "fall back to the original PNG bytes", never as a hard
+ * failure; a missing PHP extension on some hosting environment must not
+ * be able to kill an otherwise-successful image generation.
+ *
+ * Quality steps down from 82 in increments of 8 (to a floor of 40) until
+ * the JPEG fits $maxBytes — if even quality 40 doesn't fit, that lowest-
+ * quality attempt is still returned rather than looping forever; a
+ * slightly-over-budget JPEG beats no image at all.
+ */
+function cms_growth_agent_convert_to_compressed_jpeg(string $pngBytes, int $maxBytes = 900000): ?string
+{
+    if (!extension_loaded('gd')) {
+        return null;
+    }
+    $img = @imagecreatefromstring($pngBytes);
+    if ($img === false) {
+        return null;
+    }
+
+    // Flatten transparency onto a white background first — JPEG has no
+    // alpha channel, and gpt-image-1-mini output can carry one.
+    $w = imagesx($img);
+    $h = imagesy($img);
+    $flat = imagecreatetruecolor($w, $h);
+    $white = imagecolorallocate($flat, 255, 255, 255);
+    imagefill($flat, 0, 0, $white);
+    imagecopy($flat, $img, 0, 0, 0, 0, $w, $h);
+    imagedestroy($img);
+
+    $jpegBytes = null;
+    for ($quality = 82; $quality >= 40; $quality -= 8) {
+        ob_start();
+        imagejpeg($flat, null, $quality);
+        $jpegBytes = ob_get_clean();
+        if ($jpegBytes !== false && strlen($jpegBytes) <= $maxBytes) {
+            imagedestroy($flat);
+            return $jpegBytes;
+        }
+    }
+    imagedestroy($flat);
+    // Still over budget even at the quality floor — return it anyway
+    // (better than no image), unless imagejpeg() itself never produced
+    // anything usable.
+    return $jpegBytes !== false ? $jpegBytes : null;
+}
+
+/**
  * Saves AI-generated image bytes to disk — same uploads/media/{Y}/{m}/
  * directory layout, guard-file (index.php 403), and safe-filename
  * convention (sanitized base + random hex suffix) as
@@ -5763,13 +5818,24 @@ function cms_growth_agent_save_generated_image(PDO $pdo, string $base64Data, str
             }
         }
 
-        $base = 'ai-cover';
+        // JPEG conversion (9 Aug 2026 fix) — falls back to the original
+        // PNG bytes whenever GD is unavailable or conversion fails, never
+        // a hard error; see cms_growth_agent_convert_to_compressed_jpeg()'s
+        // own docblock.
+        $jpegBytes = cms_growth_agent_convert_to_compressed_jpeg($bytes, 900000);
+        $finalBytes = $jpegBytes ?? $bytes;
+        $extension = $jpegBytes !== null ? 'jpg' : 'png';
+        $mimeType = $jpegBytes !== null ? 'image/jpeg' : 'image/png';
+
+        // 'cover', not 'ai-cover' (9 Aug 2026 — operator didn't want the
+        // AI origin visible in the public file name/URL).
+        $base = 'cover';
         do {
-            $safeFilename = $base . '-' . bin2hex(random_bytes(8)) . '.png';
+            $safeFilename = $base . '-' . bin2hex(random_bytes(8)) . '.' . $extension;
             $targetPath = $diskDir . '/' . $safeFilename;
         } while (file_exists($targetPath));
 
-        if (file_put_contents($targetPath, $bytes) === false) {
+        if (file_put_contents($targetPath, $finalBytes) === false) {
             return null;
         }
         @chmod($targetPath, 0644);
@@ -5790,8 +5856,8 @@ function cms_growth_agent_save_generated_image(PDO $pdo, string $base64Data, str
                 'file_name' => $safeFilename,
                 'file_path' => $relPath,
                 'file_type' => 'image',
-                'mime_type' => 'image/png',
-                'file_size_kb' => (int) round(strlen($bytes) / 1024),
+                'mime_type' => $mimeType,
+                'file_size_kb' => (int) round(strlen($finalBytes) / 1024),
                 'alt_text' => $altTextSource !== '' ? mb_substr($altTextSource, 0, 255) : 'Cover artikel (AI-generated)',
                 'caption' => 'Digenerate otomatis oleh Growth Agent (Full Draft Automation)',
                 'is_active' => 1,
@@ -5837,6 +5903,28 @@ function cms_growth_agent_extract_title_entities(string $title, int $limit = 4):
         'punya', 'jadi',
     ];
 
+    // Sports-news verbs/adverbs (9 Aug 2026 fix) — this site's headlines
+    // are Title Case (EVERY word capitalized, not just proper nouns), so
+    // capitalization alone can't distinguish "STY" (a real entity) from
+    // "Ungkap"/"Masih"/"Optimal" (ordinary verbs/adverbs that only look
+    // capitalized because of the title style). Left uncaught, these words
+    // rode along in the entity list into the cover-image prompt, and GPT
+    // Image tried to render them as literal text on jerseys/objects (a
+    // real observed case: "MASIH" and garbled text on jersey graphics).
+    // Not a final/complete list — expand as new false positives turn up.
+    $nonEntityWords = [
+        'ungkap', 'masih', 'belum', 'optimal', 'jelang', 'siap', 'resmi',
+        'tegaskan', 'akui', 'sebut', 'klaim', 'nilai', 'sindir', 'bantah',
+        'pastikan', 'buka', 'tutup', 'mulai', 'dimulai', 'berlanjut',
+        'lanjutkan', 'incar', 'kejar', 'raih', 'catat', 'cetak', 'pecahkan',
+        'perbaiki', 'perkuat', 'perpanjang', 'tunda', 'batal', 'gagal',
+        'sukses', 'berhasil', 'terancam', 'terkendala', 'siapkan', 'persiapan',
+        'jalani', 'hadapi', 'lawan', 'kalahkan', 'taklukkan', 'unggul',
+        'tertinggal', 'terpuruk', 'terpaksa', 'diwajibkan', 'diminta',
+        'meminta', 'berharap', 'yakin', 'optimis', 'khawatir', 'waspada',
+    ];
+    $nonEntityWords = array_merge($connectors, $nonEntityWords);
+
     $words = preg_split('/\s+/u', trim($title)) ?: [];
     $entities = [];
     foreach ($words as $word) {
@@ -5848,8 +5936,8 @@ function cms_growth_agent_extract_title_entities(string $title, int $limit = 4):
         if ($firstChar !== mb_strtoupper($firstChar, 'UTF-8')) {
             continue; // not capitalized — skip
         }
-        if (in_array(mb_strtolower($clean, 'UTF-8'), $connectors, true)) {
-            continue; // capitalized only because it starts a clause, not a proper noun
+        if (in_array(mb_strtolower($clean, 'UTF-8'), $nonEntityWords, true)) {
+            continue; // capitalized only because of Title Case, not a proper noun
         }
         if (!in_array($clean, $entities, true)) {
             $entities[] = $clean;
@@ -5944,7 +6032,20 @@ function cms_growth_agent_extract_title_context(string $title): string
  */
 function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title, string $sportKey = 'general'): string
 {
-    $defaultTemplate = 'Editorial sports photo, {sport_visual}, {entities}, {context}, realistic photojournalism style, no text overlay, no watermark, 16:9';
+    // "no text overlay, no watermark" alone (pre-9-Aug-2026) reads to the
+    // model as "no caption/logo stamped ON TOP of the image" — it does
+    // NOT stop the model rendering text INSIDE the scene itself (jersey
+    // numbers, sponsor names on kits, signage), which is what actually
+    // happened: entity words leaking into the prompt (see the entity-
+    // extraction fix above) got rendered as literal jersey text. Kept
+    // explicit even after that extraction fix, since language always has
+    // new false positives that fix won't catch — this is the backstop.
+    // "candid documentary...avoid overly smooth/airbrushed/CGI look" etc
+    // (9 Aug 2026 fix) — operator feedback that generated covers look
+    // "too AI": the usual tells (glossy/too-smooth skin, perfect studio
+    // lighting, perfect symmetry, oversaturated color). Not a technical
+    // bug, just prompt wording that never asked for the opposite.
+    $defaultTemplate = 'Editorial sports photo, {sport_visual}, {entities}, {context}, realistic photojournalism style, candid documentary sports photography, natural skin texture, natural uneven stadium/venue lighting, slight motion blur on fast movement, avoid overly smooth or airbrushed look, avoid glossy CGI/render look, avoid perfect symmetry, film-grain texture, no text overlay, no watermark, no readable text, letters, numbers, or logos on jerseys, clothing, signage, or banners — plain/blank jerseys and kits only, 16:9';
 
     $template = $defaultTemplate;
     try {
