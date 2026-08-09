@@ -6195,13 +6195,17 @@ function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
  * output_json.auto_publish_error for the operator to see why the toggle
  * didn't do what it says on the tin this one time.
  *
- * Reuses cms_growth_agent_create_article_draft_from_auto_draft() UNCHANGED
- * (same function the manual Approve button calls) to actually create the
- * `pages` row — this function's only job is (1) picking an author for a
- * run that has no admin session to pull one from, and (2) flipping the
- * resulting row from 'draft' to 'published' plus re-running the sitemap
- * upsert so it reflects 'published' status (the create-draft function
- * itself always upserts as 'draft', by design — see its own docblock).
+ * Reuses cms_growth_agent_create_article_draft_from_auto_draft() (same
+ * function the manual Approve button calls) to actually create the
+ * `pages` row, passing $forAutoPublish=true (9 Aug 2026 fix — see that
+ * function's own docblock) so the reviewer-facing disclaimer paragraph
+ * never ships as permanent public-facing text on an article nobody is
+ * going to review. This function's only remaining job is (1) picking an
+ * author for a run that has no admin session to pull one from, and (2)
+ * flipping the resulting row from 'draft' to 'published' plus re-running
+ * the sitemap upsert so it reflects 'published' status (the create-draft
+ * function itself always upserts as 'draft', by design — see its own
+ * docblock).
  *
  * Author fallback: no admin session exists on this code path (cron-
  * triggered, nobody clicked anything), so this picks the lowest admin_id
@@ -6233,7 +6237,7 @@ function cms_growth_agent_auto_publish_draft(PDO $pdo, int $jobId, array $output
         $authorId = (int) $authorStmt->fetchColumn() ?: null;
 
         $draftResult = cms_growth_agent_create_article_draft_from_auto_draft(
-            $pdo, ['id' => $jobId, 'output_json' => json_encode($output)], $authorId
+            $pdo, ['id' => $jobId, 'output_json' => json_encode($output)], $authorId, true
         );
 
         if (!$draftResult['ok']) {
@@ -6295,9 +6299,19 @@ function cms_growth_agent_auto_publish_draft(PDO $pdo, int $jobId, array $output
  * above is the ONLY caller allowed to flip the result to 'published'
  * afterward, and only when auto_draft_automation.auto_publish is on.
  *
+ * $forAutoPublish (9 Aug 2026 fix, default false) controls ONLY whether
+ * the "WAJIB dibaca dan diedit sebelum publish..." disclaimer paragraph
+ * gets prepended to content — that disclaimer is written for a human
+ * about to review this draft, so it must never be attached when the
+ * caller is going to flip straight to published with no review
+ * (cms_growth_agent_auto_publish_draft() is the only caller that passes
+ * true). Every manual-approve caller (growth-agent.php's generic handler,
+ * auto-draft-review.php) leaves this at its default false, unchanged
+ * behavior.
+ *
  * @return array{ok:bool,page_id:int,error:string}
  */
-function cms_growth_agent_create_article_draft_from_auto_draft(PDO $pdo, array $job, ?int $authorId): array
+function cms_growth_agent_create_article_draft_from_auto_draft(PDO $pdo, array $job, ?int $authorId, bool $forAutoPublish = false): array
 {
     try {
         $output = json_decode((string) ($job['output_json'] ?? ''), true);
@@ -6385,8 +6399,17 @@ function cms_growth_agent_create_article_draft_from_auto_draft(PDO $pdo, array $
             $slug = $slugBase . '-' . $suffix;
         }
 
-        $contentHtml = '<p><em>Draft dibuat otomatis oleh Growth Agent (Full Draft Automation, Fase F) — WAJIB dibaca dan diedit sebelum publish, jangan asumsikan semua fakta akurat (resiko halusinasi AI).</em></p>'
-            . $bodyHtml;
+        // Disclaimer is for a human REVIEWER about to click Approve on
+        // auto-draft-review.php, not for the public — never attach it when
+        // this call is going to flip straight to published with zero
+        // review (Fase G, cms_growth_agent_auto_publish_draft()), or it
+        // ships as permanent, publicly-readable text on the live article
+        // (see docs/DECISIONS.md, 9 Aug 2026 — job 199 leaked this exact
+        // paragraph to sagagoal.com before this fix).
+        $contentHtml = $forAutoPublish
+            ? $bodyHtml
+            : '<p><em>Draft dibuat otomatis oleh Growth Agent (Full Draft Automation, Fase F) — WAJIB dibaca dan diedit sebelum publish, jangan asumsikan semua fakta akurat (resiko halusinasi AI).</em></p>'
+                . $bodyHtml;
 
         $payload = [
             'title' => $title,
