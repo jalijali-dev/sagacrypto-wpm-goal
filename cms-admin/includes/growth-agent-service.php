@@ -5958,13 +5958,63 @@ function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title, stri
         // Ignore — falls through to the hardcoded default above.
     }
 
-    $sportVisuals = [
-        'football' => 'football/soccer match scene, stadium, pitch',
-        'basketball' => 'basketball game scene, indoor court, arena',
-        'motorsport' => 'motorsport racing scene, racetrack, race car or motorcycle',
-        'general' => 'general sports scene',
+    // Off-site sport keyword dictionary (9 Aug 2026 fix, job 205) — used
+    // ONLY when sport_key === 'general'. That bucket covers every sport
+    // this site doesn't officially track (boxing, swimming, athletics,
+    // etc, not just "no specific sport"), and a bare "general sports
+    // scene" phrase gave GPT Image nothing to go on — it defaulted to
+    // football/soccer imagery for a boxing article (job 205), the exact
+    // same "model guesses when the prompt is vague" failure job 203
+    // already proved (there it was a missing sport signal entirely, here
+    // it's a signal too vague to be useful). NOT exhaustive by design —
+    // add entries as new off-site sports actually turn up in testing,
+    // don't pre-build hundreds of entries for sports that never appear.
+    // Deliberately plain keyword matching, no AI call, same "cheap and
+    // fast" principle as cms_growth_agent_extract_title_context().
+    $offSiteSportKeywords = [
+        'tinju' => 'boxing match scene, boxing ring, gloves',
+        'petinju' => 'boxing match scene, boxing ring, gloves',
+        'pugilisme' => 'boxing match scene, boxing ring, gloves',
+        'renang' => 'swimming competition scene, pool, swimmer',
+        'atletik' => 'athletics track and field scene, running track',
+        'lari' => 'running/track athletics scene, running track',
+        'angkat besi' => 'weightlifting competition scene, barbell',
+        'bulu tangkis' => 'badminton match scene, indoor court, shuttlecock',
+        'bulutangkis' => 'badminton match scene, indoor court, shuttlecock',
+        'voli' => 'volleyball match scene, indoor court, net',
+        'tenis' => 'tennis match scene, tennis court',
+        'panahan' => 'archery competition scene, bow and target',
+        'e-sports' => 'esports competitive gaming scene, gaming setup',
+        'esports' => 'esports competitive gaming scene, gaming setup',
+        'golf' => 'golf tournament scene, golf course',
+        'bola basket' => 'basketball game scene, indoor court, arena',
     ];
-    $sportVisual = $sportVisuals[$sportKey] ?? $sportVisuals['general'];
+
+    $sportVisual = null;
+    if ($sportKey === 'general') {
+        $lowerTitle = mb_strtolower($title, 'UTF-8');
+        foreach ($offSiteSportKeywords as $keyword => $phrase) {
+            if (str_contains($lowerTitle, $keyword)) {
+                $sportVisual = $phrase;
+                break;
+            }
+        }
+    }
+    if ($sportVisual === null) {
+        $sportVisuals = [
+            'football' => 'football/soccer match scene, stadium, pitch',
+            'basketball' => 'basketball game scene, indoor court, arena',
+            'motorsport' => 'motorsport racing scene, racetrack, race car or motorcycle',
+            // Last-resort fallback — only reached when sport_key is
+            // 'general' AND no off-site keyword matched. Explicitly rules
+            // out football/soccer rather than saying "general sports
+            // scene" — we now have two confirmed cases (job 203, job 205)
+            // of GPT Image defaulting to football imagery whenever the
+            // prompt doesn't rule it out.
+            'general' => 'multi-sport athletic competition scene, diverse sports arena, athletes in action (explicitly NOT a football/soccer match)',
+        ];
+        $sportVisual = $sportVisuals[$sportKey] ?? $sportVisuals['general'];
+    }
 
     $entities = cms_growth_agent_extract_title_entities($title);
     $entitiesText = $entities !== [] ? implode(', ', $entities) : 'sports scene';
