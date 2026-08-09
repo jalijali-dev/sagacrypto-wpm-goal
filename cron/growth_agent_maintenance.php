@@ -33,6 +33,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../cms-admin/config/database.php';
+require_once __DIR__ . '/../cms-admin/config/app.php';
 require_once __DIR__ . '/../cms-admin/includes/schema-guard.php';
 require_once __DIR__ . '/../cms-admin/includes/growth-agent-service.php';
 require_once __DIR__ . '/../cms-admin/includes/gsc-api.php';
