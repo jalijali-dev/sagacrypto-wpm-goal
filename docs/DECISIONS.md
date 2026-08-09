@@ -203,3 +203,33 @@ diketahui.
 **Alternatif yang dipertimbangkan:** <opsi lain yang sempat dipikirkan dan
 kenapa tidak dipilih — boleh dihapus baris ini kalau memang tidak ada>
 -->
+
+## 2026-08-09 — Fase G: auto_draft_article boleh full auto-publish tanpa approval manusia
+
+**Keputusan:** Job `auto_draft_article` (Full Draft Automation — Fase F)
+boleh langsung publish artikel ke publik tanpa approval manusia, saat
+toggle "Mode Otonom — Auto-Publish Draft" di panel Growth Agent → tab
+Otomatisasi dinyalakan manual oleh operator. Ini pengecualian eksplisit
+dari aturan default arsitektur project (Action Queue + approval manusia
+wajib untuk semua saran Growth Agent). Job_type lain TIDAK terpengaruh,
+tetap wajib approval manusia seperti biasa.
+
+Tidak ada rate limit tambahan atau gate warning yang memblokir publish
+selama toggle ini ON — SEO-G0 gate dan title-vs-headline check tetap
+berjalan dan tetap dicatat di job/output_json untuk audit, tapi hasilnya
+TIDAK menahan publish. `max_drafts_per_day` tetap berlaku sebagai
+pembatas GENERATE (kontrol biaya AI), bukan pembatas publish.
+
+**Alasan:** Operator (owner situs) secara eksplisit meminta full
+otomatisasi (scrape → draft → publish) tanpa campur tangan manusia,
+dengan tujuan kecepatan publikasi konten dan skala. Operator sudah
+diberi tahu risikonya (artikel bisa salah fakta/mirip-copyright sebelum
+sempat direview) dan tetap memilih opsi ini secara sadar, dikonfirmasi
+lewat pertanyaan eksplisit sebelum perubahan ini dibuat.
+
+**Alternatif yang dipertimbangkan:** Auto-publish dengan gate (tetap
+ditahan manual kalau ada warning SEO-G0/title-mirip-headline) + rate
+limit sebagai pengaman minimal — ditawarkan ke operator, ditolak, operator
+memilih full-auto tanpa pengaman.
+
+---

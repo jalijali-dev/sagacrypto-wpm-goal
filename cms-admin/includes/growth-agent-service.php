@@ -5883,8 +5883,15 @@ function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title): str
  * up in Perlu Tindakan through the existing generic "succeeded, zero
  * feedback rows" query — no new UI query needed.
  *
- * NEVER sets pages.status='published' anywhere in this function or the
- * approve-adapter below it — that is Fase G, explicitly out of scope here.
+ * Fase G (9 Aug 2026, docs/DECISIONS.md) — AFTER the job above is logged
+ * 'succeeded', if opportunity_thresholds_json.auto_draft_automation.
+ * auto_publish is true, cms_growth_agent_auto_publish_draft() below runs
+ * and MAY flip the resulting pages row straight to status='published'
+ * with zero human review. This is a deliberate, operator-approved
+ * exception ONLY for this job_type — every other job_type in this
+ * codebase still requires human approval via the Action Queue, and
+ * auto_publish defaults to false (old draft-and-wait-for-approval
+ * behavior unchanged unless an operator opts in).
  *
  * @return array{ok:bool,job_id:int,error:string}
  */
@@ -5935,8 +5942,23 @@ function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
             'body (return as clean HTML using only <p>, <h2>, <h3>, <ul>, <li>, <strong>, <em> tags, no inline ' .
             'styles, no markdown). If the prompt includes a section listing similar existing articles on this ' .
             'site, take a DIFFERENT angle — do not duplicate. Your title must NOT be identical or near-identical ' .
-            'to the source headline — reword/reframe it as your own. Respond with ONLY a raw JSON object, no ' .
-            'markdown, no code fences, no commentary, in exactly this shape: {"title": "...", "body_html": "..."}';
+            'to the source headline — reword/reframe it as your own. Also write: an excerpt (1-2 sentences ' .
+            'summarizing the article), a meta_title (max 60 characters, SEO-friendly), a meta_description (max ' .
+            '155 characters, SEO-friendly), a sport_key, and a category_slug. Both sport_key and category_slug ' .
+            'MUST be chosen based on what the article you just wrote is ACTUALLY ABOUT — never pick a "safe" ' .
+            'generic option just because it is always technically valid. For sport_key: pick the SINGLE best ' .
+            'match from the "Valid sport_key options" list given in the prompt, using its exact key value, never ' .
+            'invent one — if the article is clearly about one specific sport (e.g. a football transfer, an NBA ' .
+            'game, an F1 race), you MUST use that sport\'s key, NOT "general"; only use "general" when the ' .
+            'article is genuinely cross-sport or not about a specific sport at all (e.g. general sports-org news) ' .
+            '— "general" is an honest answer for that narrow case, not a default fallback to reach for whenever ' .
+            'you are unsure. For category_slug: pick the SINGLE best match from the "Valid category_slug ' .
+            'options" list given in the prompt, using its exact slug value, never invent one — e.g. transfer ' .
+            'rumors/news go to a transfer-themed category, tactical/opinion pieces go to an analysis-themed ' .
+            'category, match-result recaps go to a results-themed category; if genuinely nothing fits, use an ' .
+            'empty string. Respond with ONLY a raw JSON object, no markdown, no code fences, no commentary, in ' .
+            'exactly this shape: {"title": "...", "body_html": "...", "excerpt": "...", "meta_title": "...", ' .
+            '"meta_description": "...", "sport_key": "...", "category_slug": "..."}';
 
         $agent = cms_ai_resolve_agent($pdo, 'growth_agent', $defaultSystemPrompt);
         if (!$agent['ok']) {
@@ -5980,6 +6002,45 @@ function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
                 "Existing published articles on this site already close to this topic (take a DIFFERENT angle):\n"
                 . implode("\n", $similarLines);
         }
+
+        // sport_key / category_slug picklists (9 Aug 2026, fix: auto-draft
+        // articles were shipping with empty sport_key/category_id, hiding
+        // them from homepage sport filter chips entirely). Queried FRESH
+        // on every call, same tables/columns/ordering pages.php itself uses
+        // for its own dropdowns — never hardcoded, so an operator adding or
+        // renaming a category takes effect on the very next generate with
+        // no code change. sport_key validity is re-checked in PHP right
+        // after the AI responds (below); category_slug is deliberately
+        // NOT re-validated here — cms_growth_agent_create_article_draft_
+        // from_auto_draft() re-queries and resolves it at Approve time
+        // instead, since a category an operator deletes between generation
+        // and approval must not silently resurrect it.
+        $validSportKeys = ['general'];
+        try {
+            $sportsRows = $pdo->query('SELECT `key`, name FROM sports ORDER BY sort_order ASC, name ASC')->fetchAll();
+        } catch (Throwable $e) {
+            $sportsRows = [];
+        }
+        $sportOptionLines = ['- general | Umum / Semua Cabang'];
+        foreach ($sportsRows as $sportRow) {
+            $validSportKeys[] = (string) $sportRow['key'];
+            $sportOptionLines[] = '- ' . $sportRow['key'] . ' | ' . $sportRow['name'];
+        }
+
+        $categoryOptionLines = [];
+        try {
+            $categoryRows = $pdo->query('SELECT id, name, slug FROM article_categories ORDER BY name ASC')->fetchAll();
+        } catch (Throwable $e) {
+            $categoryRows = [];
+        }
+        foreach ($categoryRows as $categoryRow) {
+            $categoryOptionLines[] = '- ' . $categoryRow['slug'] . ' | ' . $categoryRow['name'];
+        }
+
+        $userPromptParts[] = "Valid sport_key options (format: key | name):\n" . implode("\n", $sportOptionLines);
+        $userPromptParts[] = $categoryOptionLines !== []
+            ? "Valid category_slug options (format: slug | name):\n" . implode("\n", $categoryOptionLines)
+            : "Valid category_slug options: none configured yet — use an empty string for category_slug.";
 
         $userPrompt = implode("\n\n", $userPromptParts);
 
@@ -6026,6 +6087,25 @@ function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
         $title = (string) $parsed['title'];
         $bodyHtml = (string) $parsed['body_html'];
 
+        // excerpt/meta_title/meta_description/sport_key/category_slug (9
+        // Aug 2026 fix) — all optional in the AI response (unlike title/
+        // body_html above), cms_growth_agent_create_article_draft_from_
+        // auto_draft() applies its own fallbacks for whichever of these
+        // come back empty, so this function doesn't duplicate that logic —
+        // it only does the ONE validation that must happen HERE, against
+        // the picklist this exact call used: sport_key. Doing it here
+        // (rather than leaving it to the insert function) means an invalid/
+        // hallucinated key never even reaches output_json — the job record
+        // itself is truthful about what sport_key will end up being used.
+        $excerpt = trim((string) ($parsed['excerpt'] ?? ''));
+        $metaTitle = trim((string) ($parsed['meta_title'] ?? ''));
+        $metaDescription = trim((string) ($parsed['meta_description'] ?? ''));
+        $sportKey = trim((string) ($parsed['sport_key'] ?? ''));
+        if (!in_array($sportKey, $validSportKeys, true)) {
+            $sportKey = 'general';
+        }
+        $categorySlug = trim((string) ($parsed['category_slug'] ?? ''));
+
         // "Aturan keras" — checked against the ONE headline this prompt
         // actually used, unchanged function.
         $inputBrief['title_vs_headline_check'] = cms_growth_agent_check_title_vs_headlines($pdo, $title, [$selected]);
@@ -6071,6 +6151,11 @@ function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
         $output = [
             'title' => $title,
             'body_html' => $bodyHtml,
+            'excerpt' => $excerpt,
+            'meta_title' => $metaTitle,
+            'meta_description' => $metaDescription,
+            'sport_key' => $sportKey,
+            'category_slug' => $categorySlug,
             'cover_image_path' => $coverImagePath,
             'cover_image_error' => $coverImageError,
             'cover_image_is_fallback' => $coverImageIsFallback,
@@ -6081,10 +6166,120 @@ function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
             $agent['model'], null, null, $result['latency_ms'] ?? null, '', 'medium'
         );
 
+        // Fase G — see this function's own docblock note above. Runs AFTER
+        // the job is already logged 'succeeded', so a publish failure here
+        // never loses the generated draft — cms_growth_agent_auto_publish_draft()
+        // never throws, it records auto_publish_error in output_json instead.
+        require_once __DIR__ . '/gsc-api.php';
+        $autoPublish = (bool) (cms_gsc_get_opportunity_thresholds($pdo)['auto_draft_automation']['auto_publish'] ?? false);
+        if ($autoPublish) {
+            cms_growth_agent_auto_publish_draft($pdo, $jobId, $output);
+        }
+
         return ['ok' => true, 'job_id' => $jobId, 'error' => ''];
     } catch (Throwable $e) {
         error_log('[cms_growth_agent_generate_auto_draft_article] ' . $e->getMessage());
         return ['ok' => false, 'job_id' => 0, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Fase G (9 Aug 2026, docs/DECISIONS.md) — full auto-publish for
+ * `auto_draft_article`, gated entirely on opportunity_thresholds_json.
+ * auto_draft_automation.auto_publish (default false). Called ONLY from
+ * cms_growth_agent_generate_auto_draft_article(), AFTER the job is already
+ * logged 'succeeded' — so any failure in here (bad title/body, DB error,
+ * whatever) never loses the generated draft: it stays a normal succeeded
+ * job the operator can still Approve manually from auto-draft-review.php,
+ * same as if auto_publish were off. The failure reason rides along in
+ * output_json.auto_publish_error for the operator to see why the toggle
+ * didn't do what it says on the tin this one time.
+ *
+ * Reuses cms_growth_agent_create_article_draft_from_auto_draft() UNCHANGED
+ * (same function the manual Approve button calls) to actually create the
+ * `pages` row — this function's only job is (1) picking an author for a
+ * run that has no admin session to pull one from, and (2) flipping the
+ * resulting row from 'draft' to 'published' plus re-running the sitemap
+ * upsert so it reflects 'published' status (the create-draft function
+ * itself always upserts as 'draft', by design — see its own docblock).
+ *
+ * Author fallback: no admin session exists on this code path (cron-
+ * triggered, nobody clicked anything), so this picks the lowest admin_id
+ * active superadmin as the "system" author — deterministic, no new config
+ * field needed. If that changes, add a dedicated
+ * auto_draft_automation.publish_author_id config key instead of guessing
+ * further down this list.
+ *
+ * Never throws — every failure path is caught and recorded, never
+ * propagated to the caller (which has already returned success for the
+ * generation itself by the time this runs).
+ */
+function cms_growth_agent_auto_publish_draft(PDO $pdo, int $jobId, array $output): void
+{
+    $recordError = static function (string $message) use ($pdo, $jobId): void {
+        try {
+            $pdo->prepare(
+                "UPDATE growth_agent_jobs SET output_json = JSON_SET(output_json, '$.auto_publish_error', :msg), updated_at = NOW() WHERE id = :id"
+            )->execute(['msg' => $message, 'id' => $jobId]);
+        } catch (Throwable $e) {
+            error_log('[cms_growth_agent_auto_publish_draft] Failed to record auto_publish_error: ' . $e->getMessage());
+        }
+    };
+
+    try {
+        $authorStmt = $pdo->query(
+            "SELECT admin_id FROM admins WHERE role = 'superadmin' AND is_active = 1 ORDER BY admin_id ASC LIMIT 1"
+        );
+        $authorId = (int) $authorStmt->fetchColumn() ?: null;
+
+        $draftResult = cms_growth_agent_create_article_draft_from_auto_draft(
+            $pdo, ['id' => $jobId, 'output_json' => json_encode($output)], $authorId
+        );
+
+        if (!$draftResult['ok']) {
+            $recordError('Gagal membuat draft: ' . $draftResult['error']);
+            return;
+        }
+
+        $pageId = $draftResult['page_id'];
+        $publishedAt = date('Y-m-d H:i:s');
+        $pdo->prepare("UPDATE pages SET status = 'published', published_at = :published_at, updated_at = NOW() WHERE page_id = :id")
+            ->execute(['published_at' => $publishedAt, 'id' => $pageId]);
+
+        // Re-upsert into the sitemap as 'published' — the create-draft call
+        // above already upserted it once as 'draft' (its own hardcoded
+        // status), which would otherwise leave the sitemap saying "draft"
+        // for an article that's actually live.
+        try {
+            $pageStmt = $pdo->prepare('SELECT title, slug, featured_image FROM pages WHERE page_id = :id LIMIT 1');
+            $pageStmt->execute(['id' => $pageId]);
+            $pageRow = $pageStmt->fetch();
+            if ($pageRow) {
+                cms_sitemap_on_article_save($pdo, ['status' => 'draft'], [
+                    'page_id' => $pageId,
+                    'title' => $pageRow['title'],
+                    'slug' => $pageRow['slug'],
+                    'featured_image' => $pageRow['featured_image'],
+                    'status' => 'published',
+                    'published_at' => $publishedAt,
+                    'noindex' => 0,
+                    'canonical_url' => null,
+                ]);
+            }
+        } catch (Throwable $e) {
+            error_log('[cms_growth_agent_auto_publish_draft] Sitemap re-upsert failed: ' . $e->getMessage());
+        }
+
+        $pdo->prepare('UPDATE growth_agent_jobs SET page_id = :page_id, updated_at = NOW() WHERE id = :id')
+            ->execute(['page_id' => $pageId, 'id' => $jobId]);
+
+        $currentAdminId = $authorId; // same id used as author — see docblock's "system author" note.
+        $pdo->prepare(
+            'INSERT INTO growth_agent_feedback (job_id, action, reviewed_by, created_at) VALUES (:job_id, :action, :reviewed_by, NOW())'
+        )->execute(['job_id' => $jobId, 'action' => 'auto_applied', 'reviewed_by' => $currentAdminId]);
+    } catch (Throwable $e) {
+        error_log('[cms_growth_agent_auto_publish_draft] ' . $e->getMessage());
+        $recordError('Exception: ' . $e->getMessage());
     }
 }
 
@@ -6095,7 +6290,10 @@ function cms_growth_agent_generate_auto_draft_article(PDO $pdo): array
  * own docblock for why), extended for a job type that already carries a
  * full body + optional cover image rather than just a title+outline stub.
  * Still only ever produces a DRAFT — publish stays separate and fully
- * manual, no code path here ever touches pages.status beyond 'draft'.
+ * manual when called from the manual Approve path
+ * (growth-agent.php/auto-draft-review.php); cms_growth_agent_auto_publish_draft()
+ * above is the ONLY caller allowed to flip the result to 'published'
+ * afterward, and only when auto_draft_automation.auto_publish is on.
  *
  * @return array{ok:bool,page_id:int,error:string}
  */
@@ -6110,8 +6308,68 @@ function cms_growth_agent_create_article_draft_from_auto_draft(PDO $pdo, array $
         }
         $featuredImage = is_array($output) ? trim((string) ($output['cover_image_path'] ?? '')) : '';
 
+        // excerpt/meta_title/meta_description/sport_key/category_slug (9
+        // Aug 2026 fix) — output_json from a job created before this fix
+        // (or one where the AI just omitted a field) won't have some/all
+        // of these, so every one of them gets a real fallback here rather
+        // than landing NULL/empty in `pages` — this function is the single
+        // place that actually builds the INSERT, so it's the right spot to
+        // guarantee that regardless of what generated the job.
+        $excerpt = is_array($output) ? trim((string) ($output['excerpt'] ?? '')) : '';
+        $metaTitle = is_array($output) ? trim((string) ($output['meta_title'] ?? '')) : '';
+        $metaDescription = is_array($output) ? trim((string) ($output['meta_description'] ?? '')) : '';
+        $sportKey = is_array($output) ? trim((string) ($output['sport_key'] ?? '')) : '';
+        $categorySlug = is_array($output) ? trim((string) ($output['category_slug'] ?? '')) : '';
+
         require_once __DIR__ . '/functions.php';
         require_once __DIR__ . '/sitemap-service.php';
+
+        $plainTextFallback = trim(preg_replace('/\s+/u', ' ', strip_tags($bodyHtml)) ?? '');
+        if ($excerpt === '') {
+            $excerpt = mb_substr($plainTextFallback, 0, 160);
+        }
+        if ($metaTitle === '') {
+            $metaTitle = mb_substr($title, 0, 60);
+        }
+        if ($metaDescription === '') {
+            $metaDescription = mb_substr($plainTextFallback, 0, 160);
+        }
+
+        // sport_key — re-validated here too (not just at generation time)
+        // since this function is the actual insert boundary and must never
+        // trust output_json blindly, same "defense in depth" reasoning as
+        // the category_slug resolution right below.
+        $validSportKeys = ['general'];
+        try {
+            $sportsRows = $pdo->query('SELECT `key` FROM sports')->fetchAll();
+            foreach ($sportsRows as $sportRow) {
+                $validSportKeys[] = (string) $sportRow['key'];
+            }
+        } catch (Throwable $e) {
+            // Query failure just means the whitelist is only ['general'] —
+            // still a valid, safe fallback below.
+        }
+        if (!in_array($sportKey, $validSportKeys, true)) {
+            $sportKey = 'general';
+        }
+
+        // category_slug -> category_id — resolved fresh HERE (Approve/
+        // publish time), not reused from whatever was true at generation
+        // time, specifically so a category deleted by the operator in
+        // between can't silently get resurrected or mis-assigned. No
+        // auto-create: an unmatched slug (AI hallucination, or a category
+        // that existed at generation time but was deleted since) always
+        // falls back to NULL ("No category"), never a crash.
+        $categoryId = null;
+        if ($categorySlug !== '') {
+            try {
+                $catStmt = $pdo->prepare('SELECT id FROM article_categories WHERE slug = :slug LIMIT 1');
+                $catStmt->execute(['slug' => $categorySlug]);
+                $categoryId = (int) $catStmt->fetchColumn() ?: null;
+            } catch (Throwable $e) {
+                $categoryId = null;
+            }
+        }
 
         $slugBase = cms_slugify($title);
         if ($slugBase === '') {
@@ -6134,14 +6392,19 @@ function cms_growth_agent_create_article_draft_from_auto_draft(PDO $pdo, array $
             'title' => $title,
             'slug' => $slug,
             'content' => $contentHtml,
+            'excerpt' => $excerpt,
+            'meta_title' => $metaTitle,
+            'meta_description' => $metaDescription,
+            'sport_key' => $sportKey,
+            'category_id' => $categoryId,
             'featured_image' => $featuredImage !== '' ? $featuredImage : null,
             'status' => 'draft',
             'author_id' => $authorId,
         ];
 
         $insert = $pdo->prepare(
-            'INSERT INTO pages (title, slug, content, featured_image, status, author_id, created_at, updated_at)
-             VALUES (:title, :slug, :content, :featured_image, :status, :author_id, NOW(), NOW())'
+            'INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, sport_key, category_id, featured_image, status, author_id, created_at, updated_at)
+             VALUES (:title, :slug, :content, :excerpt, :meta_title, :meta_description, :sport_key, :category_id, :featured_image, :status, :author_id, NOW(), NOW())'
         );
         $insert->execute($payload);
         $pageId = (int) $pdo->lastInsertId();

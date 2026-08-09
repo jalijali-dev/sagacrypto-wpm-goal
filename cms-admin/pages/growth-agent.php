@@ -181,31 +181,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $redirect('Draft artikel berhasil dibuat — klik "Edit draft" di Job Terbaru untuk melengkapi & publish.');
         }
 
-        // Full Draft Automation (GROWTH_AGENT_V2_PROPOSAL.md § 6, Fase F,
-        // 8 Aug 2026) — same "Approve IS the execution step" exception as
-        // gsc_article_idea/topic_gap_article/keyword_expansion_topic above.
-        // ALWAYS still lands as pages.status='draft' — publish stays a
-        // fully separate, manual action; this block never sets 'published'.
-        if ($action === 'approve' && $jobRow['job_type'] === 'auto_draft_article' && empty($jobRow['page_id'])) {
-            $draftResult = cms_growth_agent_create_article_draft_from_auto_draft($pdo, $jobRow, $currentAdminId);
-
-            if (!$draftResult['ok']) {
-                $failUpd = $pdo->prepare("UPDATE growth_agent_jobs SET status = 'failed', error_message = :error, updated_at = NOW() WHERE id = :id");
-                $failUpd->execute(['error' => $draftResult['error'], 'id' => $jobId]);
-                $redirect('Gagal membuat draft artikel: ' . $draftResult['error'], 'error');
-            }
-
-            $ins = $pdo->prepare(
-                'INSERT INTO growth_agent_feedback (job_id, action, reviewed_by, created_at)
-                 VALUES (:job_id, :action, :reviewed_by, NOW())'
-            );
-            $ins->execute(['job_id' => $jobId, 'action' => 'approved_as_is', 'reviewed_by' => $currentAdminId]);
-
-            $upd = $pdo->prepare('UPDATE growth_agent_jobs SET status = :status, page_id = :page_id, updated_at = NOW() WHERE id = :id');
-            $upd->execute(['status' => 'succeeded', 'page_id' => $draftResult['page_id'], 'id' => $jobId]);
-
-            $redirect('Draft artikel otomatis berhasil dibuat — WAJIB dibaca & diedit sebelum publish, klik "Edit draft" di Job Terbaru.');
-        }
+        // Full Draft Automation (GROWTH_AGENT_V2_PROPOSAL.md § 6, Fase F) —
+        // MOVED to auto-draft-review.php (8 Aug 2026): same "Approve IS the
+        // execution step" exception as gsc_article_idea/topic_gap_article/
+        // keyword_expansion_topic above, but this one needs an actual
+        // preview (title/body/cover image) before the operator decides —
+        // the generic Approve/Reject buttons have no room for that. See
+        // $canReviewAutoDraft below, which routes these jobs to that page
+        // instead of ever reaching this generic handler.
 
         // SEO Intelligence — content_conflict_proposal: approve is NEVER an
         // execution step here, "Recommendation only" guardrail — this just
@@ -423,11 +406,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $maxDraftsPerDay = (int) ($_POST['max_drafts_per_day'] ?? 3);
         $maxDraftsPerDay = max(0, min(1000, $maxDraftsPerDay));
 
+        // Fase G (9 Aug 2026, docs/DECISIONS.md) — operator-approved
+        // exception, see opportunity_thresholds_json's own note on this
+        // key in gsc-api.php's defaults. Separate checkbox from the
+        // "Nyalakan Full Draft Automation" one above (that one gates
+        // GENERATION, this one gates PUBLISH) — an operator can run
+        // generation without auto-publish, but never the reverse.
+        $autoPublish = !empty($_POST['auto_publish']);
+
         $saved = cms_gsc_set_opportunity_threshold_key($pdo, 'auto_draft_automation', [
             'enabled' => $turnOn,
             'schedule_cron' => $scheduleCron,
             'source_urls' => $sourceUrls,
             'max_drafts_per_day' => $maxDraftsPerDay,
+            'auto_publish' => $autoPublish,
         ]);
         if (!$saved) {
             $redirect('Gagal menyimpan pengaturan Full Draft Automation.', 'error');
@@ -747,6 +739,7 @@ $summaryCards = [
 $jobsStmt = $pdo->query(
     "SELECT j.id, j.job_type, j.agent_key, j.page_id, j.status, j.priority, j.model_used, j.latency_ms,
             j.error_message, j.created_at, j.input_brief, p.title AS page_title,
+            p.status AS page_status, p.slug AS page_slug,
             (SELECT COUNT(*) FROM growth_agent_feedback f WHERE f.job_id = j.id) AS feedback_count
        FROM growth_agent_jobs j
        LEFT JOIN pages p ON p.page_id = j.page_id
@@ -1146,6 +1139,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         $isIndexingIssue = $job['job_type'] === 'review_indexing_issue';
         $isCannibalization = $job['job_type'] === 'cannibalization_review';
         $isInternalLink = $job['job_type'] === 'internal_link_suggestion';
+        $isAutoDraft = $job['job_type'] === 'auto_draft_article';
         // seo_recommendation jobs get their own review page (Apply writes
         // straight into pages.meta_title/meta_description), so they never
         // use the generic Approve/Reject buttons — Close as Legacy is
@@ -1162,19 +1156,26 @@ require dirname(__DIR__) . '/includes/alerts.php';
         // (internal-link-review.php), because Apply here writes directly
         // into pages.content and the operator needs to see the anchor text
         // + surrounding sentence before deciding, which the generic
-        // Approve/Reject buttons have no room to show.
-        $canReviewGeneric = !$isSeoRecommendation && !$isIndexingIssue && !$isCannibalization && !$isInternalLink && (int) $job['feedback_count'] === 0 && in_array($job['status'], ['succeeded', 'failed', 'manual_action'], true);
+        // Approve/Reject buttons have no room to show. auto_draft_article
+        // (Fase F, 8 Aug 2026) gets the same treatment for the same
+        // reason — its own review page (auto-draft-review.php), because
+        // Approve here creates a brand-new `pages` row from a fully
+        // AI-written title+body+cover image, and the operator needs to
+        // preview all of that before deciding.
+        $canReviewGeneric = !$isSeoRecommendation && !$isIndexingIssue && !$isCannibalization && !$isInternalLink && !$isAutoDraft && (int) $job['feedback_count'] === 0 && in_array($job['status'], ['succeeded', 'failed', 'manual_action'], true);
         $canReviewSeo = $isSeoRecommendation && $job['status'] === 'manual_action';
         $canReviewIndexing = $isIndexingIssue && $job['status'] === 'manual_action';
         $canReviewCannibalization = $isCannibalization && $job['status'] === 'manual_action';
         $canReviewInternalLink = $isInternalLink && $job['status'] === 'manual_action';
+        $canReviewAutoDraft = $isAutoDraft && $job['status'] === 'succeeded' && empty($job['page_id']);
         $job['_can_review_generic'] = $canReviewGeneric;
         $job['_can_review_seo'] = $canReviewSeo;
         $job['_can_review_indexing'] = $canReviewIndexing;
         $job['_can_review_cannibalization'] = $canReviewCannibalization;
         $job['_can_review_internal_link'] = $canReviewInternalLink;
+        $job['_can_review_auto_draft'] = $canReviewAutoDraft;
 
-        if ($canReviewGeneric || $canReviewSeo || $canReviewIndexing || $canReviewCannibalization || $canReviewInternalLink) {
+        if ($canReviewGeneric || $canReviewSeo || $canReviewIndexing || $canReviewCannibalization || $canReviewInternalLink || $canReviewAutoDraft) {
             $jobsByTab['need-review'][] = $job;
         } elseif (in_array($job['status'], ['ready', 'running'], true)) {
             $jobsByTab['ready-to-run'][] = $job;
@@ -1191,6 +1192,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         $canReviewIndexing = $job['_can_review_indexing'];
         $canReviewCannibalization = $job['_can_review_cannibalization'];
         $canReviewInternalLink = $job['_can_review_internal_link'];
+        $canReviewAutoDraft = $job['_can_review_auto_draft'];
         ?>
         <?php $g0Warnings = $job['_g0_warnings'] ?? []; ?>
         <?php $titleHeadlineFlag = $job['_title_headline_flag'] ?? null; ?>
@@ -1254,7 +1256,12 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </td>
             <td class="jobs-table__col-time muted"><?= cms_esc((string) $job['created_at']) ?></td>
             <td class="jobs-table__col-actions table-actions">
-                <?php if (in_array($job['job_type'], ['gsc_article_idea', 'auto_draft_article'], true) && !empty($job['page_id'])) : ?>
+                <?php if ($job['job_type'] === 'auto_draft_article' && !empty($job['page_id']) && $job['page_status'] === 'published') : ?>
+                    <?php // Fase G auto-publish result — nothing left to approve/reject/edit-as-draft,
+                          // the article is already live. Link straight to the public page instead. ?>
+                    <a class="admin-btn admin-btn--sm admin-btn--secondary" href="<?= cms_esc((function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : '../') . 'artikel.php?slug=' . urlencode((string) $job['page_slug'])) ?>" target="_blank" rel="noopener">Lihat artikel</a>
+                    <a class="admin-btn admin-btn--sm admin-btn--ghost" href="pages.php?edit=<?= (int) $job['page_id'] ?>">Edit</a>
+                <?php elseif (in_array($job['job_type'], ['gsc_article_idea', 'auto_draft_article'], true) && !empty($job['page_id'])) : ?>
                     <a class="admin-btn admin-btn--sm admin-btn--secondary" href="pages.php?edit=<?= (int) $job['page_id'] ?>">Edit draft</a>
                 <?php elseif ($canReviewSeo) : ?>
                     <a class="admin-btn admin-btn--sm admin-btn--primary" href="seo-recommendation-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
@@ -1264,6 +1271,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <a class="admin-btn admin-btn--sm admin-btn--primary" href="cannibalization-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
                 <?php elseif ($canReviewInternalLink) : ?>
                     <a class="admin-btn admin-btn--sm admin-btn--primary" href="internal-link-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
+                <?php elseif ($canReviewAutoDraft) : ?>
+                    <a class="admin-btn admin-btn--sm admin-btn--primary" href="auto-draft-review.php?job_id=<?= (int) $job['id'] ?>">Review</a>
                 <?php elseif ($canReviewGeneric) : ?>
                     <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>">
                         <?= cms_csrf_field() ?>
@@ -1280,7 +1289,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <?php else : ?>
                     <span class="muted">—</span>
                 <?php endif; ?>
-                <?php if ($canReviewGeneric || $canReviewSeo || $canReviewIndexing || $canReviewCannibalization || $canReviewInternalLink) : ?>
+                <?php if ($canReviewGeneric || $canReviewSeo || $canReviewIndexing || $canReviewCannibalization || $canReviewInternalLink || $canReviewAutoDraft) : ?>
                     <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Tandai job ini sebagai legacy? Ini BUKAN reject — cuma menandai sudah tidak relevan lagi (mis. data GSC-nya sudah basi), tidak dihitung sebagai penolakan aktif.');">
                         <?= cms_csrf_field() ?>
                         <input type="hidden" name="action" value="close_as_legacy">
@@ -2104,6 +2113,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
     }
     $autoDraftSourceUrls = is_array($autoDraftConfig['source_urls'] ?? null) ? $autoDraftConfig['source_urls'] : [];
     $autoDraftMaxPerDay = (int) ($autoDraftConfig['max_drafts_per_day'] ?? 3);
+    $autoDraftAutoPublish = ($autoDraftConfig['auto_publish'] ?? false) === true;
     ?>
     <div class="panel">
         <div class="panel__head">
@@ -2113,11 +2123,11 @@ require dirname(__DIR__) . '/includes/alerts.php';
         <p class="muted" style="margin:0;padding:0 20px 16px;font-size:13px;">
             Kalau dinyalakan, sesuai jadwal di bawah, sistem otomatis ambil headline tren, generate draft artikel
             lengkap (judul + isi + gambar cover) lewat AI, dan masukkan ke "Job Terbaru" sebagai
-            <code>auto_draft_article</code> — status "draft siap review" di tab Perlu Tindakan.
-            <strong>TIDAK ADA auto-publish</strong> — setiap draft wajib dibuka, dibaca, diedit kalau perlu, baru
-            di-publish manual oleh editor.
+            <code>auto_draft_article</code> — status "draft siap review" di tab Perlu Tindakan, menunggu Approve
+            manual di <code>auto-draft-review.php</code>. <strong>KECUALI</strong> toggle "Mode Otonom —
+            Auto-Publish Draft" di bawah dinyalakan juga — lihat peringatannya sendiri sebelum menyalakan itu.
         </p>
-        <form method="post" action="<?= cms_esc($selfUrl) ?>" class="form-stack" style="padding:0 20px 20px;">
+        <form id="auto-draft-automation-form" method="post" action="<?= cms_esc($selfUrl) ?>" class="form-stack" style="padding:0 20px 20px;">
             <?= cms_csrf_field() ?>
             <input type="hidden" name="action" value="auto_draft_automation_save">
 
@@ -2160,6 +2170,39 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <button type="submit" class="admin-btn admin-btn--primary">Simpan Pengaturan</button>
             </div>
         </form>
+    </div>
+
+    <?php
+    // Fase G (9 Aug 2026, docs/DECISIONS.md) — deliberately its own visually
+    // distinct block, not folded quietly into the panel above, so an
+    // operator can't miss what they're turning on. Saves through the exact
+    // same form/action as the panel above (auto_draft_automation_save) —
+    // this checkbox just rides along as one more field in that same POST,
+    // NOT a separate save action, so it can never desync from the rest of
+    // this config block.
+    ?>
+    <div class="panel" style="border:1px solid var(--danger, #c0392b);">
+        <div class="panel__head">
+            <h3 class="panel__title">⚠️ Mode Otonom — Auto-Publish Draft</h3>
+            <span class="pill pill--<?= $autoDraftAutoPublish ? 'warn' : 'muted' ?>"><?= $autoDraftAutoPublish ? 'AKTIF' : 'NONAKTIF' ?></span>
+        </div>
+        <p style="margin:0;padding:0 20px 16px;font-size:13px;">
+            <strong>Kalau nyala, artikel hasil scrape + AI dari Full Draft Automation di atas LANGSUNG TAYANG ke
+            publik tanpa direview manusia dulu.</strong> Tidak ada persetujuan, tidak ada jeda — begitu AI selesai
+            generate, artikel langsung <code>published</code>. SEO-G0 gate dan cek judul-mirip-headline-sumber
+            TETAP jalan dan tetap tercatat di job (buat audit), tapi hasilnya <strong>TIDAK memblokir publish</strong>
+            — kalau ada peringatan, artikel tetap tayang. <code>max_drafts_per_day</code> di atas tetap membatasi
+            berapa kali AI generate per hari, tapi itu bukan pengaman publish. Ini keputusan operator yang sudah
+            disetujui secara sadar (lihat <code>docs/DECISIONS.md</code>, 9 Agustus 2026) — kalau nanti ada
+            artikel auto-publish yang salah fakta, judulnya kurang pas, atau bermasalah lainnya, itu konsekuensi
+            yang sudah diterima, bukan bug.
+        </p>
+        <div style="padding:0 20px 20px;">
+            <label class="field" style="display:flex;align-items:center;gap:8px;flex-direction:row;">
+                <input type="checkbox" name="auto_publish" value="1" form="auto-draft-automation-form" <?= $autoDraftAutoPublish ? 'checked' : '' ?>>
+                <span>Ya, saya paham risikonya — nyalakan auto-publish tanpa review manusia</span>
+            </label>
+        </div>
     </div>
     </div>
 

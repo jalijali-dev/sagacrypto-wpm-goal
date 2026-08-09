@@ -1416,6 +1416,22 @@ if (!function_exists('cms_gsc_default_opportunity_thresholds')) {
                 // remove the cap, once draft quality has been reviewed for
                 // a while and 3/day proves too conservative.
                 'max_drafts_per_day' => 3,
+                // Fase G (9 Aug 2026, docs/DECISIONS.md) — operator-approved
+                // exception to this whole project's default "Action Queue,
+                // human approval required" architecture, ONLY for this one
+                // job_type. Default false: a draft still just sits waiting
+                // for manual Approve, same as every install before this
+                // field existed. When an operator flips this true, a
+                // successfully generated auto_draft_article job publishes
+                // straight to the public site with ZERO human review — see
+                // cms_growth_agent_auto_publish_draft() in
+                // growth-agent-service.php. SEO-G0 gate and the title-vs-
+                // headline check still run and still get recorded either
+                // way, they just don't block publish once this is on.
+                // max_drafts_per_day above still applies regardless — it
+                // caps GENERATION (AI cost), not publish, so it's not a
+                // safety net against this setting, just an independent knob.
+                'auto_publish' => false,
             ],
         ];
     }
