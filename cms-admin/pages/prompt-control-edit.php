@@ -57,7 +57,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $title     = trim((string) ($_POST['title']   ?? ''));
     $content   = trim((string) ($_POST['content'] ?? ''));
     $notes     = trim((string) ($_POST['notes']   ?? ''));
-    $createdBy = trim((string) ($_SESSION['cms_admin_name'] ?? 'Vals Admin'));
+    $createdBy = trim((string) ($_SESSION['cms_admin_name'] ?? 'Sagagoal Admin'));
 
     if ($title === '') {
         $errors[] = 'Title is required.';
