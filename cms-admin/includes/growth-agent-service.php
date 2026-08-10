@@ -6072,9 +6072,25 @@ function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title, stri
     // "too AI": the usual tells (glossy/too-smooth skin, perfect studio
     // lighting, perfect symmetry, oversaturated color). Not a technical
     // bug, just prompt wording that never asked for the opposite.
-    $defaultTemplate = 'Editorial sports photo, {sport_visual}, {entities}, {context}, realistic photojournalism style, candid documentary sports photography, natural skin texture, natural uneven stadium/venue lighting, slight motion blur on fast movement, avoid overly smooth or airbrushed look, avoid glossy CGI/render look, avoid perfect symmetry, film-grain texture, no text overlay, no watermark, no readable text, letters, numbers, or logos on jerseys, clothing, signage, or banners — plain/blank jerseys and kits only, 16:9';
+    // Logo/brand-mark ban widened (10 Aug 2026) — the jersey/kit-scoped
+    // clause below doesn't stop logos elsewhere in frame (race cars,
+    // motorcycles, products, background signage outside "jerseys/
+    // clothing/signage/banners"), so a separate blanket clause covers it.
+    $defaultTemplate = 'Editorial sports photo, {sport_visual}, {entities}, {context}, realistic photojournalism style, candid documentary sports photography, natural skin texture, natural uneven stadium/venue lighting, slight motion blur on fast movement, avoid overly smooth or airbrushed look, avoid glossy CGI/render look, avoid perfect symmetry, film-grain texture, no text overlay, no watermark, no readable text, letters, numbers, or logos on jerseys, clothing, signage, or banners — plain/blank jerseys and kits only, no visible brand logos, sponsor marks, or trademarks anywhere in the image, 16:9';
 
     $template = $defaultTemplate;
+    // Guardrail layer (10 Aug 2026 fix, structural) — this function used
+    // to read ONLY the 'instruction' layer via getPrompt(), completely
+    // ignoring 'guardrail' (both global/guardrail and image_agent/
+    // guardrail) even though Prompt Control's UI lets an operator fill
+    // that tab in for image_agent same as any other agent. Any guardrail
+    // text an operator saved there was a silent no-op — never merged into
+    // what actually got sent to GPT Image. NOT using PromptLoader::
+    // buildMergedPrompt() here (that joins layers with "\n\n" for a chat
+    // completion system prompt) — an image prompt needs one dense comma-
+    // separated string, so guardrail layers are fetched individually and
+    // appended after the {placeholder}-filled instruction below instead.
+    $guardrailParts = [];
     try {
         require_once dirname(__DIR__, 2) . '/services/PromptLoader.php';
         $loader = new PromptLoader($pdo);
@@ -6082,8 +6098,18 @@ function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title, stri
         if ($configured !== '') {
             $template = $configured;
         }
+
+        $globalGuardrail = trim((string) ($loader->getPrompt('global', 'guardrail') ?? ''));
+        if ($globalGuardrail !== '') {
+            $guardrailParts[] = $globalGuardrail;
+        }
+        $imageGuardrail = trim((string) ($loader->getPrompt('image_agent', 'guardrail') ?? ''));
+        if ($imageGuardrail !== '') {
+            $guardrailParts[] = $imageGuardrail;
+        }
     } catch (Throwable $e) {
-        // Ignore — falls through to the hardcoded default above.
+        // Ignore — falls through to the hardcoded default above; guardrail
+        // is additive and must never block image generation on its own.
     }
 
     // Off-site sport keyword dictionary (9 Aug 2026 fix, job 205) — used
@@ -6124,6 +6150,17 @@ function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title, stri
         'pencak silat' => 'pencak silat martial arts match, mat, two competitors in combat stance',
         'karate' => 'karate martial arts match, dojo or mat, competitors in combat stance',
         'taekwondo' => 'taekwondo martial arts match, mat, competitors in combat stance',
+        // MotoGP (10 Aug 2026 fix) — this site's 'motorsport' sport_key
+        // is F1-only (sports.name confirmed 'Formula 1', re-verified 10
+        // Aug 2026 after an earlier mix-up), so a MotoGP article legit
+        // lands on sport_key='general'. Without an entry here it fell all
+        // the way to the generic multi-sport fallback, no motorsport
+        // anchor at all — real observed case: a MotoGP standings article
+        // generated a picture of a wallet. f1/formula 1 deliberately NOT
+        // added here — that's already covered via sport_key='motorsport'
+        // in $sportVisuals below.
+        'motogp' => 'motorsport racing scene, racetrack, motorcycle racing, motorcycle rider in racing gear',
+        'moto gp' => 'motorsport racing scene, racetrack, motorcycle racing, motorcycle rider in racing gear',
     ];
 
     $sportVisual = null;
@@ -6156,11 +6193,17 @@ function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title, stri
     $entitiesText = $entities !== [] ? implode(', ', $entities) : 'sports scene';
     $context = cms_growth_agent_extract_title_context($title);
 
-    return str_replace(
+    $finalPrompt = str_replace(
         ['{sport_visual}', '{entities}', '{context}'],
         [$sportVisual, $entitiesText, $context],
         $template
     );
+
+    if ($guardrailParts !== []) {
+        $finalPrompt .= ', ' . implode(', ', $guardrailParts);
+    }
+
+    return $finalPrompt;
 }
 
 /**
