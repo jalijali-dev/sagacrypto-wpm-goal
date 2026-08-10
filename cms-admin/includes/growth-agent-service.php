@@ -1304,7 +1304,26 @@ function cms_growth_agent_refresh_trending_headlines(PDO $pdo): array
         cms_growth_agent_ensure_schema($pdo);
         require_once __DIR__ . '/gsc-api.php';
         $config = cms_gsc_get_opportunity_thresholds($pdo)['trending_headlines'] ?? [];
-        $sources = is_array($config['sources'] ?? null) ? array_values(array_filter($config['sources'], 'is_string')) : [];
+
+        // Source priority (9 Aug 2026 CRITICAL fix): auto_draft_automation.
+        // source_urls — the "Daftar URL sumber" textarea an operator
+        // actually edits in the Full Draft Automation panel — used to be
+        // written but NEVER read anywhere. This function (the ONLY real
+        // scraper) always read trending_headlines.sources instead, a
+        // completely separate config key nothing ever synced it with.
+        // Result: an operator narrowing sources to specific sport tag
+        // pages had zero effect — every draft still scraped from the old
+        // sport.detik.com/cnnindonesia.com/olahraga defaults, full topic
+        // range included. Operator-configured source_urls now wins
+        // whenever non-empty; trending_headlines.sources is kept only as
+        // the fallback for installs that never touched the newer panel.
+        $opportunityThresholds = cms_gsc_get_opportunity_thresholds($pdo);
+        $autoDraftSources = $opportunityThresholds['auto_draft_automation']['source_urls'] ?? [];
+        $legacySources = $config['sources'] ?? [];
+        $sources = is_array($autoDraftSources) && $autoDraftSources !== []
+            ? array_values(array_filter($autoDraftSources, 'is_string'))
+            : (is_array($legacySources) ? array_values(array_filter($legacySources, 'is_string')) : []);
+
         $maxPerSource = max(1, min(50, (int) ($config['max_headlines_per_source'] ?? 15)));
     } catch (Throwable $e) {
         error_log('[cms_growth_agent_refresh_trending_headlines] setup failed: ' . $e->getMessage());
@@ -5922,6 +5941,14 @@ function cms_growth_agent_extract_title_entities(string $title, int $limit = 4):
         'jalani', 'hadapi', 'lawan', 'kalahkan', 'taklukkan', 'unggul',
         'tertinggal', 'terpuruk', 'terpaksa', 'diwajibkan', 'diminta',
         'meminta', 'berharap', 'yakin', 'optimis', 'khawatir', 'waspada',
+        // Generic competition-result nouns (9 Aug 2026 fix, round 2) —
+        // "Jawa Barat Raih Gelar Juara Umum Indonesia Muay Thai
+        // Championship" let "Gelar"/"Juara"/"Umum"/"Championship" through
+        // as pseudo-entities (same Title Case problem as above, just
+        // nouns instead of verbs this time — "Umum" especially is vague
+        // enough to send the image model in an unrelated direction).
+        'gelar', 'juara', 'umum', 'championship', 'kejuaraan', 'kontingen',
+        'delegasi', 'cabang', 'nomor', 'kategori',
     ];
     $nonEntityWords = array_merge($connectors, $nonEntityWords);
 
@@ -6089,6 +6116,14 @@ function cms_growth_agent_build_cover_image_prompt(PDO $pdo, string $title, stri
         'esports' => 'esports competitive gaming scene, gaming setup',
         'golf' => 'golf tournament scene, golf course',
         'bola basket' => 'basketball game scene, indoor court, arena',
+        // Combat sports (9 Aug 2026 fix, round 2) — a Muay Thai article
+        // fell all the way through to the generic 'multi-sport' fallback
+        // below because none of these existed yet.
+        'muay thai' => 'muay thai/kickboxing match, ring, two fighters in combat stance',
+        'muaythai' => 'muay thai/kickboxing match, ring, two fighters in combat stance',
+        'pencak silat' => 'pencak silat martial arts match, mat, two competitors in combat stance',
+        'karate' => 'karate martial arts match, dojo or mat, competitors in combat stance',
+        'taekwondo' => 'taekwondo martial arts match, mat, competitors in combat stance',
     ];
 
     $sportVisual = null;
