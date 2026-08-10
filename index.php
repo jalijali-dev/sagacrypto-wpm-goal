@@ -94,10 +94,10 @@ require __DIR__ . '/includes/site-header.php';
         <!-- ══════════ LIVE SEKARANG (renders nothing if no live match anywhere) ══════════ -->
         <?= wpm_live_now_widget($pdo) ?>
 
-        <!-- ══════════ TABS: Untuk Anda / Terbaru ══════════ -->
+        <!-- ══════════ TABS: Terbaru / Untuk Anda (urutan ditukar 9 Agu 2026, permintaan operator) ══════════ -->
         <div class="news-tabs">
-            <a class="news-tabs__item<?= $tab === 'untuk-anda' ? ' is-active' : '' ?>" href="<?= wpm_esc($tabUrl('untuk-anda')) ?>">Untuk Anda</a>
             <a class="news-tabs__item<?= $tab === 'terbaru' ? ' is-active' : '' ?>" href="<?= wpm_esc($tabUrl('terbaru')) ?>">Terbaru</a>
+            <a class="news-tabs__item<?= $tab === 'untuk-anda' ? ' is-active' : '' ?>" href="<?= wpm_esc($tabUrl('untuk-anda')) ?>">Untuk Anda</a>
         </div>
 
         <!-- ══════════ FILTER ROW: Cabang Olahraga ══════════ -->
