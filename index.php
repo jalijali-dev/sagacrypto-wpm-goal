@@ -164,13 +164,16 @@ require __DIR__ . '/includes/site-header.php';
                 <!-- Slot iklan sidebar homepage (10 Agu 2026, permintaan
                      operator) — sebelumnya iklan cuma ada di antara
                      konten berita (homepage-hero, between-article-cards).
-                     Position slug 'homepage-sidebar' perlu dibuat dulu di
-                     admin (Advertisements → Ad Positions) kalau belum ada,
-                     baru bisa diisi iklan aktualnya di Advertisements →
-                     Ads. Render function ini sudah aman dipanggil walau
-                     belum ada iklan aktif untuk slot ini — otomatis
-                     render string kosong (lihat wpm_render_ad_slot()). -->
-                <?= wpm_render_ad_slot($pdo, 'homepage-sidebar', 'homepage') ?>
+                     Slug diperbaiki 11 Agu 2026: operator ternyata sudah
+                     punya posisi 'sidebar-right' (bukan 'homepage-sidebar'
+                     yang di-tebak awal) di ad_positions — 15 posisi lain
+                     sudah lama ada (header, footer, popup, dst, lihat
+                     ad-positions.php), jadi pakai slug yang sudah ada
+                     itu, bukan bikin slug baru. Render function ini aman
+                     dipanggil walau belum ada iklan aktif untuk slot ini
+                     — otomatis render string kosong (lihat
+                     wpm_render_ad_slot()). -->
+                <?= wpm_render_ad_slot($pdo, 'sidebar-right', 'homepage') ?>
             </aside>
         </div>
     </div>
