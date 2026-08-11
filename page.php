@@ -241,7 +241,7 @@ require __DIR__ . '/includes/site-header.php';
         </div>
     </div>
 </section>
-<?= wpm_app_promo_section() ?>
+<?= wpm_app_promo_section($pdo) ?>
 <?php else : ?>
 <section class="crypto-section--tight">
     <div class="crypto-container">

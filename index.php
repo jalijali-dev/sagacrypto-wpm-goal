@@ -179,7 +179,7 @@ require __DIR__ . '/includes/site-header.php';
     </div>
 
     <!-- ══════════ APLIKASI SAGAGOAL — SEGERA HADIR (shared w/ tentang.php) ══════════ -->
-    <?= wpm_app_promo_section() ?>
+    <?= wpm_app_promo_section($pdo) ?>
 
 </main>
 <?php require __DIR__ . '/includes/site-footer.php'; ?>

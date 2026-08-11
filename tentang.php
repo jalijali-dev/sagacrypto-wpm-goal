@@ -63,7 +63,7 @@ require __DIR__ . '/includes/site-header.php';
     </div>
 </section>
 
-<?= wpm_app_promo_section() ?>
+<?= wpm_app_promo_section($pdo) ?>
 
 </main>
 <?php require __DIR__ . '/includes/site-footer.php'; ?>

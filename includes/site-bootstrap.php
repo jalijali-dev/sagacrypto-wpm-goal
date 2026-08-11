@@ -888,9 +888,28 @@ function wpm_trending_item(array $article, int $rank): string
  * now — no empty-state here on purpose, so quiet match hours don't leave
  * a dead widget cluttering the homepage.
  */
-/** "Aplikasi Sagagoal — Segera Hadir" promo card — shared by tentang.php and index.php (homepage) so both reuse the exact same markup instead of duplicating it. */
-function wpm_app_promo_section(): string
+/**
+ * "Aplikasi Sagagoal — Segera Hadir" promo card — shared by tentang.php,
+ * page.php, and index.php (homepage) so all three reuse the exact same
+ * markup instead of duplicating it.
+ *
+ * $pdo param added 11 Agu 2026 — this is also the "Halaman Apps" ad scope
+ * operators can pick in Advertisements (previously that scope option
+ * existed in the dropdown but no page actually requested it, so any ad
+ * scoped to it could never show anywhere — see cms-admin/pages/ads.php's
+ * $AD_SCOPES). Nullable/optional so any caller that genuinely can't reach
+ * a $pdo instance still renders the promo card itself, just without the
+ * ad slot below it — degrades gracefully rather than fataling.
+ */
+function wpm_app_promo_section(?PDO $pdo = null): string
 {
+    // Position slug 'footer' reused here (not a new position) — this promo
+    // card sits directly above the site footer on every page it appears
+    // on, and is a full-width block (not a narrow sidebar skyscraper), so
+    // the existing full-width 'footer' slot fits its shape better than
+    // 'sidebar-right' would.
+    $adHtml = $pdo !== null ? wpm_render_ad_slot($pdo, 'footer', 'apps') : '';
+
     return '
 <section class="crypto-section--tight">
     <div class="crypto-container">
@@ -909,7 +928,8 @@ function wpm_app_promo_section(): string
                 </span>
             </div>
         </div>
-    </div>
+    </div>' . ($adHtml !== '' ? '
+    <div class="crypto-container app-promo-card__ad-wrap">' . $adHtml . '</div>' : '') . '
 </section>';
 }
 

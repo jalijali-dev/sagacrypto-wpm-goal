@@ -96,6 +96,17 @@ try {
     // with the same definition every page load) so no separate guard needed.
     $pdo->exec("ALTER TABLE `advertisements` MODIFY COLUMN `ad_type` ENUM('image','html','video','text','external_code') NOT NULL DEFAULT 'image'");
     $pdo->exec("ALTER TABLE `advertisements` MODIFY COLUMN `device` ENUM('all','desktop','mobile','tablet') NOT NULL DEFAULT 'all'");
+    // 'football'/'basket' added 11 Agu 2026 — operator wants to target ads
+    // specifically at football.php/basket.php (their sidebar-right slot
+    // already renders with these exact scope strings, see football.php/
+    // basket.php's wpm_render_ad_slot() calls), but until now there was no
+    // way to actually PICK that scope from the admin dropdown ($AD_SCOPES
+    // below) or store it (this ENUM didn't allow it) — every ad aimed at
+    // those two pages could only ever be 'global'. 'livescore' (already in
+    // the enum from an earlier design, never wired to any page or dropdown
+    // option) is left as-is/unused, not removed — no destructive schema
+    // changes here, only additive.
+    $pdo->exec("ALTER TABLE `advertisements` MODIFY COLUMN `placement_scope` ENUM('global','homepage','category','article','livescore','apps','football','basket') NOT NULL DEFAULT 'global'");
 
     cms_ensure_column($pdo, 'ad_settings', 'rotation_mode', "ENUM('priority','random','sequential') NOT NULL DEFAULT 'priority' AFTER `show_ad_label`");
 
@@ -152,6 +163,12 @@ $AD_SCOPES = [
     'article'   => 'Artikel — semua, atau pilih satu di bawah',
     'category'  => 'Kategori artikel — semua, atau pilih satu di bawah',
     'apps'      => 'Halaman Apps',
+    // 11 Agu 2026 — wired to football.php/basket.php's sidebar-right slot
+    // (previously those pages could only ever show 'global'-scoped ads
+    // since no dropdown option produced the exact scope string their code
+    // requested).
+    'football'  => 'Sepak Bola (/football)',
+    'basket'    => 'Basket (/basket)',
 ];
 
 $ad_redirect = static function (string $message, string $type = 'success', ?string $query = null) use ($selfUrl): void {

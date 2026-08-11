@@ -518,6 +518,12 @@ body.crypto-theme {
   flex-wrap: wrap;
 }
 
+/* Ad slot under the app promo card (11 Agu 2026 — "Halaman Apps" scope
+   wiring, see wpm_app_promo_section()). Only rendered when an ad is
+   actually active for this slot, so this margin never shows as empty
+   space by itself. */
+.app-promo-card__ad-wrap { margin-top: 20px; display: flex; justify-content: center; }
+
 .app-store-badge--disabled { opacity: 0.6; cursor: not-allowed; pointer-events: none; }
 
 .market-card {
