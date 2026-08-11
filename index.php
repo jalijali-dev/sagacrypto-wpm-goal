@@ -150,17 +150,28 @@ require __DIR__ . '/includes/site-header.php';
                 <?php endif; ?>
             </div>
 
-            <!-- ══════════ SIDEBAR: SEDANG TREN ══════════ -->
-            <?php if ($trendingArticles !== []) : ?>
+            <!-- ══════════ SIDEBAR: SEDANG TREN + IKLAN ══════════ -->
             <aside class="news-layout__sidebar">
+                <?php if ($trendingArticles !== []) : ?>
                 <div class="trending-panel">
                     <h2 class="trending-panel__title"><?= wpm_icon('flame') ?> Sedang Tren</h2>
                     <?php foreach ($trendingArticles as $i => $article) : ?>
                         <?= wpm_trending_item($article, $i + 1) ?>
                     <?php endforeach; ?>
                 </div>
+                <?php endif; ?>
+
+                <!-- Slot iklan sidebar homepage (10 Agu 2026, permintaan
+                     operator) — sebelumnya iklan cuma ada di antara
+                     konten berita (homepage-hero, between-article-cards).
+                     Position slug 'homepage-sidebar' perlu dibuat dulu di
+                     admin (Advertisements → Ad Positions) kalau belum ada,
+                     baru bisa diisi iklan aktualnya di Advertisements →
+                     Ads. Render function ini sudah aman dipanggil walau
+                     belum ada iklan aktif untuk slot ini — otomatis
+                     render string kosong (lihat wpm_render_ad_slot()). -->
+                <?= wpm_render_ad_slot($pdo, 'homepage-sidebar', 'homepage') ?>
             </aside>
-            <?php endif; ?>
         </div>
     </div>
 
