@@ -118,6 +118,8 @@ require __DIR__ . '/includes/site-header.php';
     </section>
 
     <div class="crypto-container">
+        <div class="news-layout">
+        <div class="news-layout__main">
         <div class="livescore-controls">
             <div class="livescore-search">
                 <?= wpm_icon('search') ?>
@@ -198,6 +200,13 @@ require __DIR__ . '/includes/site-header.php';
                 </div>
                 <div class="empty-state" id="livescore-no-match-state" hidden><?= wpm_icon('search') ?><p>Tidak ada pertandingan yang cocok dengan pencarian/filter.</p></div>
             <?php endif; ?>
+        </div>
+        </div>
+
+        <!-- ══════════ SIDEBAR: IKLAN (11 Agu 2026, permintaan operator) ══════════ -->
+        <aside class="news-layout__sidebar">
+            <?= wpm_render_ad_slot($pdo, 'sidebar-right', 'basket') ?>
+        </aside>
         </div>
     </div>
 

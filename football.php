@@ -118,6 +118,8 @@ require __DIR__ . '/includes/site-header.php';
     </section>
 
     <div class="crypto-container">
+        <div class="news-layout">
+        <div class="news-layout__main">
         <!-- ══════════ CONTROLS: search + live toggle ══════════ -->
         <div class="livescore-controls">
             <div class="livescore-search">
@@ -204,6 +206,15 @@ require __DIR__ . '/includes/site-header.php';
                 <?php endforeach; ?>
                 <div class="empty-state" id="livescore-no-match-state" hidden><?= wpm_icon('search') ?><p>Tidak ada pertandingan yang cocok dengan pencarian/filter.</p></div>
             <?php endif; ?>
+        </div>
+        </div>
+
+        <!-- ══════════ SIDEBAR: IKLAN (11 Agu 2026, permintaan operator —
+             samain gaya sama homepage/berita: kolom kanan reserved buat
+             iklan, bukan cuma inline di antara konten) ══════════ -->
+        <aside class="news-layout__sidebar">
+            <?= wpm_render_ad_slot($pdo, 'sidebar-right', 'football') ?>
+        </aside>
         </div>
     </div>
 
