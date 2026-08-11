@@ -162,7 +162,13 @@ $AD_SCOPES = [
     'homepage'  => 'Homepage saja',
     'article'   => 'Artikel — semua, atau pilih satu di bawah',
     'category'  => 'Kategori artikel — semua, atau pilih satu di bawah',
-    'apps'      => 'Halaman Apps',
+    // 'Halaman Apps' (scope 'apps') removed from the picker 11 Agu 2026 —
+    // operator found it confusing next to the other options. The scope
+    // value itself, the DB enum entry, and the wiring in
+    // wpm_app_promo_section() are all left in place (nothing to migrate,
+    // no ad currently uses it) — only hidden from this dropdown so it
+    // can't be picked. If wanted back later, just re-add the line here,
+    // no other change needed.
     // 11 Agu 2026 — wired to football.php/basket.php's sidebar-right slot
     // (previously those pages could only ever show 'global'-scoped ads
     // since no dropdown option produced the exact scope string their code
