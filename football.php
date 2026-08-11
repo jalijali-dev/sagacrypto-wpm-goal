@@ -118,7 +118,7 @@ require __DIR__ . '/includes/site-header.php';
     </section>
 
     <div class="crypto-container">
-        <div class="news-layout">
+        <div class="news-layout news-layout--ad-only">
         <div class="news-layout__main">
         <!-- ══════════ CONTROLS: search + live toggle ══════════ -->
         <div class="livescore-controls">

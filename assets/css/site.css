@@ -1836,6 +1836,17 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
   padding-bottom: 60px;
 }
 
+/* Narrower sidebar variant (11 Agu 2026, football.php/basket.php) — the
+   default 340px sidebar column is sized for the homepage's trending
+   panel (needs room for thumbnails + text). On the livescore pages the
+   sidebar is ad-only, usually a narrow skyscraper (e.g. 160px wide) —
+   at 340px it left a big empty dark rectangle to the right of the ad
+   (see operator screenshot, 11 Agu 2026). 80/20 split requested by
+   operator instead of the fixed 340px. */
+.news-layout--ad-only {
+  grid-template-columns: 4fr 1fr;
+}
+
 /* Sidebar as ONE sticky unit (11 Agu 2026 fix) — trending panel + ad slot
    now both live inside this <aside>. Previously only .trending-panel
    itself had position:sticky; once the ad slot was added as a sibling
