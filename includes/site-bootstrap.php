@@ -1142,7 +1142,14 @@ function wpm_sport_filter_row(PDO $pdo, string $tab, ?string $activeSportKey): s
         $classes = 'news-filter-pill' . ($isActive ? ' is-active' : '');
         $html .= '<a class="' . $classes . '" href="' . wpm_esc($chipUrl((string) $sport['key'])) . '">';
         $html .= wpm_icon((string) ($sport['icon'] ?? 'trophy'));
-        $html .= '<span>' . wpm_esc((string) $sport['name']) . ' (' . (int) $sport['article_count'] . ')</span>';
+        // Article count badge removed 11 Agu 2026 (permintaan operator) —
+        // was '<span>' . name . ' (' . article_count . ')</span>'. Query
+        // that computes $sport['article_count'] (see the SELECT above)
+        // deliberately left as-is rather than removed — cheap correlated
+        // subquery, and removing it risks breaking something else that
+        // might read the same $sports array later; simplest safe fix is
+        // just not printing the count anymore.
+        $html .= '<span>' . wpm_esc((string) $sport['name']) . '</span>';
         $html .= '</a>';
     }
 
