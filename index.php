@@ -12,7 +12,11 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/includes/site-bootstrap.php';
 
-$tab = ($_GET['tab'] ?? '') === 'terbaru' ? 'terbaru' : 'untuk-anda';
+// Default tab (10 Agu 2026, permintaan operator) — "Terbaru" adalah tab
+// pertama/utama di homepage, jadi itu yang harus tampil default saat
+// pertama buka index.php tanpa ?tab= sama sekali. Sebelumnya default-nya
+// kebalik (jatuh ke "Untuk Anda" kecuali eksplisit ?tab=terbaru).
+$tab = ($_GET['tab'] ?? '') === 'untuk-anda' ? 'untuk-anda' : 'terbaru';
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = 10;
 
