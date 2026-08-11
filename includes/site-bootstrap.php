@@ -504,6 +504,46 @@ function wpm_ad_pick(PDO $pdo, string $positionSlug, string $scope = 'global', ?
     }
 }
 
+/**
+ * Same matching rules as wpm_ad_pick(), but returns EVERY matching active
+ * ad instead of picking just one via wpm_ad_rotate() (11 Agu 2026,
+ * operator request — "if 2 ads share a scope, show both stacked" — only
+ * for sidebar positions, see wpm_render_ad_slot()'s $stackPositions list;
+ * every other position keeps the original single-pick rotation behavior
+ * unchanged, so a crowded position like Header/Popup never silently
+ * starts stacking multiple banners on top of each other).
+ *
+ * @return list<array<string, mixed>>
+ */
+function wpm_ad_pick_all(PDO $pdo, string $positionSlug, string $scope = 'global', ?int $targetId = null, ?string $device = null): array
+{
+    try {
+        $device = $device ?? wpm_detect_device();
+        $sql = 'SELECT a.* FROM advertisements a
+                INNER JOIN ad_positions p ON p.id = a.position_id
+                WHERE p.slug = :slug
+                  AND a.is_active = 1
+                  AND (a.start_date IS NULL OR a.start_date <= CURDATE())
+                  AND (a.end_date IS NULL OR a.end_date >= CURDATE())
+                  AND (a.device = \'all\' OR a.device = :device)
+                  AND (
+                        a.placement_scope = \'global\'
+                        OR (a.placement_scope = :scope AND (a.placement_target_id IS NULL OR a.placement_target_id = :targetId))
+                      )
+                ORDER BY a.sort_order ASC, a.id DESC';
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            'slug' => $positionSlug,
+            'device' => $device,
+            'scope' => $scope,
+            'targetId' => $targetId,
+        ]);
+        return $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
 function wpm_ad_pick_by_position_id(PDO $pdo, int $positionId, string $scope = 'global', ?int $targetId = null): ?array
 {
     try {
@@ -625,11 +665,44 @@ function wpm_ad_markup(array $ad, bool $showLabel, string $positionSlug = ''): s
     return '';
 }
 
+/**
+ * Positions where multiple simultaneously-active ads sharing a scope
+ * should ALL render, stacked, instead of one being picked via rotation
+ * (11 Agu 2026, operator request). Deliberately just the two sidebar
+ * slots — see wpm_ad_pick_all()'s doc comment for why this isn't
+ * site-wide: a narrow vertical column is the one shape on this site
+ * that's actually designed to hold more than one stacked banner. Every
+ * other position slug keeps the original single-pick-via-rotation
+ * behavior below, completely unchanged.
+ */
+const WPM_AD_STACK_POSITIONS = ['sidebar-left', 'sidebar-right'];
+
 function wpm_render_ad_slot(PDO $pdo, string $positionSlug, string $scope = 'global', ?int $targetId = null, ?string $device = null): string
 {
     $settings = wpm_ad_settings($pdo);
     if (!empty($settings) && (int) ($settings['ads_enabled'] ?? 1) !== 1) {
         return '';
+    }
+
+    $showLabel = empty($settings) || (int) ($settings['show_ad_label'] ?? 1) === 1;
+
+    if (in_array($positionSlug, WPM_AD_STACK_POSITIONS, true)) {
+        $ads = wpm_ad_pick_all($pdo, $positionSlug, $scope, $targetId, $device);
+        if ($ads === []) {
+            return '';
+        }
+
+        $html = '';
+        foreach ($ads as $ad) {
+            try {
+                $pdo->prepare('UPDATE advertisements SET impressions = impressions + 1 WHERE id = :id')->execute(['id' => (int) $ad['id']]);
+            } catch (Throwable $e) {
+                // Impression tracking is best-effort — never block rendering on it.
+            }
+            $html .= wpm_ad_markup($ad, $showLabel, $positionSlug);
+        }
+
+        return $html;
     }
 
     $ad = wpm_ad_pick($pdo, $positionSlug, $scope, $targetId, $device);
@@ -643,7 +716,6 @@ function wpm_render_ad_slot(PDO $pdo, string $positionSlug, string $scope = 'glo
         // Impression tracking is best-effort — never block rendering on it.
     }
 
-    $showLabel = empty($settings) || (int) ($settings['show_ad_label'] ?? 1) === 1;
     return wpm_ad_markup($ad, $showLabel, $positionSlug);
 }
 
