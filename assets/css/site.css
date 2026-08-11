@@ -1130,6 +1130,24 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   -webkit-line-clamp: 3;
 }
 
+/* Image banners in the sidebar (11 Agu 2026 fix) — the `width: 100%`
+   rule above is meant for the text-ad layout (which needs the full
+   column to flex its headline/desc/CTA). Image banners are usually a
+   fixed skyscraper size (e.g. 160x600) narrower than the 340px sidebar
+   column — forcing width:100% on those stretched the anchor box to the
+   full column while the image itself stayed at its native width,
+   leaving a blank border/background rectangle to the right of the
+   actual banner (see operator screenshot, 11 Agu 2026). Image banners
+   should hug their own content and sit flush left instead, same as how
+   detik.com and most publishers place skyscraper units. */
+.ad-slot--image.ad-slot--pos-sidebar-left,
+.ad-slot--image.ad-slot--pos-sidebar-right {
+  width: auto;
+  max-width: 100%;
+  display: inline-block;
+  margin-right: auto;
+}
+
 .ad-slot--pos-article-before-title, .ad-slot--pos-article-after-title {
   margin: 14px 0;
 }
