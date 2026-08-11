@@ -145,11 +145,13 @@ $sidebarSections = [
     // 3b. Integrations
     ['type' => 'group'] + $integrationsNavGroup,
 
-    // 4. Advertisements
-    ['type' => 'group'] + $adNavGroup,
-
-    // 5. AI Management
+    // 4. AI Management (order swapped 10 Agu 2026, permintaan operator —
+    // sebelumnya Advertisements sebelum AI Management, sekarang dibalik:
+    // Integrations -> AI Management -> Advertisements)
     ['type' => 'group'] + $aiNavGroup,
+
+    // 5. Advertisements
+    ['type' => 'group'] + $adNavGroup,
 ];
 
 $currentNav = $currentNav ?? '';
