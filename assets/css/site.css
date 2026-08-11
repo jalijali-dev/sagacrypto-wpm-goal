@@ -1818,6 +1818,24 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
   padding-bottom: 60px;
 }
 
+/* Sidebar as ONE sticky unit (11 Agu 2026 fix) — trending panel + ad slot
+   now both live inside this <aside>. Previously only .trending-panel
+   itself had position:sticky; once the ad slot was added as a sibling
+   AFTER it, scrolling caused the pinned trending panel to visually
+   overlap the ad (and vice versa) — two independent sticky elements
+   stacked in the same column fight over the same "stuck" viewport
+   space. Making the whole sidebar container sticky instead (and
+   removing position:sticky from .trending-panel itself, see below)
+   means there's only one sticky positioning context — everything
+   inside scrolls and pins together as a single block, no overlap. */
+.news-layout__sidebar {
+  position: sticky;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .news-byline {
   display: flex;
   align-items: center;
@@ -1896,8 +1914,6 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-lg);
   padding: 20px;
-  position: sticky;
-  top: 20px;
 }
 
 .trending-panel__title {
@@ -1968,8 +1984,7 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
 
 @media (max-width: 980px) {
   .news-layout { grid-template-columns: 1fr; }
-  .news-layout__sidebar { order: 3; }
-  .trending-panel { position: static; }
+  .news-layout__sidebar { order: 3; position: static; }
 }
 
 @media (max-width: 640px) {
