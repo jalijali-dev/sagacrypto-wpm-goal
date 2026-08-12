@@ -50,7 +50,7 @@ require __DIR__ . '/includes/site-header.php';
 
 <section class="page-hero">
     <div class="crypto-container">
-        <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> Pencarian</nav>
+        <nav class="breadcrumb" aria-label="Breadcrumb"><a href="<?= wpm_esc(wpm_site_url('')) ?>">Beranda</a> <span>/</span> Pencarian</nav>
         <span class="section-kicker">Cari</span>
         <h1>Cari Artikel</h1>
         <form class="search-form" method="get" action="<?= wpm_esc(wpm_url_pencarian()) ?>">

@@ -115,7 +115,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 
 <header class="crypto-nav">
     <div class="crypto-nav__inner">
-        <a href="index.php" class="crypto-logo">
+        <a href="<?= wpm_esc(wpm_site_url('')) ?>" class="crypto-logo">
             <?php if ($wpmSiteLogoUrl !== null && $wpmSiteLogoUrl !== '') : ?>
                 <img class="crypto-logo__mark crypto-logo__mark--img" src="<?= wpm_esc($wpmSiteLogoUrl) ?>" alt="<?= wpm_esc($wpmSiteName) ?> logo">
             <?php else : ?>

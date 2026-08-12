@@ -42,7 +42,7 @@ require __DIR__ . '/includes/site-header.php';
 
 <section class="page-hero">
     <div class="crypto-container">
-        <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> Tentang Kami</nav>
+        <nav class="breadcrumb" aria-label="Breadcrumb"><a href="<?= wpm_esc(wpm_site_url('')) ?>">Beranda</a> <span>/</span> Tentang Kami</nav>
         <span class="section-kicker">Tentang Kami</span>
         <h1><?= wpm_esc($aboutTitle) ?></h1>
         <div class="page-hero-lead"><?= $aboutBody ?></div>

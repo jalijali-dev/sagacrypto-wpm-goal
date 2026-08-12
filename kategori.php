@@ -139,7 +139,7 @@ require __DIR__ . '/includes/site-header.php';
 <section class="page-hero">
     <div class="crypto-container">
         <nav class="breadcrumb" aria-label="Breadcrumb">
-            <a href="index.php">Beranda</a> <span>/</span> <a href="<?= wpm_esc(wpm_url_kategori()) ?>">Berita</a>
+            <a href="<?= wpm_esc(wpm_site_url('')) ?>">Beranda</a> <span>/</span> <a href="<?= wpm_esc(wpm_url_kategori()) ?>">Berita</a>
             <?php if ($category !== null) : ?><span>/</span> <?= wpm_esc($category['name']) ?><?php endif; ?>
             <?php if ($league !== null) : ?><span>/</span> <?= wpm_esc($league['name']) ?><?php endif; ?>
         </nav>

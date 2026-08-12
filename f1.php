@@ -105,7 +105,7 @@ require __DIR__ . '/includes/site-header.php';
 
     <section class="page-hero">
         <div class="crypto-container">
-            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> Formula 1</nav>
+            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="<?= wpm_esc(wpm_site_url('')) ?>">Beranda</a> <span>/</span> Formula 1</nav>
             <span class="section-kicker"><?= wpm_icon('motorsport') ?> Formula 1</span>
             <h1><?= htmlspecialchars($f1PageTitle) ?> <?= (int) $season ?></h1>
             <p><?= htmlspecialchars($f1PageSubtitle) ?></p>

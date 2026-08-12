@@ -110,7 +110,7 @@ require __DIR__ . '/includes/site-header.php';
 
     <section class="page-hero">
         <div class="crypto-container">
-            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> Sepak Bola</nav>
+            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="<?= wpm_esc(wpm_site_url('')) ?>">Beranda</a> <span>/</span> Sepak Bola</nav>
             <span class="section-kicker"><?= wpm_icon('football') ?> Sepak Bola</span>
             <h1><?= htmlspecialchars($footballPageTitle) ?></h1>
             <p><?= htmlspecialchars($footballPageSubtitle) ?></p>

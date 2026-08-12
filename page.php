@@ -36,7 +36,7 @@ if (!$page) {
             <div class="empty-state">
                 <?= wpm_icon('info') ?>
                 <p>Halaman tidak ditemukan atau belum diterbitkan.</p>
-                <a class="crypto-btn crypto-btn--primary" href="index.php" style="margin-top:16px;display:inline-flex;">Kembali ke Beranda</a>
+                <a class="crypto-btn crypto-btn--primary" href="<?= wpm_esc(wpm_site_url('')) ?>" style="margin-top:16px;display:inline-flex;">Kembali ke Beranda</a>
             </div>
         </div>
     </section>
@@ -124,7 +124,7 @@ require __DIR__ . '/includes/site-header.php';
 
 <section class="page-hero">
     <div class="crypto-container">
-        <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> <?= wpm_esc((string) $page['title']) ?></nav>
+        <nav class="breadcrumb" aria-label="Breadcrumb"><a href="<?= wpm_esc(wpm_site_url('')) ?>">Beranda</a> <span>/</span> <?= wpm_esc((string) $page['title']) ?></nav>
         <span class="section-kicker"><?= wpm_esc((string) $page['title']) ?></span>
         <h1><?= wpm_esc((string) $page['title']) ?></h1>
         <?php if (($isAbout || $isContact) && trim((string) $page['content']) !== '') : ?>

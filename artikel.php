@@ -240,7 +240,7 @@ require __DIR__ . '/includes/site-header.php';
 <section class="crypto-section--tight">
     <div class="crypto-container">
         <nav class="breadcrumb" aria-label="Breadcrumb">
-            <a href="index.php">Beranda</a> <span>/</span>
+            <a href="<?= wpm_esc(wpm_site_url('')) ?>">Beranda</a> <span>/</span>
             <a href="<?= wpm_esc(wpm_url_kategori()) ?>">Berita</a>
             <?php if (!empty($article['category_name'])) : ?>
                 <span>/</span> <a href="<?= wpm_esc(wpm_url_kategori((string) $article['category_slug'])) ?>"><?= wpm_esc((string) $article['category_name']) ?></a>
