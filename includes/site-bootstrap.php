@@ -302,7 +302,7 @@ function wpm_site_settings(PDO $pdo): array
 function wpm_nav_menu(PDO $pdo): array
 {
     $items = [
-        ['id' => 'beranda', 'label' => 'Beranda', 'href' => 'index.php'],
+        ['id' => 'beranda', 'label' => 'Beranda', 'href' => wpm_site_url('')],
     ];
     foreach (wpm_sports_modules_by_placement($pdo, 'menu') as $module) {
         $items[] = ['id' => (string) $module['sport_key'], 'label' => (string) $module['label'], 'href' => (string) $module['route_slug']];
