@@ -4264,14 +4264,31 @@ function cms_growth_agent_build_indexing_checklist(array $inspection): array
         $checklist[] = 'Diblokir oleh robots.txt — cek aturan disallow untuk path ini.';
     }
 
+    // UNSPECIFIED (12 Agu 2026 fix) — per definisi resmi Search Console
+    // URL Inspection API, nilai *_UNSPECIFIED di field manapun artinya
+    // "belum ada data buat field ini", BUKAN "dicoba dan gagal". Ini
+    // normal buat halaman yang coverage_state-nya "Discovered - currently
+    // not indexed" — Google tau URL-nya ada (biasanya lewat sitemap) tapi
+    // belum pernah nyoba crawl/fetch sama sekali, jadi robots_txt_state/
+    // indexing_state/page_fetch_state-nya semua UNSPECIFIED. Sebelum fix
+    // ini, dua baris di bawah nganggep UNSPECIFIED = masalah (pesan
+    // "diblokir dari indexing" / "gagal fetch, cek redirect/error
+    // server"), padahal gak ada blokir atau error apapun buat dicek —
+    // Google-nya cuma belum sempet mampir. Sekarang UNSPECIFIED dapet
+    // pesan sendiri yang jujur ("belum pernah di-crawl"), dipisah dari
+    // status gagal beneran (mis. SOFT_404, ERROR, ACCESS_DENIED).
     $indexingState = strtoupper((string) ($inspection['indexing_state'] ?? ''));
-    if ($indexingState !== '' && $indexingState !== 'INDEXING_ALLOWED') {
+    if ($indexingState === 'INDEXING_STATE_UNSPECIFIED') {
+        $checklist[] = 'Google belum pernah nyoba crawl indexing-state halaman ini (indexingState: UNSPECIFIED) — bukan diblokir, cuma belum sempet di-crawl. Biasanya normal buat halaman baru/prioritas rendah, tunggu Google crawl ulang atau perkuat internal link ke halaman ini.';
+    } elseif ($indexingState !== '' && $indexingState !== 'INDEXING_ALLOWED') {
         $checklist[] = 'Halaman diblokir dari indexing (kemungkinan noindex meta tag/header) — indexingState: ' . $inspection['indexing_state'];
     }
 
     $pageFetchState = strtoupper((string) ($inspection['page_fetch_state'] ?? ''));
     if (str_contains($pageFetchState, 'SOFT_404') || str_contains($pageFetchState, 'NOT_FOUND')) {
         $checklist[] = 'Terindikasi soft 404 / halaman tidak ditemukan saat crawl — cek konten & status HTTP.';
+    } elseif ($pageFetchState === 'PAGE_FETCH_STATE_UNSPECIFIED') {
+        $checklist[] = 'Google belum pernah nyoba fetch halaman ini (pageFetchState: UNSPECIFIED) — bukan gagal fetch, cuma belum di-crawl sama sekali. Gak ada redirect/error server yang perlu dicek untuk kasus ini.';
     } elseif ($pageFetchState !== '' && $pageFetchState !== 'SUCCESSFUL') {
         $checklist[] = 'Google gagal fetch halaman ini (pageFetchState: ' . $inspection['page_fetch_state'] . ') — cek redirect/error server.';
     }
