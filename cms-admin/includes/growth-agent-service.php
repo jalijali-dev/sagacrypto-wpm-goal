@@ -1429,15 +1429,50 @@ function cms_growth_agent_get_trending_headlines_for_prompt(PDO $pdo): array
 {
     try {
         require_once __DIR__ . '/gsc-api.php';
-        $config = cms_gsc_get_opportunity_thresholds($pdo)['trending_headlines'] ?? [];
+        $opportunityThresholds = cms_gsc_get_opportunity_thresholds($pdo);
+        $config = $opportunityThresholds['trending_headlines'] ?? [];
         $overlapThreshold = (float) ($config['published_overlap_threshold'] ?? 0.5);
         $limit = max(1, min(20, (int) ($config['headlines_in_prompt'] ?? 5)));
+
+        // Active-source filter (19 Agu 2026 fix) — this query used to read
+        // EVERY row in growth_agent_trending_headlines regardless of which
+        // `source` produced it, including rows scraped days/weeks ago from
+        // a source_urls entry the operator has since removed from Full
+        // Draft Automation's config. cms_growth_agent_refresh_trending_
+        // headlines() upserts new rows but never deletes stale ones, so a
+        // narrowed source list (e.g. operator switches from generic
+        // portal-wide sources to football/basketball-only sections) had NO
+        // effect on what actually got selected here — old off-topic
+        // headlines (general "olahraga" news, MotoGP, etc.) kept getting
+        // picked indefinitely until someone manually DELETEd them. Same
+        // source_urls-wins-over-legacy-sources precedence as the refresh
+        // function, so "currently configured" means the same thing in both
+        // places.
+        $autoDraftSources = $opportunityThresholds['auto_draft_automation']['source_urls'] ?? [];
+        $legacySources = $config['sources'] ?? [];
+        $activeSources = is_array($autoDraftSources) && $autoDraftSources !== []
+            ? array_values(array_filter($autoDraftSources, 'is_string'))
+            : (is_array($legacySources) ? array_values(array_filter($legacySources, 'is_string')) : []);
 
         $headlineRows = $pdo->query(
             "SELECT headline, url, source FROM growth_agent_trending_headlines
               ORDER BY fetched_at DESC, published_at DESC
               LIMIT " . ($limit * 4)
         )->fetchAll();
+        if ($headlineRows === []) {
+            return [];
+        }
+
+        // Only keep rows whose `source` is still in the active list above —
+        // skipped entirely (not just deprioritized) when $activeSources is
+        // empty, since an empty config already means "nothing configured",
+        // not "allow anything".
+        if ($activeSources !== []) {
+            $headlineRows = array_values(array_filter(
+                $headlineRows,
+                static fn (array $row): bool => in_array((string) $row['source'], $activeSources, true)
+            ));
+        }
         if ($headlineRows === []) {
             return [];
         }
