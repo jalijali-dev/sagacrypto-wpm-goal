@@ -16,6 +16,16 @@ declare(strict_types=1);
 require_once __DIR__ . '/includes/site-bootstrap.php';
 require_once __DIR__ . '/includes/SpecialPages.php';
 
+// Cloudflare Turnstile anti-spam for the Kontak form (21 Aug 2026) — added
+// after the existing honeypot field (below) turned out not to be enough on
+// its own. Keys live in site_settings, managed from cms-admin's Site
+// Settings page. Feature is OFF by default (both columns NULL) — the
+// widget/script only render, and server-side verification only runs, when
+// an admin has actually pasted both keys in; installs that never touch
+// this stay exactly as before (honeypot only), no broken form.
+cms_ensure_column($pdo, 'site_settings', 'turnstile_site_key', 'VARCHAR(255) NULL AFTER show_telegram_button');
+cms_ensure_column($pdo, 'site_settings', 'turnstile_secret_key', 'VARCHAR(255) NULL AFTER turnstile_site_key');
+
 $slug = trim((string) ($_GET['slug'] ?? ''));
 
 if ($slug === '') {
@@ -72,6 +82,38 @@ if ($isContact && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if (trim((string) ($_POST['website'] ?? '')) !== '') {
         header('Location: ' . $slug . '?contact=success', true, 302);
         exit;
+    }
+
+    // Cloudflare Turnstile server-side verification — only runs when an
+    // admin has actually configured a secret key (see the ensure_column
+    // calls above). Without it, this whole block is a no-op so the form
+    // keeps working exactly as before (honeypot only).
+    $wpmTurnstileSettings = wpm_site_settings($pdo);
+    $wpmTurnstileSecret = trim((string) ($wpmTurnstileSettings['turnstile_secret_key'] ?? ''));
+    if ($wpmTurnstileSecret !== '') {
+        $turnstileToken = trim((string) ($_POST['cf-turnstile-response'] ?? ''));
+        $turnstileOk = false;
+        if ($turnstileToken !== '') {
+            $ch = curl_init('https://challenges.cloudflare.com/turnstile/v0/siteverify');
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => http_build_query([
+                    'secret'   => $wpmTurnstileSecret,
+                    'response' => $turnstileToken,
+                    'remoteip' => (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+                ]),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 8,
+            ]);
+            $verifyRaw = curl_exec($ch);
+            curl_close($ch);
+            $verifyJson = is_string($verifyRaw) ? json_decode($verifyRaw, true) : null;
+            $turnstileOk = is_array($verifyJson) && ($verifyJson['success'] ?? false) === true;
+        }
+        if (!$turnstileOk) {
+            header('Location: ' . $slug . '?contact=error', true, 302);
+            exit;
+        }
     }
 
     $fullName = trim((string) ($_POST['full_name'] ?? ''));
@@ -146,6 +188,9 @@ require __DIR__ . '/includes/site-header.php';
                 ? $wpmContactCommunity
                 : 'https://instagram.com/' . ltrim($wpmContactCommunity, '@/'))
             : '';
+        // Cloudflare Turnstile — widget only renders when a site key is
+        // configured (see the ensure_column calls + POST handler above).
+        $wpmTurnstileSiteKey = trim((string) ($wpmSiteSettings['turnstile_site_key'] ?? ''));
         ?>
         <div class="contact-grid">
             <div class="glass-card contact-info-card">
@@ -221,8 +266,14 @@ require __DIR__ . '/includes/site-header.php';
                         <label for="wpm-website">Website</label>
                         <input type="text" id="wpm-website" name="website" tabindex="-1" autocomplete="off">
                     </div>
+                    <?php if ($wpmTurnstileSiteKey !== '') : ?>
+                        <div class="cf-turnstile" data-sitekey="<?= wpm_esc($wpmTurnstileSiteKey) ?>" data-theme="dark" style="margin-bottom:16px;"></div>
+                    <?php endif; ?>
                     <button type="submit" class="crypto-btn crypto-btn--primary" style="width:100%;">Kirim Pesan</button>
                 </form>
+                <?php if ($wpmTurnstileSiteKey !== '') : ?>
+                    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+                <?php endif; ?>
             </div>
         </div>
     </div>

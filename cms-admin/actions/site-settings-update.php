@@ -16,6 +16,10 @@ cms_widen_column($pdo, 'site_settings', 'telegram_username', 'VARCHAR(255) NULL 
 cms_ensure_column($pdo, 'site_settings', 'show_whatsapp_button', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER telegram_username');
 cms_ensure_column($pdo, 'site_settings', 'show_telegram_button', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER show_whatsapp_button');
 
+// Cloudflare Turnstile anti-spam for the Kontak form — see pages/site-settings.php.
+cms_ensure_column($pdo, 'site_settings', 'turnstile_site_key', 'VARCHAR(255) NULL AFTER show_telegram_button');
+cms_ensure_column($pdo, 'site_settings', 'turnstile_secret_key', 'VARCHAR(255) NULL AFTER turnstile_site_key');
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Location: ../pages/site-settings.php', true, 302);
     exit;
@@ -71,6 +75,8 @@ $payload = [
     'meta_description' => trim((string) ($_POST['meta_description'] ?? '')),
     'meta_keywords' => trim((string) ($_POST['meta_keywords'] ?? '')),
     'google_analytics_id' => trim((string) ($_POST['google_analytics_id'] ?? '')),
+    'turnstile_site_key' => trim((string) ($_POST['turnstile_site_key'] ?? '')),
+    'turnstile_secret_key' => trim((string) ($_POST['turnstile_secret_key'] ?? '')),
 ];
 
 $specs = [
@@ -157,6 +163,8 @@ try {
                  meta_description = :meta_description,
                  meta_keywords = :meta_keywords,
                  google_analytics_id = :google_analytics_id,
+                 turnstile_site_key = :turnstile_site_key,
+                 turnstile_secret_key = :turnstile_secret_key,
                  updated_at = NOW()
              WHERE id = :id'
         );
@@ -167,11 +175,13 @@ try {
                 site_name, site_tagline, logo_path, favicon_path, og_image, whatsapp_number,
                 telegram_username, show_whatsapp_button, show_telegram_button, instagram_url,
                 email, address, meta_title, meta_description, meta_keywords, google_analytics_id,
+                turnstile_site_key, turnstile_secret_key,
                 created_at, updated_at
             ) VALUES (
                 :site_name, :site_tagline, :logo_path, :favicon_path, :og_image, :whatsapp_number,
                 :telegram_username, :show_whatsapp_button, :show_telegram_button, :instagram_url,
                 :email, :address, :meta_title, :meta_description, :meta_keywords, :google_analytics_id,
+                :turnstile_site_key, :turnstile_secret_key,
                 NOW(), NOW()
             )'
         );

@@ -30,6 +30,12 @@ cms_widen_column($pdo, 'site_settings', 'telegram_username', 'VARCHAR(255) NULL 
 cms_ensure_column($pdo, 'site_settings', 'show_whatsapp_button', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER telegram_username');
 cms_ensure_column($pdo, 'site_settings', 'show_telegram_button', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER show_whatsapp_button');
 
+// Cloudflare Turnstile anti-spam for the Kontak form (21 Aug 2026) — see
+// page.php for the consuming side. Both columns NULL by default = feature
+// off (form keeps working with just the existing honeypot).
+cms_ensure_column($pdo, 'site_settings', 'turnstile_site_key', 'VARCHAR(255) NULL AFTER show_telegram_button');
+cms_ensure_column($pdo, 'site_settings', 'turnstile_secret_key', 'VARCHAR(255) NULL AFTER turnstile_site_key');
+
 $pageTitle = 'Site Settings';
 $currentNav = 'site-settings';
 $breadcrumbs = [
@@ -182,6 +188,22 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     </label>
                     <label class="field">Address
                         <textarea name="address" rows="4"><?= cms_esc($val('address')) ?></textarea>
+                    </label>
+                    <button type="submit" class="admin-btn admin-btn--primary">Save changes</button>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel__head">
+                    <h3 class="panel__title">Anti-spam (Cloudflare Turnstile)</h3>
+                </div>
+                <div class="form-stack">
+                    <p class="field__hint" style="margin-top:-4px;">Kosongin dua field ini kalau belum mau pakai — form Kontak tetap jalan pakai honeypot doang. Isi keduanya buat nyalain verifikasi Turnstile di form Kontak publik. Daftar/ambil key gratis di <a href="https://dash.cloudflare.com/?to=/:account/turnstile" target="_blank" rel="noopener">dash.cloudflare.com → Turnstile</a>.</p>
+                    <label class="field">Site Key
+                        <input type="text" name="turnstile_site_key" value="<?= cms_esc($val('turnstile_site_key')) ?>" placeholder="0x4AAAAAAA...">
+                    </label>
+                    <label class="field">Secret Key
+                        <input type="text" name="turnstile_secret_key" value="<?= cms_esc($val('turnstile_secret_key')) ?>" placeholder="0x4AAAAAAA...">
+                        <span class="field__hint">Disimpan di database, tidak pernah dikirim ke browser — cuma dipakai server-side buat verifikasi tiap submit form Kontak.</span>
                     </label>
                     <button type="submit" class="admin-btn admin-btn--primary">Save changes</button>
                 </div>
