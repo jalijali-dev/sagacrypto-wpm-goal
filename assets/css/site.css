@@ -155,6 +155,18 @@ body.crypto-theme {
   z-index: 1;
 }
 
+/* 24px fixed side padding never shrank for mobile (23 Aug 2026 fix) — on
+   a 375px phone that's 48px (~13% of the viewport) permanently eaten by
+   outer whitespace before any actual content starts, which is unusually
+   generous for a screen this narrow and part of why the fixture cards
+   below felt cramped: every px reclaimed here is a px .fixture-card's
+   team-name columns get back. Site-wide (this class is used on every
+   page), not just fixture pages — a smaller side margin on phones is
+   standard practice everywhere, not a fixture-list-specific tweak. */
+@media (max-width: 480px) {
+  .crypto-container { padding: 0 16px; }
+}
+
 /* ============================================================
    NAVBAR
    ============================================================ */
@@ -2467,6 +2479,27 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
   .fixture-card__team img { width: 22px; height: 22px; }
   .fixture-card__team svg { width: 18px; height: 18px; }
   .fixture-card__score { font-size: 15px; }
+}
+
+/* Extra tier for real small phones (iPhone SE 375px and narrower) — 23
+   Aug 2026 fix, operator-reported "terputus"/cramped fixture cards
+   (screenshots showed long club names like "Atletico Madrid", MLS names
+   like "Vancouver Whitecaps"/"Colorado Rapids"). Nothing was actually
+   overflowing past the card (the ellipsis on .fixture-card__team span
+   already worked correctly) — the 640px tier's ~110px per team column at
+   this width just left very few characters before truncating, reading as
+   "imprecise" even though technically contained. Shaves the center
+   score column and logo further to hand a few more px back to the name
+   columns specifically where it's tightest, same direction as the
+   .crypto-container padding fix above. */
+@media (max-width: 380px) {
+  .fixture-card { grid-template-columns: 1fr 52px 1fr; gap: 6px; padding: 12px 10px; }
+  .fixture-card__team { gap: 5px; }
+  .fixture-card__team span { font-size: 11.5px; }
+  .fixture-card__team img { width: 18px; height: 18px; }
+  .fixture-card__team svg { width: 15px; height: 15px; }
+  .fixture-card__score { font-size: 13.5px; gap: 5px; }
+  .fixture-card__score-sep { height: 12px; }
 }
 
 /* ============================================================
