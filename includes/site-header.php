@@ -74,6 +74,13 @@ $jsVer   = @filemtime($jsPath) ?: 1;
         <link rel="shortcut icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
         <link rel="apple-touch-icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
     <?php endif; ?>
+    <!-- PWA (added 20 Aug 2026) — manifest.json/sw.js live at the site
+         root (not a subfolder) so the service worker's scope covers the
+         whole origin; wpm_site_url() (same helper canonical/OG tags use)
+         keeps this correct whether the app is mounted at the domain root
+         (production) or nested under a subfolder (local dev). -->
+    <link rel="manifest" href="<?= wpm_esc(wpm_site_url('manifest.json')) ?>">
+    <meta name="theme-color" content="#fb923c">
     <?php if (!empty($canonicalUrl)) : ?>
         <link rel="canonical" href="<?= wpm_esc($canonicalUrl) ?>">
     <?php endif; ?>

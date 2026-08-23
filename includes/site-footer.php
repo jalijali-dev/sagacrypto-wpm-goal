@@ -111,5 +111,15 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
 <?= wpm_floating_contact_buttons($wpmSiteSettings) ?>
 
 <script src="assets/js/site.js?v=<?= (int) $jsVer ?>" defer></script>
+<script>
+  // PWA service worker registration (added 20 Aug 2026) — deliberately
+  // here (end of body, after load) rather than in <head>, so it never
+  // competes with the page's own render/paint for the main thread.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('<?= wpm_esc(wpm_site_url('sw.js')) ?>');
+    });
+  }
+</script>
 </body>
 </html>
