@@ -20,6 +20,21 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # Canonical domain 301 (22 Aug 2026) — Google Search Console flagged
+    # "Duplicate, Google chose different canonical than user": both
+    # sagagoal.com and www.sagagoal.com were live with no redirect between
+    # them, each self-declaring its own canonical tag (see wpm_site_url()
+    # in includes/site-bootstrap.php), so Google had no signal for which
+    # one was "real" and sometimes picked www even on pages that declared
+    # non-www. GSC's registered property is https://sagagoal.com/
+    # (non-www, confirmed in GSC Settings), so www now hard-redirects here
+    # — must be the very first rule, before any other rewrite, so it fires
+    # regardless of which URL/path was requested. 301 (not 302) so link
+    # equity transfers to the non-www version instead of splitting between
+    # both indefinitely.
+    RewriteCond %{HTTP_HOST} ^www\.sagagoal\.com$ [NC]
+    RewriteRule ^ https://sagagoal.com%{REQUEST_URI} [R=301,L]
+
     # Legacy query-string redirects for football/basket date pages (25 Jul
     # 2026 SEO clean-URL change) — old links like football.php?date=2026-07-25
     # now 301 to the clean path football/2026-07-25. Must come BEFORE the
@@ -121,4 +136,22 @@
     # slug with no matching file/rule falls through to here. See
     # includes/SpecialPages.php.
     RewriteRule ^([a-z0-9-]+)/?$ page.php?slug=$1 [L,QSA]
+</IfModule>
+
+# PWA caching headers (added 20 Aug 2026) — sw.js MUST be no-cache so the
+# browser always re-checks it against the server on every registration
+# call; a cached stale copy of the service worker script itself is the
+# classic way a PWA gets stuck serving an old cache forever after a
+# deploy, since the update mechanism depends on the browser actually
+# seeing the new script's bytes change. manifest.json gets a short max-age
+# instead of no-cache (it changes far less often than app content, but an
+# icon/theme-color tweak should still show up reasonably soon, not require
+# a hard refresh).
+<IfModule mod_headers.c>
+    <FilesMatch "^sw\.js$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+    <FilesMatch "^manifest\.json$">
+        Header set Cache-Control "public, max-age=3600"
+    </FilesMatch>
 </IfModule>

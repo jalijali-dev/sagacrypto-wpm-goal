@@ -33,11 +33,27 @@ function sitemap_iso8601(?string $datetime): string
     return date('c', $ts !== false ? $ts : time());
 }
 
-/** scheme://host — used to build each <sitemap><loc> in the index. */
+/**
+ * scheme://host — used to build each <sitemap><loc> in the index.
+ *
+ * Canonical domain fix (22 Aug 2026, same GSC "duplicate, Google chose
+ * different canonical" issue as wpm_site_url() in site-bootstrap.php):
+ * this used to echo back whatever host the sitemap was FETCHED from, so a
+ * fetch of www.sagagoal.com/sitemap.xml baked www URLs into every <loc>,
+ * effectively telling Google "www is correct" straight from the sitemap
+ * itself — actively working against the canonical tags on those same
+ * pages. Normalized to the registered GSC property (sagagoal.com,
+ * non-www) whenever the request host is any sagagoal.com variant; local
+ * dev hosts are left alone so this stays portable.
+ */
 function sitemap_self_base(): string
 {
     $scheme = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off') ? 'https' : 'http';
     $host = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
+    if (preg_match('/^(www\.)?sagagoal\.com$/i', $host) === 1) {
+        $scheme = 'https';
+        $host = 'sagagoal.com';
+    }
     $scriptDir = rtrim(str_replace('\\', '/', dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/sitemap.php'))), '/');
     return $scheme . '://' . $host . $scriptDir;
 }

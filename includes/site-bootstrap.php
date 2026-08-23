@@ -185,11 +185,41 @@ function wpm_base_path(): string
     return rtrim(dirname($scriptName), '/');
 }
 
-/** Build an absolute URL for the current host — used for canonical/OG tags. */
+/**
+ * Build an absolute URL for the current host — used for canonical/OG tags,
+ * sitemap generation, and effectively every internal link on the site
+ * (everything routes through this one helper).
+ *
+ * Canonical domain fix (22 Aug 2026, GSC "duplicate, Google chose different
+ * canonical than user"): this used to blindly echo back
+ * $_SERVER['HTTP_HOST'], so a visitor (or Googlebot) hitting
+ * www.sagagoal.com got www URLs self-declared as canonical, while
+ * sagagoal.com visitors got non-www — two live, un-redirected hostnames
+ * each claiming to be the "real" one, with nothing forcing a single
+ * choice. Google Search Console's registered property is
+ * https://sagagoal.com/ (non-www, confirmed in GSC Settings), so that's
+ * now hardcoded as the ONE canonical host for the production domain,
+ * regardless of which hostname the request actually arrived on — paired
+ * with the www->non-www 301 in .htaccess so a visitor never even sees a
+ * www URL to begin with, and this is just the belt-and-suspenders half
+ * (covers cron/CLI contexts with no real request, and any hostname
+ * variant .htaccess didn't catch).
+ *
+ * Local dev (a different host entirely, e.g. localhost:8008 or a
+ * subfolder install) is deliberately left untouched — only actual
+ * sagagoal.com/www.sagagoal.com requests get normalized, so this stays
+ * portable between environments exactly as before.
+ */
 function wpm_site_url(string $path = ''): string
 {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'sagagoal.com';
+
+    if (preg_match('/^(www\.)?sagagoal\.com$/i', $host) === 1) {
+        $scheme = 'https';
+        $host = 'sagagoal.com';
+    }
+
     return $scheme . '://' . $host . wpm_base_path() . '/' . ltrim($path, '/');
 }
 
