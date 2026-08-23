@@ -1458,6 +1458,30 @@ function wpm_inject_midpoint(string $html, string $insertHtml): string
     return $before . $insertHtml . $after;
 }
 
+/**
+ * page_view_daily — one row per (article, day), summed by the "Sedang
+ * Tren" query below for a rolling window (7 days today) without scanning
+ * a per-event table. pages.views (lifetime total, updated alongside this)
+ * is left untouched — still the source for anything that wants all-time
+ * views, this table is only for recency-weighted trending. Lazy-created
+ * here (cms_ensure_table(), same pattern as every other table in this
+ * project) rather than a migration — only checked on an article's FIRST
+ * view per session (the dedup check above already gates that), not every
+ * page load.
+ */
+function wpm_ensure_page_view_daily_table(PDO $pdo): void
+{
+    cms_ensure_table(
+        $pdo,
+        'page_view_daily',
+        'page_id INT UNSIGNED NOT NULL,
+         view_date DATE NOT NULL,
+         views INT UNSIGNED NOT NULL DEFAULT 0,
+         PRIMARY KEY (page_id, view_date),
+         KEY idx_view_date (view_date)'
+    );
+}
+
 function wpm_increment_views(PDO $pdo, int $pageId): void
 {
     // One count per article per browser session, so refreshing the same
@@ -1468,6 +1492,12 @@ function wpm_increment_views(PDO $pdo, int $pageId): void
     }
     try {
         $pdo->prepare('UPDATE pages SET views = views + 1 WHERE page_id = :id')->execute(['id' => $pageId]);
+        wpm_ensure_page_view_daily_table($pdo);
+        $pdo->prepare(
+            'INSERT INTO page_view_daily (page_id, view_date, views)
+             VALUES (:id, CURDATE(), 1)
+             ON DUPLICATE KEY UPDATE views = views + 1'
+        )->execute(['id' => $pageId]);
         $seen[] = $pageId;
         $_SESSION['wpm_viewed_articles'] = array_slice($seen, -200);
     } catch (Throwable $e) {

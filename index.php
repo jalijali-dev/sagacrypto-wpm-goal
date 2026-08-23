@@ -63,16 +63,52 @@ $feedArticles = $listStmt->fetchAll();
 // Hero card is just the first result of page 1 — subsequent pages are a plain list.
 $heroArticle = ($page === 1 && $feedArticles !== []) ? array_shift($feedArticles) : null;
 
-/* ── Trending sidebar: featured articles by views, falls back gracefully if empty ── */
-$trendingStmt = $pdo->query(
-    "SELECT p.*, a.name AS author_name
-     FROM pages p
-     LEFT JOIN admins a ON a.admin_id = p.author_id
-     WHERE p.status = 'published' AND p.is_featured = 1
-     ORDER BY p.views DESC, p.published_at DESC
-     LIMIT 4"
-);
-$trendingArticles = $trendingStmt->fetchAll();
+/* ── Trending sidebar: recency-weighted (views in the last 7 days,
+   page_view_daily), NOT lifetime total views / is_featured — see
+   wpm_increment_views() in includes/site-bootstrap.php for how that
+   table gets populated. A lifetime-views sort let old articles that
+   racked up views over months permanently outrank something genuinely
+   viral today; is_featured-only meant an article never showed up here
+   at all unless an admin remembered to flag it. Falls back to the old
+   is_featured+lifetime-views query (unchanged) whenever the 7-day query
+   comes back empty — covers both a brand-new deploy (page_view_daily
+   has no rows yet, or doesn't exist yet if literally nobody has viewed
+   an article since this feature shipped) and the exception case (table
+   genuinely missing), so the widget is never blank. ── */
+$trendingArticles = [];
+try {
+    $trendingStmt = $pdo->query(
+        "SELECT p.*, a.name AS author_name,
+                COALESCE(SUM(pvd.views), 0) AS views_7d
+         FROM pages p
+         LEFT JOIN admins a ON a.admin_id = p.author_id
+         LEFT JOIN page_view_daily pvd
+                ON pvd.page_id = p.page_id
+               AND pvd.view_date >= (CURDATE() - INTERVAL 7 DAY)
+         WHERE p.status = 'published'
+         GROUP BY p.page_id
+         HAVING views_7d > 0
+         ORDER BY views_7d DESC, p.published_at DESC
+         LIMIT 4"
+    );
+    $trendingArticles = $trendingStmt->fetchAll();
+} catch (Throwable $e) {
+    // page_view_daily doesn't exist yet (brand-new deploy, nobody has
+    // viewed an article since this shipped) — falls through to the
+    // is_featured fallback below, same as the "0 rows" case.
+    $trendingArticles = [];
+}
+if ($trendingArticles === []) {
+    $trendingFallbackStmt = $pdo->query(
+        "SELECT p.*, a.name AS author_name
+         FROM pages p
+         LEFT JOIN admins a ON a.admin_id = p.author_id
+         WHERE p.status = 'published' AND p.is_featured = 1
+         ORDER BY p.views DESC, p.published_at DESC
+         LIMIT 4"
+    );
+    $trendingArticles = $trendingFallbackStmt->fetchAll();
+}
 
 /* ── Promo banners (cms-admin/pages/banners.php), placement="home" ── */
 $homeBanners = wpm_banners_active($pdo, 'home');
