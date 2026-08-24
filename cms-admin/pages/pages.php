@@ -403,9 +403,19 @@ $listPage     = max(1, (int) ($_GET['page'] ?? 1));
 $listWhere  = [];
 $listParams = [];
 if ($listSearchRaw !== '') {
-    $listEscaped          = str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $listSearchRaw);
-    $listWhere[]          = '(p.title LIKE :search OR p.slug LIKE :search)';
-    $listParams['search'] = '%' . $listEscaped . '%';
+    // Two distinct placeholders (:search_title / :search_slug), not the
+    // same :search reused twice — this DB connection runs with
+    // PDO::ATTR_EMULATE_PREPARES => false (config/database.php), so MySQL's
+    // native prepare protocol is used, and native prepares reject a named
+    // parameter that appears more than once in one query (uncaught
+    // PDOException -> fatal error -> blank 500 page, exactly what typing
+    // anything into the article search box triggered before this fix).
+    // Emulated prepares (the PDO default elsewhere) tolerate a repeated
+    // name fine, which is why this bug wasn't obvious just reading the SQL.
+    $listEscaped                = str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $listSearchRaw);
+    $listWhere[]                = '(p.title LIKE :search_title OR p.slug LIKE :search_slug)';
+    $listParams['search_title'] = '%' . $listEscaped . '%';
+    $listParams['search_slug']  = '%' . $listEscaped . '%';
 }
 if ($listStatus !== '') {
     $listWhere[]                 = 'p.status = :status_filter';
