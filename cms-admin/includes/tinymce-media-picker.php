@@ -150,6 +150,57 @@ $mceMlProjectRoot = CMS_PROJECT_ROOT;
     padding: 24px; text-align: center;
     color: var(--muted); font-size: 14px;
 }
+/* ---- Upload dropzone (23 Aug 2026) ---- */
+#mce-ml-dropzone {
+    flex-shrink: 0;
+    margin: 0 12px 10px;
+    padding: 14px 12px;
+    border: 1.5px dashed var(--line);
+    border-radius: 10px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color .14s ease, background .14s ease, color .14s ease;
+}
+#mce-ml-dropzone:hover,
+#mce-ml-dropzone:focus-visible {
+    border-color: var(--navlink-active-border);
+    color: var(--text);
+}
+#mce-ml-dropzone.is-dragover {
+    border-color: var(--navlink-active-border);
+    background: var(--surface-soft);
+    color: var(--text);
+}
+#mce-ml-dropzone strong { color: var(--text); font-weight: 700; }
+#mce-ml-dropzone-status {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+#mce-ml-dropzone.is-busy #mce-ml-dropzone-idle { display: none; }
+#mce-ml-dropzone.is-busy #mce-ml-dropzone-status { display: flex; }
+#mce-ml-dropzone-spinner {
+    width: 14px; height: 14px;
+    border: 2px solid var(--line);
+    border-top-color: var(--navlink-active-border);
+    border-radius: 50%;
+    animation: mce-ml-spin .7s linear infinite;
+}
+@keyframes mce-ml-spin { to { transform: rotate(360deg); } }
+#mce-ml-dropzone-error {
+    display: none;
+    margin: -4px 12px 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(220, 38, 38, .1);
+    border: 1px solid rgba(220, 38, 38, .3);
+    color: #dc2626;
+    font-size: 12.5px;
+}
+#mce-ml-dropzone-error.is-visible { display: block; }
 </style>
 
 <!-- TinyMCE Media Library picker modal -->
@@ -164,6 +215,13 @@ $mceMlProjectRoot = CMS_PROJECT_ROOT;
                    autocomplete="off">
             <button type="button" id="mce-ml-close" aria-label="Close">✕</button>
         </div>
+
+        <div id="mce-ml-dropzone" role="button" tabindex="0" aria-label="Upload a new image">
+            <span id="mce-ml-dropzone-idle"><strong>Click to upload</strong> or drag &amp; drop an image here (max 5 MB)</span>
+            <span id="mce-ml-dropzone-status"><span id="mce-ml-dropzone-spinner" aria-hidden="true"></span> Uploading…</span>
+        </div>
+        <input type="file" id="mce-ml-file-input" accept="image/*" hidden>
+        <div id="mce-ml-dropzone-error" role="alert"></div>
 
         <div id="mce-ml-body">
             <div class="mce-ml-grid">
@@ -227,11 +285,21 @@ $mceMlProjectRoot = CMS_PROJECT_ROOT;
     var backdrop = document.getElementById('mce-ml-backdrop');
     var search   = document.getElementById('mce-ml-search');
     var closeBtn = document.getElementById('mce-ml-close');
-    var items    = document.querySelectorAll('.mce-ml-item');
+    var grid     = document.querySelector('.mce-ml-grid');
+    var dropzone = document.getElementById('mce-ml-dropzone');
+    var fileInput = document.getElementById('mce-ml-file-input');
+    var errorBox = document.getElementById('mce-ml-dropzone-error');
+    // Mutable array (NOT the static NodeList querySelectorAll returns) —
+    // an uploaded item gets pushed in here so search/select wiring covers
+    // it exactly like a page-load-rendered one, see wireItem() below.
+    var items = Array.prototype.slice.call(document.querySelectorAll('.mce-ml-item'));
 
     if (!modal) return;
 
     var currentCallback = null;
+    var CSRF_TOKEN = '<?= cms_csrf_token() ?>';
+    var UPLOAD_URL = '<?= cms_esc(cms_api_href('media-upload.php')) ?>';
+    var MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB — matches cms_handle_media_upload()'s image limit
 
     /* ---- open / close ---- */
     function openModal() {
@@ -294,17 +362,160 @@ $mceMlProjectRoot = CMS_PROJECT_ROOT;
         search.addEventListener('input', function () { filterItems(search.value); });
     }
 
-    items.forEach(function (item) {
-        // Mouse click
+    // Wires click + keyboard (Enter/Space, role="button"+tabindex a11y) —
+    // shared by every item, whether PHP-rendered at page load or injected
+    // after an upload below, so both behave identically.
+    function wireItem(item) {
         item.addEventListener('click', function () { selectItem(item); });
-        // Keyboard: Enter or Space for accessibility (role="button" + tabindex)
         item.addEventListener('keydown', function (e) {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 selectItem(item);
             }
         });
-    });
+    }
+
+    items.forEach(wireItem);
+
+    /* ---- upload (drag & drop + click-to-browse), 23 Aug 2026 ---- */
+    function showUploadError(message) {
+        errorBox.textContent = message;
+        errorBox.classList.add('is-visible');
+    }
+    function clearUploadError() {
+        errorBox.textContent = '';
+        errorBox.classList.remove('is-visible');
+    }
+
+    /**
+     * Builds one .mce-ml-item node with the exact same markup/data-
+     * attributes as the PHP-rendered items above (see the foreach in this
+     * file's HTML section) — so an item from a fresh upload is
+     * indistinguishable from one that existed at page load, and works
+     * with filterItems()/selectItem()/wireItem() unchanged.
+     */
+    function buildItemNode(data) {
+        var item = document.createElement('div');
+        item.className = 'mce-ml-item';
+        item.setAttribute('role', 'button');
+        item.setAttribute('tabindex', '0');
+        item.setAttribute('data-src', data.thumb_url || '');
+        item.setAttribute('data-path', data.file_path || '');
+        item.setAttribute('data-alt', '');
+        item.setAttribute('data-name', (data.file_name || '').toLowerCase());
+        item.setAttribute('data-width', String(data.width || 0));
+        item.setAttribute('data-height', String(data.height || 0));
+        item.setAttribute('title', data.file_name || '');
+
+        var img = document.createElement('img');
+        img.className = 'mce-ml-item__img';
+        img.src = data.thumb_url || '';
+        img.alt = data.file_name || '';
+        img.loading = 'lazy';
+        img.onerror = function () { img.style.display = 'none'; };
+        item.appendChild(img);
+
+        var nameEl = document.createElement('span');
+        nameEl.className = 'mce-ml-item__name';
+        nameEl.textContent = data.file_name || '';
+        item.appendChild(nameEl);
+
+        if (data.width > 0 && data.height > 0) {
+            var dimsEl = document.createElement('span');
+            dimsEl.className = 'mce-ml-item__dims';
+            dimsEl.textContent = data.width + ' × ' + data.height;
+            item.appendChild(dimsEl);
+        }
+
+        return item;
+    }
+
+    function uploadFile(file) {
+        clearUploadError();
+
+        if (file.type.indexOf('image/') !== 0) {
+            showUploadError('Only image files can be uploaded here.');
+            return;
+        }
+        if (file.size > MAX_UPLOAD_BYTES) {
+            showUploadError('File exceeds the 5 MB limit.');
+            return;
+        }
+
+        dropzone.classList.add('is-busy');
+
+        var formData = new FormData();
+        formData.append('media_file', file);
+        formData.append('csrf_token', CSRF_TOKEN);
+
+        fetch(UPLOAD_URL, { method: 'POST', body: formData })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                dropzone.classList.remove('is-busy');
+                if (!data || !data.success) {
+                    showUploadError((data && data.error) ? data.error : 'Upload failed.');
+                    return;
+                }
+                // New upload first (matches the page's own ORDER BY id DESC).
+                var item = buildItemNode(data);
+                wireItem(item);
+                if (grid) { grid.insertBefore(item, grid.firstChild); }
+                items.unshift(item);
+                if (search) { search.value = ''; filterItems(''); }
+                // Auto-select — the whole point of uploading from inside
+                // the picker is not having to go find it again afterward.
+                // Dispatch a real click instead of calling selectItem(item)
+                // directly: this modal is also opened standalone by
+                // pages.php's own "Choose from Media Library" path-picker
+                // (cms-admin/pages/pages.php), which listens for clicks on
+                // .mce-ml-item via its own document-level delegated
+                // listener, completely separate from this file's
+                // currentCallback/selectItem() TinyMCE flow. A real click
+                // bubbles to both listeners, so upload+auto-select works
+                // whether the modal was opened from TinyMCE or from a
+                // Featured/OG image field button.
+                item.click();
+            })
+            .catch(function () {
+                dropzone.classList.remove('is-busy');
+                showUploadError('Upload failed — check your connection and try again.');
+            });
+    }
+
+    if (dropzone && fileInput) {
+        dropzone.addEventListener('click', function () { fileInput.click(); });
+        dropzone.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                fileInput.click();
+            }
+        });
+        fileInput.addEventListener('change', function () {
+            if (fileInput.files && fileInput.files[0]) {
+                uploadFile(fileInput.files[0]);
+            }
+            fileInput.value = ''; // allow re-selecting the same file later
+        });
+
+        ['dragenter', 'dragover'].forEach(function (evt) {
+            dropzone.addEventListener(evt, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.add('is-dragover');
+            });
+        });
+        ['dragleave', 'drop'].forEach(function (evt) {
+            dropzone.addEventListener(evt, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.remove('is-dragover');
+            });
+        });
+        dropzone.addEventListener('drop', function (e) {
+            var files = e.dataTransfer && e.dataTransfer.files;
+            if (files && files[0]) { uploadFile(files[0]); }
+        });
+    }
 
     /**
      * TinyMCE file_picker_callback.

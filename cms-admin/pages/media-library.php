@@ -79,108 +79,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $errEditQuery = ($action === 'update' && (int) ($_POST['id'] ?? 0) > 0)
         ? 'edit=' . (int) $_POST['id'] : null;
 
-    // Guard file content — matches every other uploads/* guard exactly.
-    $guardContent = "<?php\ndeclare(strict_types=1);\n\nhttp_response_code(403);\nexit('Forbidden');\n";
-
+    // Validation/save logic extracted to cms_handle_media_upload()
+    // (cms-admin/config/app.php, 23 Aug 2026) — shared with
+    // cms-admin/api/media-upload.php (the TinyMCE picker's drag & drop
+    // upload endpoint), one place decides what a valid upload is.
     if (
         isset($_FILES['media_file']) && is_array($_FILES['media_file'])
         && (int) ($_FILES['media_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE
     ) {
-        $uploadErr = (int) ($_FILES['media_file']['error'] ?? UPLOAD_ERR_NO_FILE);
-        if ($uploadErr !== UPLOAD_ERR_OK) {
-            $ml_redirect('File upload failed (error code ' . $uploadErr . ').', 'error', $errEditQuery);
+        $uploadResult = cms_handle_media_upload($_FILES['media_file']);
+        if (!$uploadResult['ok']) {
+            $ml_redirect($uploadResult['error'], 'error', $errEditQuery);
         }
-
-        $tmpName   = (string) ($_FILES['media_file']['tmp_name'] ?? '');
-        $origName  = (string) ($_FILES['media_file']['name']     ?? '');
-        $fileBytes = (int)    ($_FILES['media_file']['size']      ?? 0);
-
-        if ($tmpName === '' || !is_uploaded_file($tmpName)) {
-            $ml_redirect('Invalid upload.', 'error', $errEditQuery);
-        }
-        if ($fileBytes <= 0) {
-            $ml_redirect('Uploaded file is empty.', 'error', $errEditQuery);
-        }
-
-        // --- Step 1: preliminary extension check (fast, before finfo) ----------
-        $allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf'];
-        $clientExt   = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
-        if ($clientExt === '' || !in_array($clientExt, $allowedExts, true)) {
-            $ml_redirect('Disallowed file extension.', 'error', $errEditQuery);
-        }
-
-        // --- Step 2: MIME detection via finfo (reads actual file bytes) ---------
-        // The map also provides the canonical saved extension — derived from
-        // the detected MIME, never from the client-supplied filename.
-        $mimeExtMap = [
-            'image/jpeg'      => 'jpg',
-            'image/png'       => 'png',
-            'image/webp'      => 'webp',
-            'image/gif'       => 'gif',
-            'application/pdf' => 'pdf',
-        ];
-        $finfo        = new finfo(FILEINFO_MIME_TYPE);
-        $detectedMime = (string) ($finfo->file($tmpName) ?: '');
-        if ($detectedMime === '' || !array_key_exists($detectedMime, $mimeExtMap)) {
-            $ml_redirect('Disallowed file type (' . $detectedMime . ').', 'error', $errEditQuery);
-        }
-
-        // --- Step 3: per-type size limit (5 MB images, 10 MB PDF) ---------------
-        $maxBytes = ($detectedMime === 'application/pdf') ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
-        if ($fileBytes > $maxBytes) {
-            $limitLabel = ($maxBytes === 10 * 1024 * 1024) ? '10 MB' : '5 MB';
-            $ml_redirect('File exceeds the ' . $limitLabel . ' limit for this file type.', 'error', $errEditQuery);
-        }
-
-        // Canonical extension comes from the MIME map, not the user's filename.
-        $ext = $mimeExtMap[$detectedMime];
-
-        // --- Step 4: create upload directory and write guard files if missing ---
-        $projectRoot = CMS_PROJECT_ROOT;
-        $yr          = date('Y');
-        $mo          = date('m');
-        $relBase     = 'uploads/media';
-        $relYear     = $relBase  . '/' . $yr;
-        $relDir      = $relYear  . '/' . $mo;
-        $diskDir     = $projectRoot . '/' . $relDir;
-
-        if (!is_dir($diskDir) && !mkdir($diskDir, 0755, true) && !is_dir($diskDir)) {
-            $ml_redirect('Upload directory could not be created.', 'error', $errEditQuery);
-        }
-        // Ensure each directory level has an index.php guard (403 on direct browse).
-        foreach ([$relBase, $relYear, $relDir] as $guardLevel) {
-            $guardFile = $projectRoot . '/' . $guardLevel . '/index.php';
-            if (!file_exists($guardFile)) {
-                file_put_contents($guardFile, $guardContent);
-                @chmod($guardFile, 0644);
-            }
-        }
-
-        // --- Step 5: safe filename — lowercase base + 16-char hex suffix --------
-        $base = trim(
-            (string) (preg_replace('/[^a-z0-9_-]+/', '-', strtolower(pathinfo($origName, PATHINFO_FILENAME))) ?? ''),
-            '-'
-        );
-        if ($base === '') { $base = 'upload'; }
-
-        do {
-            $safeFilename = $base . '-' . bin2hex(random_bytes(8)) . '.' . $ext;
-            $targetPath   = $diskDir . '/' . $safeFilename;
-        } while (file_exists($targetPath));
-
-        // --- Step 6: move to final location -------------------------------------
-        if (!move_uploaded_file($tmpName, $targetPath)) {
-            $ml_redirect('Could not save the uploaded file.', 'error', $errEditQuery);
-        }
-        @chmod($targetPath, 0644);
 
         // Stored path uses leading slash — matches all other upload modules.
-        $uploadedRelPath  = '/' . $relDir . '/' . $safeFilename;
-        $uploadedFileName = $safeFilename;
-        $uploadedMime     = $detectedMime;
-        $uploadedSizeKb   = (int) ceil($fileBytes / 1024);
-        $uploadedFileType = str_starts_with($detectedMime, 'image/') ? 'image'
-                          : ($detectedMime === 'application/pdf' ? 'document' : 'other');
+        $uploadedRelPath  = $uploadResult['file_path'];
+        $uploadedFileName = $uploadResult['file_name'];
+        $uploadedMime     = $uploadResult['mime_type'];
+        $uploadedSizeKb   = $uploadResult['file_size_kb'];
+        $uploadedFileType = $uploadResult['file_type'];
     }
     // -------------------------------------------------------------------------
 
