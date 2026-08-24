@@ -304,13 +304,83 @@ if ($mediaSchemaError !== null) {
 $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
 $editRow = null;
 
+// "Media files" vs "New/Edit media file" as separate views (24 Aug 2026,
+// same pattern as pages.php's ?view=create split) — this page used to
+// cram BOTH into one 2-column grid (admin-grid--2) always rendered
+// together, which is also why thumbnails stayed tiny (squeezed into half
+// the page width). ?view=create now switches to a full-width form-only
+// view; editing (?edit=ID) already takes its own view. Neither param
+// present -> full-width list-only view (the default).
+$showCreateForm = ($_GET['view'] ?? '') === 'create';
+
+// ---- Server-side search + type/status filter + pagination (24 Aug 2026)
+// ---- Replaces the old "fetch all rows, hide/show with JS" approach,
+// which got slower and slower to scroll as the library grew (132 files
+// and counting) since every row rendered up front regardless of filters.
+$mlSearchRaw = isset($_GET['search']) ? trim((string) $_GET['search']) : '';
+if (mb_strlen($mlSearchRaw, 'UTF-8') > 100) {
+    $mlSearchRaw = mb_substr($mlSearchRaw, 0, 100, 'UTF-8');
+}
+$mlTypeFilter = isset($_GET['type']) ? strtolower(trim((string) $_GET['type'])) : '';
+if (!in_array($mlTypeFilter, ['image', 'document', 'video', 'other'], true)) {
+    $mlTypeFilter = '';
+}
+$mlStatusFilter = isset($_GET['status']) ? strtolower(trim((string) $_GET['status'])) : '';
+if (!in_array($mlStatusFilter, ['active', 'inactive'], true)) {
+    $mlStatusFilter = '';
+}
+
+$mlPerPage = 24;
+$mlPage    = max(1, (int) ($_GET['page'] ?? 1));
+
+$mlWhere  = [];
+$mlParams = [];
+if ($mlSearchRaw !== '') {
+    $mlEscaped              = str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $mlSearchRaw);
+    $mlWhere[]               = '(m.file_name LIKE :search_name OR m.file_path LIKE :search_path)';
+    $mlParams['search_name'] = '%' . $mlEscaped . '%';
+    $mlParams['search_path'] = '%' . $mlEscaped . '%';
+}
+if ($mlTypeFilter !== '') {
+    if ($mlTypeFilter === 'other') {
+        $mlWhere[] = "(m.file_type IS NULL OR m.file_type NOT IN ('image', 'document', 'video'))";
+    } else {
+        $mlWhere[]              = 'm.file_type = :type_filter';
+        $mlParams['type_filter'] = $mlTypeFilter;
+    }
+}
+if ($mlStatusFilter !== '') {
+    $mlWhere[]                 = 'm.is_active = :status_filter';
+    $mlParams['status_filter'] = $mlStatusFilter === 'active' ? 1 : 0;
+}
+$mlWhereClause = $mlWhere !== [] ? ' WHERE ' . implode(' AND ', $mlWhere) : '';
+
+$mediaFiles     = [];
+$mlTotalRows    = 0;
+$mlTotalPages   = 1;
 try {
-    $listStmt = $pdo->query(
-        'SELECT m.id, m.file_name, m.file_path, m.file_type, m.mime_type,
-                m.file_size_kb, m.is_active, m.created_at
-         FROM media_library m
-         ORDER BY m.id DESC'
-    );
+    $mlCountStmt = $pdo->prepare('SELECT COUNT(*) FROM media_library m' . $mlWhereClause);
+    $mlCountStmt->execute($mlParams);
+    $mlTotalRows  = (int) $mlCountStmt->fetchColumn();
+    $mlTotalPages = max(1, (int) ceil($mlTotalRows / $mlPerPage));
+    if ($mlPage > $mlTotalPages) {
+        $mlPage = $mlTotalPages;
+    }
+    $mlOffset = ($mlPage - 1) * $mlPerPage;
+
+    $listSql = 'SELECT m.id, m.file_name, m.file_path, m.file_type, m.mime_type,
+                       m.file_size_kb, m.is_active, m.created_at
+                FROM media_library m'
+             . $mlWhereClause
+             . ' ORDER BY m.id DESC
+                LIMIT :limit OFFSET :offset';
+    $listStmt = $pdo->prepare($listSql);
+    $listStmt->bindValue(':limit', $mlPerPage, PDO::PARAM_INT);
+    $listStmt->bindValue(':offset', $mlOffset, PDO::PARAM_INT);
+    foreach ($mlParams as $key => $val_) {
+        $listStmt->bindValue(':' . $key, $val_);
+    }
+    $listStmt->execute();
     $mediaFiles = $listStmt->fetchAll();
 } catch (PDOException $e) {
     $mediaFiles = [];
@@ -321,6 +391,16 @@ try {
         ];
     }
 }
+
+// Preserves search/type/status params across pagination links.
+$mlPaginateUrl = static function (int $targetPage) use ($selfUrl, $mlSearchRaw, $mlTypeFilter, $mlStatusFilter): string {
+    $q = [];
+    if ($mlSearchRaw !== '')   { $q['search'] = $mlSearchRaw; }
+    if ($mlTypeFilter !== '')  { $q['type']   = $mlTypeFilter; }
+    if ($mlStatusFilter !== ''){ $q['status'] = $mlStatusFilter; }
+    $q['page'] = $targetPage;
+    return $selfUrl . '?' . http_build_query($q);
+};
 
 if ($editId > 0) {
     try {
@@ -361,8 +441,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
 .cms-path-upload__preview{display:block;max-width:100%;max-height:100px;margin:6px 0 0;border-radius:8px;object-fit:contain;border:1px solid var(--line)}
 .cms-path-upload__preview[hidden]{display:none!important}
 /* ---- list row thumbnail ---- */
-.ml-thumb{flex-shrink:0;width:38px;height:38px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
-.ml-thumb--ph{display:flex;align-items:center;justify-content:center;font-size:16px;background:var(--accent-soft);border:1px solid var(--line-subtle);border-radius:6px;width:38px;height:38px;flex-shrink:0}
+.ml-thumb{flex-shrink:0;width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.ml-thumb--ph{display:flex;align-items:center;justify-content:center;font-size:28px;background:var(--accent-soft);border:1px solid var(--line-subtle);border-radius:8px;width:72px;height:72px;flex-shrink:0}
 /* ---- file name truncation ---- */
 .ml-fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;max-width:100%}
 /* ---- type badges (base in admin.css; module-specific rules below) ---- */
@@ -382,6 +462,15 @@ require dirname(__DIR__) . '/includes/alerts.php';
 /* ---- form helper text ---- */
 .ml-hint{font-size:11px;color:var(--muted);display:block;margin-top:4px;line-height:1.45}
 .ml-hint code{background:var(--accent-soft);padding:1px 5px;border-radius:3px;font-size:11px}
+/* ---- pagination (copied from pages.php's .pg-pagination/.pg-page-btn —
+   that CSS lives in pages.php's own inline <style>, not admin.css, so it
+   isn't available here without duplicating it) ---- */
+.pg-pagination{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:14px}
+.pg-page-btn{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface-soft);color:var(--text);font-size:13px;font-weight:500;text-decoration:none;cursor:pointer;font-family:inherit;transition:background .12s,border-color .12s}
+.pg-page-btn:hover{background:var(--navlink-hover-bg);border-color:var(--navlink-active-border)}
+.pg-page-btn--active{background:var(--accent);border-color:var(--accent);color:var(--accent-text);cursor:default}
+.pg-page-btn--disabled{color:var(--muted);border-color:var(--line-subtle);background:var(--surface-soft);cursor:default}
+.pg-page-ellipsis{padding:0 4px;color:var(--muted);font-size:13px;line-height:34px}
 </style>
 <section class="admin-stack">
     <div class="toolbar">
@@ -390,35 +479,42 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <p class="section-lead">Central file store — enter file path as text (upload coming soon).</p>
         </div>
         <div class="toolbar__right">
-            <a class="admin-btn admin-btn--primary" id="ml-new-btn"
-               href="<?= cms_esc($selfUrl . '#media-form') ?>">Add Media Path</a>
+            <a class="admin-btn admin-btn--primary"
+               href="<?= cms_esc($showCreateForm || $editRow ? $selfUrl : $selfUrl . '?view=create') ?>">
+                <?= ($showCreateForm || $editRow) ? 'Back to List' : 'Add Media Path' ?>
+            </a>
         </div>
     </div>
 
-    <div class="admin-grid admin-grid--2">
+    <?php if (!$editRow && !$showCreateForm) : ?>
         <div class="panel">
             <div class="panel__head">
                 <h3 class="panel__title">Media files</h3>
-                <span class="panel__meta" id="ml-count"><?= count($mediaFiles) ?> file(s)</span>
+                <span class="panel__meta"><?= $mlTotalRows ?> file(s)</span>
             </div>
 
             <!-- Filter / search controls -->
-            <div class="ml-controls">
-                <input type="search" id="ml-search" class="ml-ctrl-search"
-                       placeholder="Search media…" autocomplete="off">
-                <select id="ml-filter-type" class="ml-ctrl-select">
+            <form class="ml-controls" method="get" action="">
+                <input type="search" name="search" class="ml-ctrl-search"
+                       placeholder="Search media…" autocomplete="off"
+                       value="<?= cms_esc($mlSearchRaw) ?>">
+                <select name="type" class="ml-ctrl-select">
                     <option value="">All types</option>
-                    <option value="image">Image</option>
-                    <option value="document">Document</option>
-                    <option value="video">Video</option>
-                    <option value="other">Other</option>
+                    <option value="image"    <?= $mlTypeFilter === 'image'    ? 'selected' : '' ?>>Image</option>
+                    <option value="document" <?= $mlTypeFilter === 'document' ? 'selected' : '' ?>>Document</option>
+                    <option value="video"    <?= $mlTypeFilter === 'video'    ? 'selected' : '' ?>>Video</option>
+                    <option value="other"    <?= $mlTypeFilter === 'other'    ? 'selected' : '' ?>>Other</option>
                 </select>
-                <select id="ml-filter-status" class="ml-ctrl-select">
+                <select name="status" class="ml-ctrl-select">
                     <option value="">All statuses</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
+                    <option value="active"   <?= $mlStatusFilter === 'active'   ? 'selected' : '' ?>>Active</option>
+                    <option value="inactive" <?= $mlStatusFilter === 'inactive' ? 'selected' : '' ?>>Inactive</option>
                 </select>
-            </div>
+                <button type="submit" class="admin-btn admin-btn--secondary">Filter</button>
+                <?php if ($mlSearchRaw !== '' || $mlTypeFilter !== '' || $mlStatusFilter !== '') : ?>
+                    <a href="<?= cms_esc($selfUrl) ?>" class="admin-btn admin-btn--secondary">Reset</a>
+                <?php endif; ?>
+            </form>
 
             <div class="table-wrap ml-table-wrap">
                 <table class="admin-table ml-table">
@@ -441,12 +537,11 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     </thead>
                     <tbody id="ml-tbody">
                         <?php if ($mediaFiles === []) : ?>
-                            <tr><td colspan="5" class="muted">No media files yet.</td></tr>
-                        <?php endif; ?>
-                        <?php if ($mediaFiles !== []) : ?>
-                            <tr id="ml-no-results" hidden>
-                                <td colspan="5" class="muted">No files match your search.</td>
-                            </tr>
+                            <tr><td colspan="5" class="muted">
+                                <?= ($mlSearchRaw !== '' || $mlTypeFilter !== '' || $mlStatusFilter !== '')
+                                    ? 'No files match your search/filter.'
+                                    : 'No media files yet.' ?>
+                            </td></tr>
                         <?php endif; ?>
                         <?php foreach ($mediaFiles as $row) : ?>
                             <?php
@@ -511,8 +606,46 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     </tbody>
                 </table>
             </div>
-        </div>
 
+            <?php if ($mlTotalPages > 1) : ?>
+            <nav class="pg-pagination" aria-label="Navigasi halaman media" style="padding:14px;">
+                <?php if ($mlPage > 1) : ?>
+                    <a class="pg-page-btn" href="<?= cms_esc($mlPaginateUrl($mlPage - 1)) ?>">« Prev</a>
+                <?php else : ?>
+                    <span class="pg-page-btn pg-page-btn--disabled">« Prev</span>
+                <?php endif; ?>
+                <?php
+                $mlWin = 2;
+                $mlMin = max(1, $mlPage - $mlWin);
+                $mlMax = min($mlTotalPages, $mlPage + $mlWin);
+                if ($mlMin === 1) { $mlMax = min($mlTotalPages, 1 + $mlWin * 2); }
+                if ($mlMax === $mlTotalPages) { $mlMin = max(1, $mlTotalPages - $mlWin * 2); }
+                if ($mlMin > 1) : ?>
+                    <a class="pg-page-btn" href="<?= cms_esc($mlPaginateUrl(1)) ?>">1</a>
+                    <?php if ($mlMin > 2) : ?><span class="pg-page-ellipsis">…</span><?php endif; ?>
+                <?php endif; ?>
+                <?php for ($mlI = $mlMin; $mlI <= $mlMax; $mlI++) : ?>
+                    <?php if ($mlI === $mlPage) : ?>
+                        <span class="pg-page-btn pg-page-btn--active"><?= $mlI ?></span>
+                    <?php else : ?>
+                        <a class="pg-page-btn" href="<?= cms_esc($mlPaginateUrl($mlI)) ?>"><?= $mlI ?></a>
+                    <?php endif; ?>
+                <?php endfor; ?>
+                <?php if ($mlMax < $mlTotalPages) : ?>
+                    <?php if ($mlMax < $mlTotalPages - 1) : ?><span class="pg-page-ellipsis">…</span><?php endif; ?>
+                    <a class="pg-page-btn" href="<?= cms_esc($mlPaginateUrl($mlTotalPages)) ?>"><?= $mlTotalPages ?></a>
+                <?php endif; ?>
+                <?php if ($mlPage < $mlTotalPages) : ?>
+                    <a class="pg-page-btn" href="<?= cms_esc($mlPaginateUrl($mlPage + 1)) ?>">Next »</a>
+                <?php else : ?>
+                    <span class="pg-page-btn pg-page-btn--disabled">Next »</span>
+                <?php endif; ?>
+            </nav>
+            <?php endif; ?>
+        </div>
+    <?php endif; // !$editRow && !$showCreateForm ?>
+
+    <?php if ($editRow || $showCreateForm) : ?>
         <div class="panel" id="media-form">
             <div class="panel__head">
                 <h3 class="panel__title"><?= $editRow ? 'Edit media file' : 'New media file' ?></h3>
@@ -614,7 +747,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <button type="submit" class="admin-btn admin-btn--primary"><?= $editRow ? 'Save changes' : 'Create media file' ?></button>
             </form>
         </div>
-    </div>
+    <?php endif; // $editRow || $showCreateForm ?>
 </section>
 <script>
 (function () {
@@ -709,47 +842,11 @@ require dirname(__DIR__) . '/includes/alerts.php';
     }
 })();
 
-// ---- Media table: search + type/status filter ----
-(function () {
-    var searchEl  = document.getElementById('ml-search');
-    var typeEl    = document.getElementById('ml-filter-type');
-    var statusEl  = document.getElementById('ml-filter-status');
-    var countEl   = document.getElementById('ml-count');
-    var noResults = document.getElementById('ml-no-results');
-    var tbody     = document.getElementById('ml-tbody');
-    if (!searchEl || !typeEl || !statusEl || !tbody) return;
-
-    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-name]'));
-
-    function applyFilters() {
-        var q      = searchEl.value.toLowerCase().trim();
-        var type   = typeEl.value.toLowerCase();
-        var status = statusEl.value.toLowerCase();
-        var visible = 0;
-
-        rows.forEach(function (tr) {
-            var name  = tr.getAttribute('data-name')   || '';
-            var path  = tr.getAttribute('data-path')   || '';
-            var rType = tr.getAttribute('data-type')   || '';
-            var rStat = tr.getAttribute('data-status') || '';
-            var show  = true;
-
-            if (q && name.indexOf(q) === -1 && path.indexOf(q) === -1) show = false;
-            if (type   && rType !== type)   show = false;
-            if (status && rStat !== status) show = false;
-
-            tr.hidden = !show;
-            if (show) visible++;
-        });
-
-        if (countEl)   { countEl.textContent   = visible + ' file(s)'; }
-        if (noResults) { noResults.hidden = visible > 0 || rows.length === 0; }
-    }
-
-    searchEl.addEventListener('input',   applyFilters);
-    typeEl.addEventListener('change',    applyFilters);
-    statusEl.addEventListener('change',  applyFilters);
-})();
+// Search/type/status filtering is server-side now (see $mlWhere/$mlParams
+// in the PHP above) — the client-side JS row-hiding that used to live here
+// was removed 24 Aug 2026 alongside the pagination fix, since it only
+// filtered whatever page of rows happened to be loaded, not the whole
+// library.
 
 // ---- Copy Path button ----
 (function () {
@@ -778,38 +875,10 @@ require dirname(__DIR__) . '/includes/alerts.php';
     });
 })();
 
-// ---- "Add Media Path" button — always open a clean create form ----
-(function () {
-    var btn = document.getElementById('ml-new-btn');
-    if (!btn) return;
-
-    btn.addEventListener('click', function (e) {
-        var inEditMode = window.location.search.indexOf('edit=') !== -1;
-
-        if (inEditMode) {
-            // Navigate away from edit mode. The page will reload without ?edit=,
-            // PHP renders a blank create form, and the browser scrolls to #media-form.
-            // Let the default href handle it — no need to preventDefault.
-            return;
-        }
-
-        // Already in create mode: reset the form in-place, then scroll.
-        e.preventDefault();
-
-        var form = document.querySelector('#media-form form');
-        if (form) { form.reset(); }
-
-        // Clear path preview image
-        var prev = document.getElementById('ml-path-preview');
-        if (prev) { prev.hidden = true; prev.removeAttribute('src'); }
-
-        // Clear the file upload input (form.reset() covers it, but be explicit)
-        var upInput = document.getElementById('ml-upload-file');
-        if (upInput) { upInput.value = ''; }
-
-        document.getElementById('media-form').scrollIntoView({ behavior: 'smooth' });
-    });
-})();
+// "Add Media Path" is a plain link to ?view=create now (see the toolbar
+// button in the PHP above) — full navigation, always a clean form, no
+// in-place JS reset/scroll trick needed since the create form has its own
+// dedicated full-page view now instead of sharing a page with the list.
 </script>
 <?php
 require dirname(__DIR__) . '/includes/footer.php';
