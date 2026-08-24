@@ -21,7 +21,7 @@ $articlesNavGroup = [
     'icon' => 'article',
     'items' => [
         ['id' => 'pages', 'label' => 'All Articles', 'href' => cms_nav_href('pages.php'), 'icon' => 'file'],
-        ['id' => 'pages-new', 'label' => 'Add Article', 'href' => cms_nav_href('pages.php') . '#create-page', 'icon' => 'pencil'],
+        ['id' => 'pages-new', 'label' => 'Add Article', 'href' => cms_nav_href('pages.php') . '?view=create', 'icon' => 'pencil'],
         ['id' => 'article-categories', 'label' => 'Article Categories', 'href' => cms_nav_href('article-categories.php'), 'icon' => 'tag'],
         ['id' => 'article-tags', 'label' => 'Article Tags', 'href' => cms_nav_href('article-tags.php'), 'icon' => 'label'],
         // Links to admins.php, which is superadmin-only — not part of the

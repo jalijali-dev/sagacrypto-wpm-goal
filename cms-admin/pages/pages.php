@@ -218,6 +218,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 if ($faqFailId > 0) {
                     $faqErrorQuery = 'edit=' . $faqFailId;
                 }
+            } elseif ($action === 'create') {
+                // Send back to the New Article view (not the list) — see
+                // $showCreateForm above. Without this, a failed create
+                // validation would redirect to the now-hidden-by-default
+                // list view instead of back to the form the error is about.
+                $faqErrorQuery = 'view=create';
             }
             $pg_redirect('FAQ JSON tidak valid. Periksa kembali atau kosongkan field tersebut.', 'error', $faqErrorQuery);
         }
@@ -231,6 +237,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             if ($failId > 0) {
                 $errorQuery = 'edit=' . $failId;
             }
+        } elseif ($action === 'create') {
+            $errorQuery = 'view=create';
         }
         $pg_redirect($validationError, 'error', $errorQuery);
     }
@@ -292,7 +300,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'create') {
         $dupError = $pg_duplicate_slug($pdo, $slug, null);
         if ($dupError !== null) {
-            $pg_redirect($dupError, 'error');
+            $pg_redirect($dupError, 'error', 'view=create');
         }
 
         $insert = $pdo->prepare(
@@ -385,6 +393,17 @@ if ($pg_schemaError !== null) {
 
 $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
 $editRow = null;
+
+// "All Articles" vs "Add Article" as genuinely separate views (24 Aug
+// 2026) — sidebar used to have both nav items point at this same page,
+// with "Add Article" just anchor-scrolling (#create-page) to a New
+// Article form that was ALWAYS rendered inline above the full list, so
+// both views looked identical except for scroll position. ?view=create
+// now actually switches which panel renders: the New Article form OR the
+// list+filter panel, never both. Editing (?edit=ID) already showed just
+// the Edit form on its own — unaffected by this, still takes priority
+// over ?view=create if somehow both are present in the URL.
+$showCreateForm = ($_GET['view'] ?? '') === 'create';
 
 // ---- Article list: search + status filter + pagination ----
 $listSearchRaw = isset($_GET['search']) ? trim((string) $_GET['search']) : '';
@@ -573,7 +592,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <p class="section-lead">Create and manage articles, guides, tips, and SEO-friendly content for the website.</p>
         </div>
         <div class="toolbar__right">
-            <a class="admin-btn admin-btn--primary" href="<?= cms_esc($editRow ? $selfUrl : $selfUrl . '#create-page') ?>">New Article</a>
+            <a class="admin-btn admin-btn--primary" href="<?= cms_esc($showCreateForm ? $selfUrl : $selfUrl . '?view=create') ?>"><?= $showCreateForm ? 'Back to List' : 'New Article' ?></a>
         </div>
     </div>
 
@@ -780,7 +799,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </div>
         </form>
     </div>
-    <?php else : ?>
+    <?php elseif ($showCreateForm) : ?>
     <div class="panel" id="create-page">
         <div class="panel__head">
             <h3 class="panel__title">New Article</h3>
@@ -967,6 +986,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
     </div>
     <?php endif; ?>
 
+    <?php if (!$editRow && !$showCreateForm) : ?>
     <!-- Article stats bar -->
     <div class="pg-stats-bar">
         <span>Total Artikel: <strong><?= (int) $articleStats['total'] ?></strong></span>
@@ -1131,6 +1151,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         <?php endif; ?>
     </nav>
     <?php endif; ?>
+    <?php endif; // !$editRow && !$showCreateForm ?>
 
 </section>
 <style>
