@@ -34,7 +34,10 @@ function cms_seo_generate_respond(array $payload, int $status = 200)
 // Rate limit must run while the session is still open.
 cms_ai_rate_limit(8, 60, ['success' => false, 'meta_title' => '', 'meta_description' => '', 'error' => '']);
 session_write_close();
-set_time_limit(70);
+// See article-generate.php's matching comment — raised alongside the
+// cURL timeout bump in ai-helpers.php (30s -> 120s) so PHP's own limit
+// never kills the request before curl's own timeout can fire.
+set_time_limit(130);
 
 $title   = trim((string) ($_POST['title'] ?? ''));
 $slug    = trim((string) ($_POST['slug'] ?? ''));

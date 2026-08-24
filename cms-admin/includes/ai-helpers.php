@@ -215,7 +215,19 @@ function cms_ai_call_anthropic(
             'anthropic-version: 2023-06-01',
         ],
         CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE),
-        CURLOPT_TIMEOUT => 30,
+        // Was 30s — too short for a full article generation call (excerpt +
+        // content + meta title + meta description in one response, often a
+        // few thousand output tokens). Operator hit real timeouts on
+        // "Generate Article" (22 Aug 2026): "Operation timed out after
+        // 30001 milliseconds with 0 bytes received" — 0 bytes received
+        // means the request never even got a first byte back in 30s, not a
+        // malformed/rejected request. cms_ai_call_openai_image() below
+        // already uses 90s for the same "this genuinely takes longer"
+        // reason; bumped further to 120s here since full-article text
+        // generation can run longer than image generation for a big
+        // max_tokens value. Short calls (SEO meta only, etc.) finish well
+        // before this and are unaffected — this only raises the ceiling.
+        CURLOPT_TIMEOUT => 120,
     ]);
     $response = curl_exec($ch);
     $httpStatus = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -278,7 +290,9 @@ function cms_ai_call_openai(
             'Authorization: Bearer ' . $apiKey,
         ],
         CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE),
-        CURLOPT_TIMEOUT => 30,
+        // See the matching comment in cms_ai_call_anthropic() above — same
+        // fix, same reason (30s was too short for full article generation).
+        CURLOPT_TIMEOUT => 120,
     ]);
     $response = curl_exec($ch);
     $httpStatus = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);

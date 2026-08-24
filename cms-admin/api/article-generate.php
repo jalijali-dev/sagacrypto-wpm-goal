@@ -33,7 +33,12 @@ cms_ai_rate_limit(5, 60, [
     'meta_title' => '', 'meta_description' => '', 'error' => '',
 ]);
 session_write_close();
-set_time_limit(70);
+// Raised 70 -> 130 (22 Aug 2026) alongside the cURL timeout bump in
+// cms_ai_call_anthropic()/cms_ai_call_openai() (30s -> 120s) — the PHP
+// script's own execution limit must stay above whatever the AI call is
+// allowed to wait, otherwise PHP kills the request before curl's own
+// timeout ever gets a chance to fire.
+set_time_limit(130);
 
 $title  = trim((string) ($_POST['title'] ?? ''));
 $notes  = trim((string) ($_POST['notes'] ?? ''));
