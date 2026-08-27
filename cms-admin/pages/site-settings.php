@@ -74,12 +74,19 @@ if (isset($_SESSION['cms_flash']) && is_array($_SESSION['cms_flash'])) {
 // shown for context on how much churn there's been.
 $pushSubscriberActiveCount = 0;
 $pushSubscriberTotalCount = 0;
+$pushSubscriberRows = [];
 try {
     $pushSubscriberActiveCount = (int) $pdo->query('SELECT COUNT(*) FROM push_subscribers WHERE is_active = 1')->fetchColumn();
     $pushSubscriberTotalCount = (int) $pdo->query('SELECT COUNT(*) FROM push_subscribers')->fetchColumn();
+    // Newest-subscribed first — most relevant for "who just clicked" at a
+    // glance. Capped at 200 rows; this is an admin glance-view, not a
+    // paginated report, so no LIMIT/OFFSET UI for now.
+    $pushSubscriberRows = $pdo->query(
+        'SELECT id, fcm_token, is_active, created_at, last_seen_at FROM push_subscribers ORDER BY created_at DESC LIMIT 200'
+    )->fetchAll();
 } catch (Throwable $e) {
     // Table may not exist yet on a fresh install before the push feature's
-    // schema self-heal has run once — just show 0/0 rather than fatal.
+    // schema self-heal has run once — just show 0/0/empty rather than fatal.
 }
 
 $stmt = $pdo->query('SELECT * FROM site_settings LIMIT 1');
@@ -329,6 +336,23 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <h3 class="panel__title">Push Notification — Test</h3>
         </div>
         <div class="form-stack">
+            <p class="field__hint" style="margin-top:-4px;">Kirim 1 notifikasi test ke semua subscriber aktif — pakai ini buat verifikasi setup sebelum mengandalkannya publish artikel beneran. Simpan pengaturan Push Notification di atas dulu sebelum test.</p>
+            <form method="post" action="../actions/push-test-notification.php">
+                <?= cms_csrf_field() ?>
+                <button type="submit" class="admin-btn admin-btn--secondary">Send Test Notification</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Separate section (27 Agu 2026, requested by operator — jangan
+         digabung sama panel Test di atas) — read-only glance view of
+         push_subscribers, with timestamps, for "berapa orang yang
+         subscribe dan kapan" without needing phpMyAdmin. -->
+    <div class="panel" style="margin-top:20px;">
+        <div class="panel__head">
+            <h3 class="panel__title">Push Notification — Subscribers</h3>
+        </div>
+        <div class="form-stack">
             <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:4px;">
                 <div>
                     <div style="font-size:26px;font-weight:700;line-height:1.1;"><?= (int) $pushSubscriberActiveCount ?></div>
@@ -339,11 +363,39 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <div class="field__hint" style="margin-top:2px;">Total pernah subscribe (termasuk yang token-nya sudah invalid/nonaktif)</div>
                 </div>
             </div>
-            <p class="field__hint" style="margin-top:-4px;">Kirim 1 notifikasi test ke semua subscriber aktif — pakai ini buat verifikasi setup sebelum mengandalkannya publish artikel beneran. Simpan pengaturan Push Notification di atas dulu sebelum test.</p>
-            <form method="post" action="../actions/push-test-notification.php">
-                <?= cms_csrf_field() ?>
-                <button type="submit" class="admin-btn admin-btn--secondary">Send Test Notification</button>
-            </form>
+            <?php if ($pushSubscriberRows === []) : ?>
+                <p class="field__hint">Belum ada yang subscribe.</p>
+            <?php else : ?>
+                <div style="overflow-x:auto;">
+                    <table class="admin-table" style="width:100%;">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Status</th>
+                                <th>Pertama klik "Aktifkan Notifikasi"</th>
+                                <th>Terakhir aktif</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($pushSubscriberRows as $i => $row) : ?>
+                                <tr>
+                                    <td><?= (int) $i + 1 ?></td>
+                                    <td>
+                                        <?php if ((int) $row['is_active'] === 1) : ?>
+                                            <span style="color:#22c55e;font-weight:600;">Aktif</span>
+                                        <?php else : ?>
+                                            <span style="color:var(--muted,#888);">Nonaktif</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= cms_esc((string) $row['created_at']) ?></td>
+                                    <td><?= cms_esc((string) $row['last_seen_at']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="field__hint" style="margin-top:4px;">Waktu server (sesuai timezone database). "Terakhir aktif" ke-update tiap kali browser subscriber ini berhasil refresh token (± tiap 20 jam sekali selama masih aktif), bukan cuma pas pertama klik.</p>
+            <?php endif; ?>
         </div>
     </div>
 </section>
