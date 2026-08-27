@@ -1994,7 +1994,18 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
    (see operator screenshot, 11 Agu 2026). 80/20 split requested by
    operator instead of the fixed 340px. */
 .news-layout--ad-only {
-  grid-template-columns: 4fr 1fr;
+  /* minmax(0, ...), not bare 4fr/1fr (27 Agu 2026 fix) — a bare fr track
+     sizes itself to fit its content's automatic minimum size, so any
+     descendant that can't shrink below some width (a long fixture team
+     name, the date strip's fixed-width day boxes, etc.) silently forces
+     this whole track — and everything after it, main column included —
+     wider than the actual viewport. minmax(0, ...) is what the base
+     .news-layout rule above already does; this variant just didn't
+     carry that forward when it was added. See the mobile override
+     below for the matching single-column case, and docs/DECISIONS.md
+     for the full writeup (operator-reported "jadwal pertandingan lari
+     ke samping" / off-center score on football.php mobile). */
+  grid-template-columns: minmax(0, 4fr) minmax(0, 1fr);
 }
 
 /* Sidebar as ONE sticky unit (11 Agu 2026 fix) — trending panel + ad slot
@@ -2162,7 +2173,14 @@ a.news-filter-pill--major:hover { border-color: var(--accent); color: var(--text
 .trending-item__media svg { width: 18px; height: 18px; margin: auto; color: var(--text-faint); }
 
 @media (max-width: 980px) {
-  .news-layout { grid-template-columns: 1fr; }
+  /* minmax(0, 1fr), not bare 1fr — same "automatic minimum size" grid
+     footgun as .news-layout--ad-only above. This single-column mobile
+     override is the one that actually caused the horizontal-scroll/
+     off-center-score bug in practice (football.php's date strip has
+     fixed-width, non-shrinking day boxes past 640px — see
+     .livescore-datestrip__day below — which was enough to push this
+     bare 1fr track, and everything in it, wider than the viewport). */
+  .news-layout { grid-template-columns: minmax(0, 1fr); }
   .news-layout__sidebar { order: 3; position: static; }
 }
 
