@@ -66,6 +66,22 @@ if (isset($_SESSION['cms_flash']) && is_array($_SESSION['cms_flash'])) {
     unset($_SESSION['cms_flash']);
 }
 
+// Push notification subscriber counts (27 Agu 2026, requested by operator
+// after seeing the raw push_subscribers table in phpMyAdmin) — simple
+// summary numbers, not a full report page. is_active=1 is who actually
+// receives the next push; the total row count is everyone who ever
+// granted permission at least once (includes since-invalidated tokens),
+// shown for context on how much churn there's been.
+$pushSubscriberActiveCount = 0;
+$pushSubscriberTotalCount = 0;
+try {
+    $pushSubscriberActiveCount = (int) $pdo->query('SELECT COUNT(*) FROM push_subscribers WHERE is_active = 1')->fetchColumn();
+    $pushSubscriberTotalCount = (int) $pdo->query('SELECT COUNT(*) FROM push_subscribers')->fetchColumn();
+} catch (Throwable $e) {
+    // Table may not exist yet on a fresh install before the push feature's
+    // schema self-heal has run once — just show 0/0 rather than fatal.
+}
+
 $stmt = $pdo->query('SELECT * FROM site_settings LIMIT 1');
 $settings = $stmt->fetch() ?: [];
 
@@ -313,6 +329,16 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <h3 class="panel__title">Push Notification — Test</h3>
         </div>
         <div class="form-stack">
+            <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:4px;">
+                <div>
+                    <div style="font-size:26px;font-weight:700;line-height:1.1;"><?= (int) $pushSubscriberActiveCount ?></div>
+                    <div class="field__hint" style="margin-top:2px;">Subscriber aktif (bakal kena notifikasi berikutnya)</div>
+                </div>
+                <div>
+                    <div style="font-size:26px;font-weight:700;line-height:1.1;color:var(--muted,#888);"><?= (int) $pushSubscriberTotalCount ?></div>
+                    <div class="field__hint" style="margin-top:2px;">Total pernah subscribe (termasuk yang token-nya sudah invalid/nonaktif)</div>
+                </div>
+            </div>
             <p class="field__hint" style="margin-top:-4px;">Kirim 1 notifikasi test ke semua subscriber aktif — pakai ini buat verifikasi setup sebelum mengandalkannya publish artikel beneran. Simpan pengaturan Push Notification di atas dulu sebelum test.</p>
             <form method="post" action="../actions/push-test-notification.php">
                 <?= cms_csrf_field() ?>
