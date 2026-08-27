@@ -759,9 +759,9 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <div style="grid-column: 1 / -1;">
                 <!-- Notes for Agent SEO — visible by default, no name attr so never submitted to DB -->
                 <div style="margin-top:12px;">
-                    <label class="field" style="max-width:480px;">Catatan untuk Agent SEO
-                        <textarea class="pg-article-notes" rows="4"
-                                  placeholder="Target audience description.&#10;Tone and language guidelines.&#10;Mention the site or brand naturally.&#10;Include 3–5 FAQ items.&#10;Add a CTA to the site at the end.&#10;&#10;More examples:&#10;- Focus on a specific region&#10;- Focus on corporate gifting&#10;- Focus on a product category&#10;- Target a specific demographic"></textarea>
+                    <label class="field" style="max-width:640px;">Catatan untuk Agent SEO
+                        <textarea class="pg-article-notes" rows="6" style="width:100%;"
+                                  placeholder="Contoh instruksi yang bisa ditulis di sini:&#10;- Target pembaca: penggemar bola casual / fans berat / dsb.&#10;- Gaya bahasa: santai, formal, semi-formal, dsb.&#10;- Sebutkan nama situs/brand secara natural di artikel.&#10;- Sertakan 3–5 poin FAQ di akhir artikel.&#10;- Tambahkan ajakan (CTA) ke situs di bagian akhir.&#10;- Fokus ke wilayah/liga/klub tertentu.&#10;- Target demografi tertentu (usia, daerah, dsb)."></textarea>
                     </label>
                     <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:3px;">
                         Tips: gunakan catatan untuk memberi instruksi tambahan ke Agent SEO. Catatan ini akan menimpa arahan umum jika ada konflik.
@@ -773,7 +773,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                      unchanged (AI treats Title as the fact source, same as before). -->
                 <div style="margin-top:12px;">
                     <label class="field" style="max-width:640px;">Sumber/Referensi (opsional, tapi disarankan untuk akurasi)
-                        <textarea class="pg-article-reference" rows="6"
+                        <textarea class="pg-article-reference" rows="6" style="width:100%;"
                                   placeholder="Tempel di sini teks/kutipan berita asli, hasil pertandingan resmi, siaran pers, atau link sumber yang jadi dasar fakta artikel ini.&#10;&#10;Contoh: skor akhir, pencetak gol & menit gol, kartu, statistik pertandingan, kutipan pelatih/pemain, dsb.&#10;&#10;Kalau diisi, Agent SEO akan menulis ULANG berdasarkan fakta di sini (bukan mengarang dari Title), jadi lebih akurat."></textarea>
                     </label>
                     <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:3px;">
@@ -958,9 +958,9 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <div style="grid-column: 1 / -1;">
                 <!-- Notes for Agent SEO — visible by default, no name attr so never submitted to DB -->
                 <div style="margin-top:12px;">
-                    <label class="field" style="max-width:480px;">Catatan untuk Agent SEO
-                        <textarea class="pg-article-notes" rows="4"
-                                  placeholder="Target audience description.&#10;Tone and language guidelines.&#10;Mention the site or brand naturally.&#10;Include 3–5 FAQ items.&#10;Add a CTA to the site at the end.&#10;&#10;More examples:&#10;- Focus on a specific region&#10;- Focus on corporate gifting&#10;- Focus on a product category&#10;- Target a specific demographic"></textarea>
+                    <label class="field" style="max-width:640px;">Catatan untuk Agent SEO
+                        <textarea class="pg-article-notes" rows="6" style="width:100%;"
+                                  placeholder="Contoh instruksi yang bisa ditulis di sini:&#10;- Target pembaca: penggemar bola casual / fans berat / dsb.&#10;- Gaya bahasa: santai, formal, semi-formal, dsb.&#10;- Sebutkan nama situs/brand secara natural di artikel.&#10;- Sertakan 3–5 poin FAQ di akhir artikel.&#10;- Tambahkan ajakan (CTA) ke situs di bagian akhir.&#10;- Fokus ke wilayah/liga/klub tertentu.&#10;- Target demografi tertentu (usia, daerah, dsb)."></textarea>
                     </label>
                     <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:3px;">
                         Tips: gunakan catatan untuk memberi instruksi tambahan ke Agent SEO. Catatan ini akan menimpa arahan umum jika ada konflik.
@@ -972,7 +972,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                      unchanged (AI treats Title as the fact source, same as before). -->
                 <div style="margin-top:12px;">
                     <label class="field" style="max-width:640px;">Sumber/Referensi (opsional, tapi disarankan untuk akurasi)
-                        <textarea class="pg-article-reference" rows="6"
+                        <textarea class="pg-article-reference" rows="6" style="width:100%;"
                                   placeholder="Tempel di sini teks/kutipan berita asli, hasil pertandingan resmi, siaran pers, atau link sumber yang jadi dasar fakta artikel ini.&#10;&#10;Contoh: skor akhir, pencetak gol & menit gol, kartu, statistik pertandingan, kutipan pelatih/pemain, dsb.&#10;&#10;Kalau diisi, Agent SEO akan menulis ULANG berdasarkan fakta di sini (bukan mengarang dari Title), jadi lebih akurat."></textarea>
                     </label>
                     <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:3px;">
