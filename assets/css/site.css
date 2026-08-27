@@ -1753,10 +1753,12 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   gap: 2px;
   padding: 8px 6px;
   border-radius: 999px;
-  background: var(--surface-glass-strong);
-  border: 1px solid var(--border-glass);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  /* Full brand-orange bar (27 Agu 2026, requested by operator) — same
+     gradient token as the logo mark/CTA buttons (--grad-brand), so this
+     stays in sync automatically if the brand accent colors ever change. */
+  background: var(--grad-brand);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.06) inset;
 }
 
 .wpm-bottom-nav__item {
@@ -1765,23 +1767,32 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
   padding: 6px 2px;
   border-radius: 999px;
   border: none;
   background: none;
-  color: var(--text-muted);
+  /* On a solid orange bar, inactive icons/labels need to read as
+     "dimmed white", not the old --text-muted (which was tuned for a
+     dark glass background and is unreadable on orange). */
+  color: rgba(10, 6, 24, 0.55);
   font-family: var(--font-body);
   cursor: pointer;
   min-width: 0;
+  transition: color 0.15s ease, transform 0.15s ease;
 }
 
-.wpm-bottom-nav__icon { display: flex; width: 21px; height: 21px; }
-.wpm-bottom-nav__icon svg { width: 100%; height: 100%; }
+.wpm-bottom-nav__icon {
+  display: flex;
+  width: 22px;
+  height: 22px;
+  transition: transform 0.15s ease;
+}
+.wpm-bottom-nav__icon svg { width: 100%; height: 100%; stroke-width: 2; }
 
 .wpm-bottom-nav__label {
   font-size: 10.5px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -1790,21 +1801,25 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 }
 
 .wpm-bottom-nav__item.is-active {
-  color: var(--accent);
+  color: #0a0618;
   position: relative;
 }
 
-/* Small active-page indicator dot, same idea as .crypto-nav__menu li
-   a.is-active on the desktop top nav, just a dot instead of an
-   underline (there's no room for one in this cramped a icon+label). */
-.wpm-bottom-nav__item.is-active::before {
+/* Active item gets its own little white "pill" behind the icon+label —
+   readable and distinct against the solid orange bar, where the old dot
+   indicator (designed for a dark background) would have disappeared. */
+.wpm-bottom-nav__item.is-active::after {
   content: '';
   position: absolute;
-  top: 0;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--accent);
+  inset: -2px 2px;
+  z-index: -1;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.wpm-bottom-nav__item.is-active .wpm-bottom-nav__icon {
+  transform: translateY(-1px) scale(1.08);
 }
 
 /* Desktop: no bottom nav at all (pattern already used by
