@@ -83,6 +83,33 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
     </div>
 </div>
 
+<?php
+// Floating bottom nav (mobile only), 27 Agu 2026 — ADDITIONAL to the top
+// header (includes/site-header.php), not a replacement: that header
+// keeps its logo/search/theme-toggle/hamburger exactly as-is. This is
+// purely a thumb-reachable quick-nav for small screens (display:none
+// above 767px, see assets/css/site.css). See wpm_bottom_nav_items()
+// (includes/site-bootstrap.php) for why it's a capped 4-icon subset of
+// $wpmMenu rather than all 6 items, and why it never grows past that
+// even if more sport modules get activated later.
+$wpmBottomNavItems = wpm_bottom_nav_items($wpmMenu);
+?>
+<nav class="wpm-bottom-nav" aria-label="Navigasi cepat">
+    <?php foreach ($wpmBottomNavItems as $item) : ?>
+        <a href="<?= wpm_esc($item['href']) ?>" class="wpm-bottom-nav__item<?= ($activeNav ?? '') === $item['id'] ? ' is-active' : '' ?>">
+            <span class="wpm-bottom-nav__icon"><?= wpm_icon($item['icon']) ?></span>
+            <span class="wpm-bottom-nav__label"><?= wpm_esc($item['label']) ?></span>
+        </a>
+    <?php endforeach; ?>
+    <!-- Reuses the SAME #crypto-nav-mobile drawer as the header's hamburger
+         button (#crypto-nav-toggle) — see assets/js/site.js's openMobile(),
+         wired to this button's id too, not a second drawer/duplicate logic. -->
+    <button type="button" class="wpm-bottom-nav__item wpm-bottom-nav__item--menu" id="wpm-bottom-nav-menu" aria-label="Buka menu lengkap">
+        <span class="wpm-bottom-nav__icon"><?= wpm_icon('menu') ?></span>
+        <span class="wpm-bottom-nav__label">Menu</span>
+    </button>
+</nav>
+
 <?php if ($popupAd !== null) : ?>
     <?php
     try {

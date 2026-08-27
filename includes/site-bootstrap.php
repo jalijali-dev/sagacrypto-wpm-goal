@@ -61,6 +61,10 @@ function wpm_icon(string $name): string
         // above is intentionally left as-is rather than forced into color.
         'google-play' => "<svg viewBox='0 0 512 512'><path fill='#00d2ff' d='M99.617 8.057a50.191 50.191 0 0 0-38.815-6.713l230.163 230.163 74.826-74.826L99.617 8.057z'/><path fill='#00f076' d='M32.139 20.116c-6.441 6.581-10.148 15.831-10.148 27.375v417.019c0 11.543 3.708 20.793 10.148 27.375l4.905 4.383 230.163-230.163v-4.63L37.044 15.733l-4.905 4.383z'/><path fill='#ffbc00' d='M295.895 158.87l-74.826-74.826L37.044 15.733v453.923L221.069 285.98l74.826-74.826z'/><path fill='#ff3141' d='M60.802 502.657a50.191 50.191 0 0 0 38.815-6.713L410.906 219.86l-74.826-74.826L60.802 502.657z'/></svg>",
         'moon' => "<svg viewBox='0 0 24 24' fill='currentColor'><path d='M20.4 14.7A8.5 8.5 0 0 1 9.3 3.6a.8.8 0 0 0-1-1A10 10 0 1 0 21.4 15.7a.8.8 0 0 0-1-1Z'/></svg>",
+        // Added for the mobile bottom nav (27 Agu 2026) — 'home' (Beranda)
+        // and 'menu' (drawer trigger, reuses #crypto-nav-mobile).
+        'home' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><path d='M3 11.5 12 4l9 7.5'/><path d='M5.5 9.8V20h13V9.8'/><path d='M9.5 20v-6h5v6'/></svg>",
+        'menu' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><line x1='4' y1='7' x2='20' y2='7'/><line x1='4' y1='12' x2='20' y2='12'/><line x1='4' y1='17' x2='20' y2='17'/></svg>",
     ];
 
     return $icons[$name] ?? '';
@@ -341,6 +345,47 @@ function wpm_nav_menu(PDO $pdo): array
     foreach (wpm_special_pages_for_menu($pdo) as $specialPage) {
         $items[] = ['id' => 'special-' . (string) $specialPage['page_key'], 'label' => (string) $specialPage['title'], 'href' => (string) $specialPage['slug']];
     }
+    return $items;
+}
+
+/**
+ * Mobile bottom nav items (27 Agu 2026) — deliberately a SUBSET of
+ * wpm_nav_menu()'s full list, not all of it: a thumb-reachable bottom bar
+ * only works with 4-5 icons max, but the site has 6 menu items. Picks
+ * Beranda + Berita (always present, static ids from wpm_nav_menu()) plus
+ * whichever of the two "core" sport modules (football/basketball) are
+ * currently active, in that fixed order — deliberately does NOT grow to
+ * however many sport modules an admin has active in Sports API Settings
+ * (e.g. F1 turned on too): the bottom nav must stay a small, fixed set of
+ * icons, any additional/less-common items stay reachable only through
+ * the "Menu" button (site-footer.php) which opens the existing
+ * #crypto-nav-mobile drawer with the complete wpm_nav_menu() list.
+ *
+ * If football or basketball isn't in $wpmMenu at all (admin switched it
+ * off, or renamed/removed it from the 'menu' placement in Sports API
+ * Settings), that slot is simply omitted — never fabricated, never
+ * crashes — so the bar gracefully shows 3-4 icons instead of always
+ * assuming exactly 4 exist. "Menu" (site-footer.php) is always appended
+ * last regardless of how many core items resolved.
+ *
+ * @param list<array{id:string,label:string,href:string}> $wpmMenu wpm_nav_menu()'s return value.
+ * @return list<array{id:string,label:string,href:string,icon:string}>
+ */
+function wpm_bottom_nav_items(array $wpmMenu): array
+{
+    $byId = [];
+    foreach ($wpmMenu as $item) {
+        $byId[$item['id']] = $item;
+    }
+
+    $iconFor = ['beranda' => 'home', 'football' => 'football', 'basketball' => 'basketball', 'berita' => 'news'];
+    $items = [];
+    foreach (['beranda', 'football', 'basketball', 'berita'] as $wantedId) {
+        if (isset($byId[$wantedId])) {
+            $items[] = $byId[$wantedId] + ['icon' => $iconFor[$wantedId]];
+        }
+    }
+
     return $items;
 }
 

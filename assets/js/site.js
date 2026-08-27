@@ -3,6 +3,9 @@
   var toggle = document.getElementById("crypto-nav-toggle");
   var mobile = document.getElementById("crypto-nav-mobile");
   var closeBtn = document.getElementById("crypto-nav-mobile-close");
+  // Bottom nav's "Menu" button (includes/site-footer.php, 27 Agu 2026) —
+  // opens this SAME drawer via this SAME openMobile(), not a second one.
+  var bottomNavMenuBtn = document.getElementById("wpm-bottom-nav-menu");
 
   function openMobile() {
     if (mobile) { mobile.classList.add("is-open"); }
@@ -13,6 +16,7 @@
 
   if (toggle) { toggle.addEventListener("click", openMobile); }
   if (closeBtn) { closeBtn.addEventListener("click", closeMobile); }
+  if (bottomNavMenuBtn) { bottomNavMenuBtn.addEventListener("click", openMobile); }
   if (mobile) {
     mobile.addEventListener("click", function (e) {
       if (e.target === mobile) { closeMobile(); }
