@@ -397,6 +397,17 @@ body.crypto-theme {
 
 :root[data-theme="light"] .theme-toggle__track { background: rgba(20, 10, 45, 0.12); }
 
+/* Dark/light logo variants (27 Agu 2026) — see includes/site-header.php.
+   Default (no [data-theme], or [data-theme="dark"]) shows the dark-mode
+   logo; [data-theme="light"] swaps to the light-mode one. Only rendered
+   as a pair when an admin has actually uploaded a distinct dark logo in
+   Site Settings — otherwise there's just a single .crypto-logo__mark--img
+   with no .wpm-logo--light/--dark class, unaffected by these rules. */
+.wpm-logo--light { display: none; }
+.wpm-logo--dark { display: grid; } /* matches .crypto-logo__mark's own display: grid */
+:root[data-theme="light"] .wpm-logo--light { display: grid; }
+:root[data-theme="light"] .wpm-logo--dark { display: none; }
+
 .theme-toggle__thumb {
   position: absolute;
   top: 1px;

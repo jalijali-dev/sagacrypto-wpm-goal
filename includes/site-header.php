@@ -34,6 +34,10 @@ $wpmSiteName      = trim((string) ($wpmSiteSettings['site_name'] ?? '')) !== ''
 $wpmSiteTagline   = trim((string) ($wpmSiteSettings['site_tagline'] ?? '')) !== ''
     ? (string) $wpmSiteSettings['site_tagline'] : 'Livescore & Berita Bola';
 $wpmSiteLogoUrl   = wpm_image((string) ($wpmSiteSettings['logo_path'] ?? ''));
+// Dark-mode logo variant (27 Agu 2026) — see cms-admin/pages/site-settings.php.
+// Falls back to the light-mode logo whenever a dark variant hasn't been
+// uploaded, so sites with only one logo render exactly as before.
+$wpmSiteLogoUrlDark = wpm_image((string) ($wpmSiteSettings['logo_path_dark'] ?? '')) ?? $wpmSiteLogoUrl;
 // Dedicated favicon first; fall back to the main site logo so the tab
 // icon still shows the brand even if a separate favicon was never
 // uploaded in Site Settings.
@@ -124,7 +128,16 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     <div class="crypto-nav__inner">
         <a href="<?= wpm_esc(wpm_site_url('')) ?>" class="crypto-logo">
             <?php if ($wpmSiteLogoUrl !== null && $wpmSiteLogoUrl !== '') : ?>
-                <img class="crypto-logo__mark crypto-logo__mark--img" src="<?= wpm_esc($wpmSiteLogoUrl) ?>" alt="<?= wpm_esc($wpmSiteName) ?> logo">
+                <?php if ($wpmSiteLogoUrlDark !== null && $wpmSiteLogoUrlDark !== $wpmSiteLogoUrl) : ?>
+                    <!-- Two logo variants, toggled purely by CSS off [data-theme] on
+                         <html> (see the theme-toggle script above) — no JS needed
+                         here, and no flash: [data-theme] is already set before
+                         first paint. -->
+                    <img class="crypto-logo__mark crypto-logo__mark--img wpm-logo--light" src="<?= wpm_esc($wpmSiteLogoUrl) ?>" alt="<?= wpm_esc($wpmSiteName) ?> logo">
+                    <img class="crypto-logo__mark crypto-logo__mark--img wpm-logo--dark" src="<?= wpm_esc($wpmSiteLogoUrlDark) ?>" alt="<?= wpm_esc($wpmSiteName) ?> logo">
+                <?php else : ?>
+                    <img class="crypto-logo__mark crypto-logo__mark--img" src="<?= wpm_esc($wpmSiteLogoUrl) ?>" alt="<?= wpm_esc($wpmSiteName) ?> logo">
+                <?php endif; ?>
             <?php else : ?>
                 <span class="crypto-logo__mark" aria-hidden="true">SG</span>
             <?php endif; ?>

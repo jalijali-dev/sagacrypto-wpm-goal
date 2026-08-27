@@ -30,7 +30,12 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
             <div class="footer-brand">
                 <a href="<?= wpm_esc(wpm_site_url('')) ?>" class="crypto-logo footer-brand__logo">
                     <?php if ($wpmSiteLogoUrl !== null && $wpmSiteLogoUrl !== '') : ?>
-                        <img class="crypto-logo__mark crypto-logo__mark--img footer-brand__logo-mark" src="<?= wpm_esc($wpmSiteLogoUrl) ?>" alt="<?= wpm_esc($wpmSiteName) ?> logo">
+                        <?php if (($wpmSiteLogoUrlDark ?? null) !== null && $wpmSiteLogoUrlDark !== $wpmSiteLogoUrl) : ?>
+                            <img class="crypto-logo__mark crypto-logo__mark--img footer-brand__logo-mark wpm-logo--light" src="<?= wpm_esc($wpmSiteLogoUrl) ?>" alt="<?= wpm_esc($wpmSiteName) ?> logo">
+                            <img class="crypto-logo__mark crypto-logo__mark--img footer-brand__logo-mark wpm-logo--dark" src="<?= wpm_esc($wpmSiteLogoUrlDark) ?>" alt="<?= wpm_esc($wpmSiteName) ?> logo">
+                        <?php else : ?>
+                            <img class="crypto-logo__mark crypto-logo__mark--img footer-brand__logo-mark" src="<?= wpm_esc($wpmSiteLogoUrl) ?>" alt="<?= wpm_esc($wpmSiteName) ?> logo">
+                        <?php endif; ?>
                     <?php else : ?>
                         <span class="crypto-logo__mark footer-brand__logo-mark" aria-hidden="true">SG</span>
                     <?php endif; ?>

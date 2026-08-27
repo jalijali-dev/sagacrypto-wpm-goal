@@ -43,6 +43,16 @@ cms_ensure_column($pdo, 'site_settings', 'turnstile_secret_key', 'VARCHAR(255) N
 require_once __DIR__ . '/../includes/PushNotificationHelper.php';
 cms_push_ensure_schema($pdo);
 
+// Dark-mode logo variant (27 Agu 2026) — the public site toggles a
+// [data-theme] attribute (see includes/site-header.php's theme-toggle),
+// and a single logo asset doesn't work well across both a light and a
+// dark background. logo_path stays the "light mode" logo (unchanged,
+// backward compatible with every existing install); this new column is
+// the logo shown when the visitor is in dark mode. NULL = fall back to
+// logo_path for both, so sites that only have one logo keep working
+// exactly as before.
+cms_ensure_column($pdo, 'site_settings', 'logo_path_dark', 'VARCHAR(255) NULL AFTER logo_path');
+
 $pageTitle = 'Site Settings';
 $currentNav = 'site-settings';
 $breadcrumbs = [
@@ -142,7 +152,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         <input type="text" name="site_tagline" value="<?= cms_esc($val('site_tagline')) ?>">
                     </label>
                     <?php $renderSiteSettingsImageField(
-                        'Logo',
+                        'Logo (Mode Terang)',
                         'logo_path',
                         'logo_file',
                         '/uploads/site/logo/',
@@ -151,6 +161,20 @@ require dirname(__DIR__) . '/includes/alerts.php';
                             'Allowed: JPG, PNG, SVG, WEBP',
                             'Recommended: 300×100 px',
                             'Max size: 5 MB',
+                            'Dipakai saat situs dalam Mode Terang (light theme).',
+                        ]
+                    ); ?>
+                    <?php $renderSiteSettingsImageField(
+                        'Logo (Mode Gelap)',
+                        'logo_path_dark',
+                        'logo_dark_file',
+                        '/uploads/site/logo/',
+                        'image/jpeg,image/png,image/svg+xml,image/webp,.jpg,.jpeg,.png,.svg,.webp',
+                        [
+                            'Allowed: JPG, PNG, SVG, WEBP',
+                            'Recommended: 300×100 px, transparan',
+                            'Max size: 5 MB',
+                            'Dipakai saat situs dalam Mode Gelap (dark theme). Kosongkan untuk pakai logo Mode Terang di kedua tema.',
                         ]
                     ); ?>
                     <?php $renderSiteSettingsImageField(

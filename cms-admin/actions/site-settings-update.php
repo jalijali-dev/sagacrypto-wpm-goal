@@ -25,6 +25,10 @@ require_once __DIR__ . '/../includes/PushNotificationHelper.php';
 require_once __DIR__ . '/../includes/ai-helpers.php';
 cms_push_ensure_schema($pdo);
 
+// Dark-mode logo variant — see pages/site-settings.php for the full
+// rationale (matches the [data-theme] toggle on the public site).
+cms_ensure_column($pdo, 'site_settings', 'logo_path_dark', 'VARCHAR(255) NULL AFTER logo_path');
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Location: ../pages/site-settings.php', true, 302);
     exit;
@@ -37,7 +41,7 @@ $existingSettings = null;
 
 try {
     $settingsRow = $pdo->query(
-        'SELECT id, logo_path, favicon_path, og_image, fcm_service_account_json FROM site_settings LIMIT 1'
+        'SELECT id, logo_path, logo_path_dark, favicon_path, og_image, fcm_service_account_json FROM site_settings LIMIT 1'
     )->fetch();
     $existingSettings = is_array($settingsRow) ? $settingsRow : null;
 } catch (PDOException) {
@@ -94,6 +98,7 @@ $payload = [
     'site_name' => trim((string) ($_POST['site_name'] ?? '')),
     'site_tagline' => trim((string) ($_POST['site_tagline'] ?? '')),
     'logo_path' => trim((string) ($existingSettings['logo_path'] ?? '')),
+    'logo_path_dark' => trim((string) ($existingSettings['logo_path_dark'] ?? '')),
     'favicon_path' => trim((string) ($existingSettings['favicon_path'] ?? '')),
     'og_image' => trim((string) ($existingSettings['og_image'] ?? '')),
     'whatsapp_number' => trim((string) ($_POST['whatsapp_number'] ?? '')),
@@ -132,6 +137,15 @@ $specs = [
         'extensions' => ['jpg', 'jpeg', 'png', 'svg', 'webp'],
         'mimes'      => ['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp'],
     ],
+    'logo_dark_file' => [
+        'path_field' => 'logo_path_dark',
+        'label'      => 'Logo (Mode Gelap)',
+        'disk_dir'   => 'uploads/site/logo',
+        'web_prefix' => '/uploads/site/logo/',
+        'max_bytes'  => 5 * 1024 * 1024,
+        'extensions' => ['jpg', 'jpeg', 'png', 'svg', 'webp'],
+        'mimes'      => ['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp'],
+    ],
     'favicon_file' => [
         'path_field'  => 'favicon_path',
         'label'       => 'Favicon',
@@ -154,9 +168,10 @@ $specs = [
 ];
 
 $currentPaths = [
-    'logo_path'    => $payload['logo_path'],
-    'favicon_path' => $payload['favicon_path'],
-    'og_image'     => $payload['og_image'],
+    'logo_path'      => $payload['logo_path'],
+    'logo_path_dark' => $payload['logo_path_dark'],
+    'favicon_path'   => $payload['favicon_path'],
+    'og_image'       => $payload['og_image'],
 ];
 
 $uploadResult = cms_process_file_uploads($specs, $currentPaths, $projectRoot);
@@ -167,7 +182,7 @@ $newlyUploadedDiskPaths      = $uploadResult['new_files'];
 $pathsToDeleteAfterDbSuccess = $uploadResult['delete_after'];
 
 // Push updated image paths back into the DB payload.
-foreach (['logo_path', 'favicon_path', 'og_image'] as $field) {
+foreach (['logo_path', 'logo_path_dark', 'favicon_path', 'og_image'] as $field) {
     $payload[$field] = $uploadResult['paths'][$field];
 }
 
@@ -193,6 +208,7 @@ try {
              SET site_name = :site_name,
                  site_tagline = :site_tagline,
                  logo_path = :logo_path,
+                 logo_path_dark = :logo_path_dark,
                  favicon_path = :favicon_path,
                  og_image = :og_image,
                  whatsapp_number = :whatsapp_number,
@@ -220,7 +236,7 @@ try {
     } else {
         $insert = $pdo->prepare(
             'INSERT INTO site_settings (
-                site_name, site_tagline, logo_path, favicon_path, og_image, whatsapp_number,
+                site_name, site_tagline, logo_path, logo_path_dark, favicon_path, og_image, whatsapp_number,
                 telegram_username, show_whatsapp_button, show_telegram_button, instagram_url,
                 email, address, meta_title, meta_description, meta_keywords, google_analytics_id,
                 turnstile_site_key, turnstile_secret_key,
@@ -228,7 +244,7 @@ try {
                 fcm_web_app_config_json, fcm_service_account_json,
                 created_at, updated_at
             ) VALUES (
-                :site_name, :site_tagline, :logo_path, :favicon_path, :og_image, :whatsapp_number,
+                :site_name, :site_tagline, :logo_path, :logo_path_dark, :favicon_path, :og_image, :whatsapp_number,
                 :telegram_username, :show_whatsapp_button, :show_telegram_button, :instagram_url,
                 :email, :address, :meta_title, :meta_description, :meta_keywords, :google_analytics_id,
                 :turnstile_site_key, :turnstile_secret_key,
