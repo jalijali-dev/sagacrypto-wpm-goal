@@ -145,23 +145,23 @@ $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushW
   var btn = document.getElementById('wpm-push-optin');
   if (!btn || !('Notification' in window) || !('serviceWorker' in navigator)) { return; }
 
-  var STORAGE_KEY = 'wpm_push_subscribed';
   var VAPID_KEY = <?= json_encode($wpmPushVapidKey) ?>;
   var WEB_CONFIG = <?= json_encode($wpmPushWebConfig) ?>;
   var SUBSCRIBE_URL = <?= json_encode(wpm_esc(wpm_site_url('api/push-subscribe.php'))) ?>;
 
-  function alreadySubscribed() {
-    try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch (e) { return false; }
-  }
-  function markSubscribed() {
-    try { localStorage.setItem(STORAGE_KEY, '1'); } catch (e) {}
-  }
-
-  // Never auto-prompt — only ever show the button, and only if this
-  // browser hasn't already granted/denied/subscribed. A denied
+  // Fixed 27 Aug 2026: this used to also gate on a localStorage flag
+  // ('wpm_push_subscribed') set the first time someone subscribed. That
+  // flag never got cleared, so a visitor who later hit Chrome's own
+  // per-notification "Unsubscribe" action (which resets the browser's
+  // Notification.permission back to 'default') would never see the
+  // opt-in button reappear — the stale flag kept hiding it forever.
+  // Notification.permission itself is the single source of truth for
+  // "can we (re-)offer this right now": 'default' means never
+  // granted/denied, OR reset back to that state after an unsubscribe —
+  // either way, offering the button again is exactly correct. A denied
   // permission can't be re-requested by JS anyway (browser policy), so
-  // there's nothing useful to offer in that state either.
-  if (Notification.permission === 'default' && !alreadySubscribed()) {
+  // there's nothing useful to offer in that state.
+  if (Notification.permission === 'default') {
     btn.hidden = false;
   }
 
@@ -223,7 +223,6 @@ $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushW
           });
         })
         .then(function () {
-          markSubscribed();
           btn.hidden = true;
         });
     }).catch(function () {
