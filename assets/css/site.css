@@ -1843,6 +1843,15 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   body.crypto-theme {
     padding-bottom: calc(var(--wpm-bottom-nav-space) + env(safe-area-inset-bottom));
   }
+
+  /* Hide the top header's hamburger toggle at this width — its job
+     (opening #crypto-nav-mobile) is now fully covered by the bottom
+     nav's own "Menu" button (27 Agu 2026, requested by operator:
+     redundant to show both). Only hidden here, NOT at the wider
+     768-980px range (@media max-width:980px above) where the bottom
+     nav itself is display:none — that range still needs this toggle
+     as its only way to open the drawer. */
+  .crypto-nav__toggle { display: none; }
 }
 
 /* ============================================================
