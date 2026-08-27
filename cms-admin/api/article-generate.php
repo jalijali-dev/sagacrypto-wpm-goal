@@ -40,9 +40,17 @@ session_write_close();
 // timeout ever gets a chance to fire.
 set_time_limit(130);
 
-$title  = trim((string) ($_POST['title'] ?? ''));
-$notes  = trim((string) ($_POST['notes'] ?? ''));
-$pageId = (int) ($_POST['page_id'] ?? 0) ?: null;
+$title     = trim((string) ($_POST['title'] ?? ''));
+$notes     = trim((string) ($_POST['notes'] ?? ''));
+// Optional factual grounding source — added 27 Aug 2026. Without this,
+// the AI has no choice but to treat $title as its only source of truth
+// (it doesn't browse/verify anything), which is fine for a title that's
+// already a fully-formed fact ("Real Madrid 4-1 Real Sociedad, Mbappe
+// hattrick") but silently invents details for a vaguer title. When this
+// is filled in, the prompt below tells the model to treat THIS as the
+// authoritative fact source and Title/Notes as framing/style only.
+$reference = trim((string) ($_POST['reference'] ?? ''));
+$pageId    = (int) ($_POST['page_id'] ?? 0) ?: null;
 
 if ($title === '' && $notes === '') {
     cms_article_generate_respond([
@@ -60,6 +68,12 @@ $defaultSystemPrompt =
     '<html>, <body>, <script>, or inline styles. Also produce a short 1-2 sentence excerpt, a ' .
     'meta_title (max 60 characters), and a meta_description (max 155 characters). ' .
     'If the editorial notes conflict with these defaults, the notes take priority. ' .
+    'IMPORTANT — factual accuracy: if a "Reference material" section is provided in the user ' .
+    'message, that is the ONLY source of truth for facts (scores, names, dates, quotes, statistics). ' .
+    'Rewrite/expand it into an article, but do NOT invent, guess, or add any fact that is not present ' .
+    'in the reference material. If no reference material is provided, base the article on the title ' .
+    'and notes as given, and avoid inventing specific facts (exact scores, stats, quotes) that are not ' .
+    'already stated in the title/notes — keep those parts general instead of fabricating specifics. ' .
     'Respond with ONLY a raw JSON object, no markdown, no code fences, no commentary, in exactly ' .
     'this shape: {"excerpt": "...", "content": "...", "meta_title": "...", "meta_description": "..."}';
 
@@ -86,8 +100,11 @@ try {
     // Ignore — generation proceeds on the agent's own system prompt.
 }
 
-$inputBrief = ['title' => $title, 'notes' => $notes];
+$inputBrief = ['title' => $title, 'notes' => $notes, 'reference' => $reference !== '' ? '(provided, ' . mb_strlen($reference) . ' chars)' : ''];
 $userPrompt = "Title: {$title}\n\nEditorial notes (these override the defaults above when they conflict):\n" . mb_substr($notes, 0, 3000);
+if ($reference !== '') {
+    $userPrompt .= "\n\n---\nReference material (authoritative source of facts — rewrite/expand this, do not invent facts beyond it):\n" . mb_substr($reference, 0, 8000);
+}
 
 $result = cms_ai_call_provider(
     $agent['provider'],

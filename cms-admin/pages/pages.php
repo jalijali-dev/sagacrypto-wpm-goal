@@ -767,6 +767,19 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         Tips: gunakan catatan untuk memberi instruksi tambahan ke Agent SEO. Catatan ini akan menimpa arahan umum jika ada konflik.
                     </small>
                 </div>
+                <!-- Sumber/Referensi — added 27 Aug 2026 so Generate Article has an actual
+                     factual grounding source, instead of trusting only whatever the Title
+                     field happens to contain. Purely optional: empty = old behaviour
+                     unchanged (AI treats Title as the fact source, same as before). -->
+                <div style="margin-top:12px;">
+                    <label class="field" style="max-width:640px;">Sumber/Referensi (opsional, tapi disarankan untuk akurasi)
+                        <textarea class="pg-article-reference" rows="6"
+                                  placeholder="Tempel di sini teks/kutipan berita asli, hasil pertandingan resmi, siaran pers, atau link sumber yang jadi dasar fakta artikel ini.&#10;&#10;Contoh: skor akhir, pencetak gol & menit gol, kartu, statistik pertandingan, kutipan pelatih/pemain, dsb.&#10;&#10;Kalau diisi, Agent SEO akan menulis ULANG berdasarkan fakta di sini (bukan mengarang dari Title), jadi lebih akurat."></textarea>
+                    </label>
+                    <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:3px;">
+                        Kosongkan kalau Title sudah cukup jelas/lengkap sebagai fakta. Kalau diisi, ini yang jadi acuan fakta utama — Title dan Catatan tetap dipakai untuk framing/gaya saja.
+                    </small>
+                </div>
                 <!-- AI action buttons -->
                 <div class="pg-ai-actions">
                     <div class="pg-ai-actions__item">
@@ -951,6 +964,19 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     </label>
                     <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:3px;">
                         Tips: gunakan catatan untuk memberi instruksi tambahan ke Agent SEO. Catatan ini akan menimpa arahan umum jika ada konflik.
+                    </small>
+                </div>
+                <!-- Sumber/Referensi — added 27 Aug 2026 so Generate Article has an actual
+                     factual grounding source, instead of trusting only whatever the Title
+                     field happens to contain. Purely optional: empty = old behaviour
+                     unchanged (AI treats Title as the fact source, same as before). -->
+                <div style="margin-top:12px;">
+                    <label class="field" style="max-width:640px;">Sumber/Referensi (opsional, tapi disarankan untuk akurasi)
+                        <textarea class="pg-article-reference" rows="6"
+                                  placeholder="Tempel di sini teks/kutipan berita asli, hasil pertandingan resmi, siaran pers, atau link sumber yang jadi dasar fakta artikel ini.&#10;&#10;Contoh: skor akhir, pencetak gol & menit gol, kartu, statistik pertandingan, kutipan pelatih/pemain, dsb.&#10;&#10;Kalau diisi, Agent SEO akan menulis ULANG berdasarkan fakta di sini (bukan mengarang dari Title), jadi lebih akurat."></textarea>
+                    </label>
+                    <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:3px;">
+                        Kosongkan kalau Title sudah cukup jelas/lengkap sebagai fakta. Kalau diisi, ini yang jadi acuan fakta utama — Title dan Catatan tetap dipakai untuk framing/gaya saja.
                     </small>
                 </div>
                 <!-- AI action buttons -->
@@ -1596,6 +1622,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
       var statusEl    = form.querySelector('.js-article-status');
       var titleEl     = form.querySelector('[name="title"]');
       var notesEl     = form.querySelector('.pg-article-notes');
+      var referenceEl = form.querySelector('.pg-article-reference');
       var excerptEl   = form.querySelector('[name="excerpt"]');
       var metaTitleEl = form.querySelector('[name="meta_title"]');
       var metaDescEl  = form.querySelector('[name="meta_description"]');
@@ -1606,6 +1633,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
       var data = new FormData();
       data.append('title', titleEl ? titleEl.value.trim() : '');
       data.append('notes', notesEl ? notesEl.value.trim() : '');
+      data.append('reference', referenceEl ? referenceEl.value.trim() : '');
       if (pageIdEl && pageIdEl.value) { data.append('page_id', pageIdEl.value); }
       data.append('csrf_token', '<?= cms_csrf_token() ?>');
 
