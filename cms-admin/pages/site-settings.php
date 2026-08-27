@@ -36,6 +36,13 @@ cms_ensure_column($pdo, 'site_settings', 'show_telegram_button', 'TINYINT(1) NOT
 cms_ensure_column($pdo, 'site_settings', 'turnstile_site_key', 'VARCHAR(255) NULL AFTER show_telegram_button');
 cms_ensure_column($pdo, 'site_settings', 'turnstile_secret_key', 'VARCHAR(255) NULL AFTER turnstile_site_key');
 
+// Push Notification (Firebase Cloud Messaging), 27 Agu 2026 — see
+// cms-admin/includes/PushNotificationHelper.php for the full schema/
+// encryption story and cms-admin/actions/site-settings-update.php for
+// the save side.
+require_once __DIR__ . '/../includes/PushNotificationHelper.php';
+cms_push_ensure_schema($pdo);
+
 $pageTitle = 'Site Settings';
 $currentNav = 'site-settings';
 $breadcrumbs = [
@@ -210,6 +217,37 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </div>
             <div class="panel">
                 <div class="panel__head">
+                    <h3 class="panel__title">Push Notification (Firebase Cloud Messaging)</h3>
+                </div>
+                <div class="form-stack">
+                    <p class="field__hint" style="margin-top:-4px;">Kirim notifikasi otomatis ke HP/browser subscriber tiap ada artikel baru dipublish. Setup Firebase project + generate kredensial dulu di <a href="https://console.firebase.google.com" target="_blank" rel="noopener">console.firebase.google.com</a> (gratis) — lihat dokumentasi brief buat langkah lengkapnya. Toggle di bawah harus ON biar notifikasi beneran terkirim.</p>
+                    <label class="field--checkbox">
+                        <input type="checkbox" name="push_notification_enabled" value="1" <?= (int) ($settings['push_notification_enabled'] ?? 0) === 1 ? 'checked' : '' ?>>
+                        <span class="field--checkbox__text">
+                            <span class="field--checkbox__title">Aktifkan Push Notification</span>
+                            <span class="field--checkbox__desc">Kalau OFF, artikel yang dipublish TIDAK mengirim notifikasi ke siapapun (no-op), walau kredensial di bawah sudah diisi.</span>
+                        </span>
+                    </label>
+                    <label class="field">Web Push certificate — VAPID public key
+                        <input type="text" name="fcm_vapid_public_key" value="<?= cms_esc($val('fcm_vapid_public_key')) ?>" placeholder="BN4G...">
+                        <span class="field__hint">Firebase Console → Project Settings → Cloud Messaging → Web configuration → Web Push certificates.</span>
+                    </label>
+                    <label class="field">Firebase project ID
+                        <input type="text" name="fcm_project_id" value="<?= cms_esc($val('fcm_project_id')) ?>" placeholder="sagagoal-xxxxx">
+                    </label>
+                    <label class="field">Firebase Web App config (JSON)
+                        <textarea name="fcm_web_app_config_json" rows="5" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'><?= cms_esc($val('fcm_web_app_config_json')) ?></textarea>
+                        <span class="field__hint">Public, bukan rahasia — Firebase Console → Project Settings → General → Your apps → Web app → SDK setup and configuration → Config. Wajib diisi biar browser bisa daftar buat notifikasi.</span>
+                    </label>
+                    <label class="field">Service account JSON<?= trim($val('fcm_service_account_json')) !== '' ? ' (kosongkan buat pertahankan yang sudah tersimpan)' : '' ?>
+                        <textarea name="fcm_service_account_json" rows="6" placeholder="Tempel isi file JSON dari Project Settings → Service Accounts → Generate new private key"></textarea>
+                        <span class="field__hint">RAHASIA — disimpan terenkripsi, tidak pernah ditampilkan balik ke form ini. Dipakai server buat kirim notifikasi lewat FCM HTTP v1 API.</span>
+                    </label>
+                    <button type="submit" class="admin-btn admin-btn--primary">Save changes</button>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel__head">
                     <h3 class="panel__title">SEO defaults</h3>
                 </div>
                 <div class="form-stack">
@@ -242,6 +280,22 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </div>
         </div>
     </form>
+
+    <!-- Separate <form> — outside the main Save-changes form above, since
+         nesting forms is invalid HTML and this needs its own POST target
+         (send-a-test-notification, not persist-settings). -->
+    <div class="panel" style="margin-top:20px;">
+        <div class="panel__head">
+            <h3 class="panel__title">Push Notification — Test</h3>
+        </div>
+        <div class="form-stack">
+            <p class="field__hint" style="margin-top:-4px;">Kirim 1 notifikasi test ke semua subscriber aktif — pakai ini buat verifikasi setup sebelum mengandalkannya publish artikel beneran. Simpan pengaturan Push Notification di atas dulu sebelum test.</p>
+            <form method="post" action="../actions/push-test-notification.php">
+                <?= cms_csrf_field() ?>
+                <button type="submit" class="admin-btn admin-btn--secondary">Send Test Notification</button>
+            </form>
+        </div>
+    </div>
 </section>
 <script>
 (function () {

@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 require_once dirname(__DIR__) . '/includes/schema-guard.php';
 require_once dirname(__DIR__) . '/includes/sitemap-service.php';
+require_once dirname(__DIR__) . '/includes/PushNotificationHelper.php';
 
 cms_sitemap_ensure_schema($pdo);
 
@@ -318,6 +319,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $newId = (int) $pdo->lastInsertId();
         $pg_syncTags($pdo, $newId, $tagsRaw);
         cms_sitemap_on_article_save($pdo, [], $payload + ['page_id' => $newId]);
+        // Push notification, 27 Agu 2026 — a brand-new article can only
+        // ever be a "first publish" (there's no prior row to compare
+        // against), so publishing straight from Create always qualifies.
+        // No-ops silently if the feature isn't configured/enabled.
+        if ($status === 'published') {
+            cms_send_push_notification_for_article($pdo, $newId);
+        }
         $pg_redirect('Article created successfully.', 'success', 'edit=' . $newId);
     }
 
@@ -372,6 +380,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             if (!$exists->fetch()) {
                 $pg_redirect('Article not found.', 'error');
             }
+        }
+        // Push notification, 27 Agu 2026 — only on a genuine first-time
+        // publish transition (old status wasn't already 'published', new
+        // status is). A re-save of an already-published article (typo
+        // fix, adding a tag, etc.) must NOT re-notify every subscriber.
+        // No-ops silently if the feature isn't configured/enabled.
+        $pg_wasPublished = strtolower(trim((string) ($pg_oldRow['status'] ?? ''))) === 'published';
+        if (!$pg_wasPublished && $status === 'published') {
+            cms_send_push_notification_for_article($pdo, $updateId);
         }
         $pg_redirect('Article updated successfully.', 'success', 'edit=' . $updateId);
     }

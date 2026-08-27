@@ -110,6 +110,134 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
 
 <?= wpm_floating_contact_buttons($wpmSiteSettings) ?>
 
+<?php
+// Push Notification (Firebase Cloud Messaging), 27 Agu 2026 — only wire
+// up the "Aktifkan Notifikasi" button when the admin has actually turned
+// the feature on AND filled both pieces of config the browser side
+// needs (VAPID public key, Firebase web app config — see cms-admin/
+// includes/PushNotificationHelper.php's docblock for why there are two
+// separate config blobs). Any one missing = render nothing at all,
+// rather than a button that's guaranteed to fail when clicked.
+$wpmPushEnabled = (int) ($wpmSiteSettings['push_notification_enabled'] ?? 0) === 1;
+$wpmPushVapidKey = trim((string) ($wpmSiteSettings['fcm_vapid_public_key'] ?? ''));
+$wpmPushWebConfigRaw = trim((string) ($wpmSiteSettings['fcm_web_app_config_json'] ?? ''));
+$wpmPushWebConfig = $wpmPushWebConfigRaw !== '' ? json_decode($wpmPushWebConfigRaw, true) : null;
+$wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushWebConfig);
+?>
+<?php if ($wpmPushReady) : ?>
+<button type="button" id="wpm-push-optin" class="wpm-push-optin" aria-label="Aktifkan notifikasi artikel baru" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="18" height="18"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    <span>Aktifkan Notifikasi</span>
+</button>
+<style>
+  .wpm-push-optin {
+    position: fixed; left: 16px; bottom: 16px; z-index: 40;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-radius: 999px; border: none;
+    background: #fb923c; color: #0a0618; font-size: 13px; font-weight: 600;
+    box-shadow: 0 6px 18px rgba(0,0,0,.25); cursor: pointer;
+  }
+  .wpm-push-optin[hidden] { display: none; }
+  @media (min-width: 768px) { .wpm-push-optin { left: 24px; bottom: 24px; } }
+</style>
+<script>
+(function () {
+  var btn = document.getElementById('wpm-push-optin');
+  if (!btn || !('Notification' in window) || !('serviceWorker' in navigator)) { return; }
+
+  var STORAGE_KEY = 'wpm_push_subscribed';
+  var VAPID_KEY = <?= json_encode($wpmPushVapidKey) ?>;
+  var WEB_CONFIG = <?= json_encode($wpmPushWebConfig) ?>;
+  var SUBSCRIBE_URL = <?= json_encode(wpm_esc(wpm_site_url('api/push-subscribe.php'))) ?>;
+
+  function alreadySubscribed() {
+    try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch (e) { return false; }
+  }
+  function markSubscribed() {
+    try { localStorage.setItem(STORAGE_KEY, '1'); } catch (e) {}
+  }
+
+  // Never auto-prompt — only ever show the button, and only if this
+  // browser hasn't already granted/denied/subscribed. A denied
+  // permission can't be re-requested by JS anyway (browser policy), so
+  // there's nothing useful to offer in that state either.
+  if (Notification.permission === 'default' && !alreadySubscribed()) {
+    btn.hidden = false;
+  }
+
+  var firebaseLoadPromise = null;
+  function loadFirebaseSdk() {
+    if (firebaseLoadPromise) { return firebaseLoadPromise; }
+    firebaseLoadPromise = new Promise(function (resolve, reject) {
+      var s1 = document.createElement('script');
+      s1.src = 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js';
+      s1.onload = function () {
+        var s2 = document.createElement('script');
+        s2.src = 'https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js';
+        s2.onload = resolve;
+        s2.onerror = reject;
+        document.head.appendChild(s2);
+      };
+      s1.onerror = reject;
+      document.head.appendChild(s1);
+    });
+    return firebaseLoadPromise;
+  }
+
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    Notification.requestPermission().then(function (permission) {
+      if (permission !== 'granted') {
+        btn.hidden = true; // denied or dismissed — stop offering this session
+        return;
+      }
+      return navigator.serviceWorker.ready
+        .then(function (registration) {
+          return loadFirebaseSdk().then(function () { return registration; });
+        })
+        .then(function (registration) {
+          firebase.initializeApp(WEB_CONFIG);
+          var messaging = firebase.messaging();
+          // Foreground handler — onBackgroundMessage (sw.js) only fires
+          // while no tab has focus; a visitor actively reading the site
+          // when a push arrives needs this instead, same data-only shape.
+          messaging.onMessage(function (payload) {
+            var data = (payload && payload.data) || {};
+            if (Notification.permission === 'granted') {
+              registration.showNotification(data.title || 'Sagagoal', {
+                body: data.body || '',
+                icon: 'assets/img/icon-192.png',
+                image: data.image || undefined,
+                data: { url: data.url || './' },
+              });
+            }
+          });
+          return messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
+        })
+        .then(function (token) {
+          if (!token) { throw new Error('No token returned.'); }
+          return fetch(SUBSCRIBE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'fcm_token=' + encodeURIComponent(token),
+          });
+        })
+        .then(function () {
+          markSubscribed();
+          btn.hidden = true;
+        });
+    }).catch(function () {
+      // Permission API rejected, Firebase CDN unreachable, getToken()
+      // failed, subscribe request failed — whatever it was, just leave
+      // the button visible/re-enabled so the visitor can try again,
+      // never let this throw further or break the rest of the page.
+      btn.disabled = false;
+    });
+  });
+})();
+</script>
+<?php endif; ?>
+
 <script src="assets/js/site.js?v=<?= (int) $jsVer ?>" defer></script>
 <script>
   // PWA service worker registration (added 20 Aug 2026) — deliberately

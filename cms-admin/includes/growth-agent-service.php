@@ -6670,6 +6670,20 @@ function cms_growth_agent_auto_publish_draft(PDO $pdo, int $jobId, array $output
         $pdo->prepare("UPDATE pages SET status = 'published', published_at = :published_at, updated_at = NOW() WHERE page_id = :id")
             ->execute(['published_at' => $publishedAt, 'id' => $pageId]);
 
+        // Push notification, 27 Agu 2026 — this whole function is the
+        // OTHER place (besides cms-admin/pages/pages.php) a `pages` row
+        // can flip to 'published', bypassing pages.php's own create/
+        // update handlers entirely (cron-triggered, Full Draft
+        // Automation's auto-publish, docs/DECISIONS.md 9 Aug 2026). The
+        // row was just created as 'draft' by
+        // cms_growth_agent_create_article_draft_from_auto_draft() above
+        // and is only now flipping to 'published' for the first time, so
+        // this is unconditionally a first-publish — no old-status check
+        // needed here the way pages.php's update path needs one. No-ops
+        // silently if the feature isn't configured/enabled.
+        require_once __DIR__ . '/PushNotificationHelper.php';
+        cms_send_push_notification_for_article($pdo, $pageId);
+
         // Re-upsert into the sitemap as 'published' — the create-draft call
         // above already upserted it once as 'draft' (its own hardcoded
         // status), which would otherwise leave the sitemap saying "draft"

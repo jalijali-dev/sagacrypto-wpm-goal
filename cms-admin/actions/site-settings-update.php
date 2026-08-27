@@ -20,6 +20,11 @@ cms_ensure_column($pdo, 'site_settings', 'show_telegram_button', 'TINYINT(1) NOT
 cms_ensure_column($pdo, 'site_settings', 'turnstile_site_key', 'VARCHAR(255) NULL AFTER show_telegram_button');
 cms_ensure_column($pdo, 'site_settings', 'turnstile_secret_key', 'VARCHAR(255) NULL AFTER turnstile_site_key');
 
+// Push Notification (Firebase Cloud Messaging) — see pages/site-settings.php.
+require_once __DIR__ . '/../includes/PushNotificationHelper.php';
+require_once __DIR__ . '/../includes/ai-helpers.php';
+cms_push_ensure_schema($pdo);
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Location: ../pages/site-settings.php', true, 302);
     exit;
@@ -32,7 +37,7 @@ $existingSettings = null;
 
 try {
     $settingsRow = $pdo->query(
-        'SELECT id, logo_path, favicon_path, og_image FROM site_settings LIMIT 1'
+        'SELECT id, logo_path, favicon_path, og_image, fcm_service_account_json FROM site_settings LIMIT 1'
     )->fetch();
     $existingSettings = is_array($settingsRow) ? $settingsRow : null;
 } catch (PDOException) {
@@ -58,6 +63,33 @@ if ($telegramUrl !== '' && !preg_match('#^https?://#i', $telegramUrl)) {
 // admin notices — save proceeds either way (see the flash message below).
 $telegramLooksValid = $telegramUrl === '' || (bool) preg_match('#^https?://([^/]*\.)?(t\.me|telegram\.me)/#i', $telegramUrl);
 
+// Push Notification (FCM) — service account JSON is stored encrypted and
+// never round-tripped back into the form (see pages/site-settings.php's
+// "kosongkan buat pertahankan" hint), so: blank textarea = keep whatever
+// is already in the DB; non-blank = validate it's real JSON with the two
+// fields we actually need, then re-encrypt and replace.
+$fcmServiceAccountRaw = trim((string) ($_POST['fcm_service_account_json'] ?? ''));
+$fcmServiceAccountEncrypted = (string) ($existingSettings['fcm_service_account_json'] ?? '');
+$fcmServiceAccountError = null;
+if ($fcmServiceAccountRaw !== '') {
+    $fcmDecoded = json_decode($fcmServiceAccountRaw, true);
+    if (!is_array($fcmDecoded) || empty($fcmDecoded['client_email']) || empty($fcmDecoded['private_key'])) {
+        $fcmServiceAccountError = 'Service account JSON tidak valid — pastikan ini file JSON asli dari Firebase (harus ada client_email dan private_key).';
+    } else {
+        $fcmServiceAccountEncrypted = cms_ai_encrypt($fcmServiceAccountRaw);
+    }
+}
+
+$fcmWebAppConfigRaw = trim((string) ($_POST['fcm_web_app_config_json'] ?? ''));
+$fcmWebAppConfigDecoded = null;
+if ($fcmWebAppConfigRaw !== '') {
+    $fcmWebAppConfigDecoded = json_decode($fcmWebAppConfigRaw, true);
+    if (!is_array($fcmWebAppConfigDecoded)) {
+        $fcmServiceAccountError = ($fcmServiceAccountError !== null ? $fcmServiceAccountError . ' ' : '')
+            . 'Firebase Web App config bukan JSON yang valid.';
+    }
+}
+
 $payload = [
     'site_name' => trim((string) ($_POST['site_name'] ?? '')),
     'site_tagline' => trim((string) ($_POST['site_tagline'] ?? '')),
@@ -77,7 +109,18 @@ $payload = [
     'google_analytics_id' => trim((string) ($_POST['google_analytics_id'] ?? '')),
     'turnstile_site_key' => trim((string) ($_POST['turnstile_site_key'] ?? '')),
     'turnstile_secret_key' => trim((string) ($_POST['turnstile_secret_key'] ?? '')),
+    'push_notification_enabled' => !empty($_POST['push_notification_enabled']) ? 1 : 0,
+    'fcm_vapid_public_key' => trim((string) ($_POST['fcm_vapid_public_key'] ?? '')),
+    'fcm_project_id' => trim((string) ($_POST['fcm_project_id'] ?? '')),
+    'fcm_web_app_config_json' => $fcmWebAppConfigRaw,
+    'fcm_service_account_json' => $fcmServiceAccountEncrypted,
 ];
+
+if ($fcmServiceAccountError !== null) {
+    $_SESSION['cms_flash'] = ['type' => 'error', 'message' => $fcmServiceAccountError];
+    header('Location: ' . $redirect, true, 302);
+    exit;
+}
 
 $specs = [
     'logo_file' => [
@@ -165,6 +208,11 @@ try {
                  google_analytics_id = :google_analytics_id,
                  turnstile_site_key = :turnstile_site_key,
                  turnstile_secret_key = :turnstile_secret_key,
+                 push_notification_enabled = :push_notification_enabled,
+                 fcm_vapid_public_key = :fcm_vapid_public_key,
+                 fcm_project_id = :fcm_project_id,
+                 fcm_web_app_config_json = :fcm_web_app_config_json,
+                 fcm_service_account_json = :fcm_service_account_json,
                  updated_at = NOW()
              WHERE id = :id'
         );
@@ -176,12 +224,16 @@ try {
                 telegram_username, show_whatsapp_button, show_telegram_button, instagram_url,
                 email, address, meta_title, meta_description, meta_keywords, google_analytics_id,
                 turnstile_site_key, turnstile_secret_key,
+                push_notification_enabled, fcm_vapid_public_key, fcm_project_id,
+                fcm_web_app_config_json, fcm_service_account_json,
                 created_at, updated_at
             ) VALUES (
                 :site_name, :site_tagline, :logo_path, :favicon_path, :og_image, :whatsapp_number,
                 :telegram_username, :show_whatsapp_button, :show_telegram_button, :instagram_url,
                 :email, :address, :meta_title, :meta_description, :meta_keywords, :google_analytics_id,
                 :turnstile_site_key, :turnstile_secret_key,
+                :push_notification_enabled, :fcm_vapid_public_key, :fcm_project_id,
+                :fcm_web_app_config_json, :fcm_service_account_json,
                 NOW(), NOW()
             )'
         );
@@ -193,6 +245,13 @@ try {
             @unlink($oldPath);
         }
     }
+
+    // Regenerate the FCM_WEB_CONFIG block in the site-root sw.js so the
+    // service worker's Firebase Messaging companion (see sw.js's own
+    // docblock) picks up whatever was just saved — best-effort, never
+    // blocks the settings save itself (sw.js might not have the markers
+    // yet on an older production deploy).
+    cms_push_regenerate_sw_js_config($fcmWebAppConfigDecoded);
 
     $_SESSION['cms_flash'] = $telegramLooksValid
         ? ['type' => 'success', 'message' => 'Site settings saved successfully.']

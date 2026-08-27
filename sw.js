@@ -24,6 +24,80 @@
  *     stale admin state.
  */
 
+/**
+ * ---- FCM (Firebase Cloud Messaging) companion, added 27 Agu 2026 ----
+ *
+ * Combined into this SAME file rather than a separate
+ * firebase-messaging-sw.js, deliberately: a service worker's default
+ * scope is the directory it's served from, and this file already claims
+ * the whole origin (see docblock above) — Firebase's own guidance for
+ * "I already have a service worker at root scope" is to import the
+ * Messaging scripts into that existing worker instead of registering a
+ * second one, precisely to avoid two workers fighting over the same
+ * scope. The frontend (includes/site-footer.php) passes this file's own
+ * registration into getToken({ serviceWorkerRegistration }) instead of
+ * letting Firebase register its own file, so there is still only ever
+ * one active service worker for the origin.
+ *
+ * FCM_WEB_CONFIG is Firebase's small PUBLIC web-app config (apiKey,
+ * projectId, messagingSenderId, appId, ...) — not a secret, it's meant
+ * to ship inside client JS/SW. Regenerated in place between the two
+ * marker comments below by cms_push_regenerate_sw_js_config()
+ * (cms-admin/includes/PushNotificationHelper.php) every time the admin
+ * saves Push Notification settings — don't hand-edit the line between
+ * the markers, it gets overwritten on the next save. `null` just means
+ * push notifications haven't been configured yet.
+ */
+/* FCM_WEB_CONFIG_START */
+const FCM_WEB_CONFIG = null;
+/* FCM_WEB_CONFIG_END */
+
+if (FCM_WEB_CONFIG) {
+  try {
+    importScripts('https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js');
+    importScripts('https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js');
+    firebase.initializeApp(FCM_WEB_CONFIG);
+    const messaging = firebase.messaging();
+
+    // Data-only messages (see cms_push_send_single() server-side) —
+    // onBackgroundMessage fires for every push while no tab has focus,
+    // and we build the notification ourselves so title/body/image/link
+    // are exactly what the publishing article says, not FCM's default.
+    messaging.onBackgroundMessage((payload) => {
+      const data = (payload && payload.data) || {};
+      const title = data.title || 'Sagagoal';
+      self.registration.showNotification(title, {
+        body: data.body || '',
+        icon: 'assets/img/icon-192.png',
+        image: data.image || undefined,
+        data: { url: data.url || './' },
+      });
+    });
+  } catch (e) {
+    // Firebase CDN unreachable, or FCM_WEB_CONFIG malformed — push just
+    // silently doesn't work this time. Must never throw past this point:
+    // everything below (the existing cache/offline logic) has to keep
+    // working regardless of Firebase's availability.
+  }
+}
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || './';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url === url && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(url);
+      }
+    })
+  );
+});
+
 const CACHE_NAME = 'sagagoal-v1';
 const OFFLINE_URL = 'offline.html';
 
