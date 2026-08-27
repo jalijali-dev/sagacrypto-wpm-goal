@@ -184,6 +184,51 @@ $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushW
     return firebaseLoadPromise;
   }
 
+  // Shared registration flow — used both by the explicit opt-in click AND
+  // by the silent background refresh below. Resolves the FCM token and
+  // POSTs it to SUBSCRIBE_URL, which is an upsert (re-registering an
+  // already-known token is a harmless no-op server-side, and — this is
+  // the point — flips it back to is_active = 1 if the server had
+  // previously deactivated it after a failed send).
+  function registerToken() {
+    return navigator.serviceWorker.ready
+      .then(function (registration) {
+        return loadFirebaseSdk().then(function () { return registration; });
+      })
+      .then(function (registration) {
+        if (!firebase.apps || !firebase.apps.length) {
+          firebase.initializeApp(WEB_CONFIG);
+        }
+        var messaging = firebase.messaging();
+        // Foreground handler — onBackgroundMessage (sw.js) only fires
+        // while no tab has focus; a visitor actively reading the site
+        // when a push arrives needs this instead, same data-only shape.
+        // Re-registering this on every call is harmless (Firebase just
+        // replaces the listener), so it's fine to run from both the
+        // click flow and the silent refresh flow below.
+        messaging.onMessage(function (payload) {
+          var data = (payload && payload.data) || {};
+          if (Notification.permission === 'granted') {
+            registration.showNotification(data.title || 'Sagagoal', {
+              body: data.body || '',
+              icon: 'assets/img/icon-192.png',
+              image: data.image || undefined,
+              data: { url: data.url || './' },
+            });
+          }
+        });
+        return messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
+      })
+      .then(function (token) {
+        if (!token) { throw new Error('No token returned.'); }
+        return fetch(SUBSCRIBE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'fcm_token=' + encodeURIComponent(token),
+        });
+      });
+  }
+
   btn.addEventListener('click', function () {
     btn.disabled = true;
     Notification.requestPermission().then(function (permission) {
@@ -191,40 +236,9 @@ $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushW
         btn.hidden = true; // denied or dismissed — stop offering this session
         return;
       }
-      return navigator.serviceWorker.ready
-        .then(function (registration) {
-          return loadFirebaseSdk().then(function () { return registration; });
-        })
-        .then(function (registration) {
-          firebase.initializeApp(WEB_CONFIG);
-          var messaging = firebase.messaging();
-          // Foreground handler — onBackgroundMessage (sw.js) only fires
-          // while no tab has focus; a visitor actively reading the site
-          // when a push arrives needs this instead, same data-only shape.
-          messaging.onMessage(function (payload) {
-            var data = (payload && payload.data) || {};
-            if (Notification.permission === 'granted') {
-              registration.showNotification(data.title || 'Sagagoal', {
-                body: data.body || '',
-                icon: 'assets/img/icon-192.png',
-                image: data.image || undefined,
-                data: { url: data.url || './' },
-              });
-            }
-          });
-          return messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
-        })
-        .then(function (token) {
-          if (!token) { throw new Error('No token returned.'); }
-          return fetch(SUBSCRIBE_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'fcm_token=' + encodeURIComponent(token),
-          });
-        })
-        .then(function () {
-          btn.hidden = true;
-        });
+      return registerToken().then(function () {
+        btn.hidden = true;
+      });
     }).catch(function () {
       // Permission API rejected, Firebase CDN unreachable, getToken()
       // failed, subscribe request failed — whatever it was, just leave
@@ -233,6 +247,38 @@ $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushW
       btn.disabled = false;
     });
   });
+
+  // Silent background refresh (27 Aug 2026) — fixes a gap where a token
+  // that Firebase invalidates (device idle, app data cleared, token
+  // rotated, etc.) never gets replaced automatically: permission stays
+  // 'granted' so the opt-in button never reappears to trigger a new
+  // getToken() call, yet the server-side row is already marked inactive
+  // after one failed send. Previously the only fix was to manually
+  // revoke the browser's notification permission and re-grant it. Now,
+  // once per ~20h per browser (throttled via localStorage so this
+  // doesn't fire a Firebase SDK load + token fetch on every single page
+  // view), silently re-run the same registration flow whenever
+  // permission is already 'granted' — this both keeps a still-valid
+  // token's last_seen_at fresh and, if the token had quietly gone stale,
+  // gets a new one and re-activates the subscription server-side.
+  if (Notification.permission === 'granted') {
+    var REFRESH_KEY = 'wpm_push_last_refresh';
+    var REFRESH_INTERVAL_MS = 20 * 60 * 60 * 1000; // ~20 hours
+    var lastRefresh = 0;
+    try { lastRefresh = parseInt(localStorage.getItem(REFRESH_KEY) || '0', 10) || 0; } catch (e) {}
+
+    if (Date.now() - lastRefresh > REFRESH_INTERVAL_MS) {
+      registerToken()
+        .then(function () {
+          try { localStorage.setItem(REFRESH_KEY, String(Date.now())); } catch (e) {}
+        })
+        .catch(function () {
+          // Best-effort only — never surface this to the visitor, and
+          // don't update the throttle timestamp so the next page view
+          // tries again instead of waiting out the full interval.
+        });
+    }
+  }
 })();
 </script>
 <?php endif; ?>
