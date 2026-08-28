@@ -41,11 +41,11 @@
   /* Dark mode toggle — <head>'s inline script already set data-theme on
      <html> before paint (localStorage, falling back to prefers-color-scheme).
      This just syncs the checkbox to that state and persists future clicks. */
-  var themeInput = document.getElementById("theme-toggle-input");
-  if (themeInput) {
-    themeInput.checked = document.documentElement.getAttribute("data-theme") === "dark";
-    themeInput.addEventListener("change", function () {
-      var theme = themeInput.checked ? "dark" : "light";
+  var themeBtn = document.getElementById("theme-toggle-btn");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", function () {
+      var current = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+      var theme = current === "dark" ? "light" : "dark";
       document.documentElement.setAttribute("data-theme", theme);
       try { localStorage.setItem("sagagoal_theme", theme); } catch (e) { /* storage unavailable — theme just won't persist */ }
     });

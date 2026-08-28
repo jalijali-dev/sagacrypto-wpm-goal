@@ -355,47 +355,34 @@ body.crypto-theme {
 /* ============================================================
    DARK MODE TOGGLE
    ============================================================ */
-.theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
+/* Theme toggle — minimalist circular icon button (28 Agu 2026), replaces
+   the old switch/label/track UI. Same circular shape as
+   .crypto-nav__search-btn so both header icons match visually. Shows the
+   TARGET-state icon (click sun -> go light, click moon -> go dark); JS
+   toggles [data-theme] and this CSS just swaps which icon is visible. */
+.theme-toggle-btn {
+  width: 38px;
+  height: 38px;
   border-radius: 999px;
   background: var(--surface-glass-2);
   border: 1px solid var(--border-glass);
-  cursor: pointer;
-}
-
-.theme-toggle__icon { display: flex; color: var(--text-muted); }
-.theme-toggle__icon svg { width: 15px; height: 15px; }
-
-.theme-toggle__label {
-  font-size: 13px;
-  font-weight: 500;
+  display: grid;
+  place-items: center;
   color: var(--text-muted);
-  white-space: nowrap;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
 }
+.theme-toggle-btn:hover { color: var(--accent); border-color: var(--border-glow); background: rgba(var(--accent-rgb), 0.10); }
 
-.theme-toggle__input {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-}
+.theme-toggle-btn__icon { display: none; }
+.theme-toggle-btn__icon svg { width: 17px; height: 17px; display: block; }
 
-.theme-toggle__switch { position: relative; display: inline-flex; }
-
-.theme-toggle__track {
-  display: block;
-  width: 36px;
-  height: 20px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid var(--border-glass);
-  position: relative;
-}
-
-:root[data-theme="light"] .theme-toggle__track { background: rgba(20, 10, 45, 0.12); }
+/* Default (no [data-theme], or [data-theme="dark"]) -> dark mode active,
+   so show the sun icon (clicking it switches to light). */
+.theme-toggle-btn__icon--sun { display: flex; }
+:root[data-theme="light"] .theme-toggle-btn__icon--sun { display: none; }
+:root[data-theme="light"] .theme-toggle-btn__icon--moon { display: flex; }
 
 /* Dark/light logo variants (27 Agu 2026) — see includes/site-header.php.
    Default (no [data-theme], or [data-theme="dark"]) shows the dark-mode
@@ -408,25 +395,11 @@ body.crypto-theme {
 :root[data-theme="light"] .wpm-logo--light { display: grid; }
 :root[data-theme="light"] .wpm-logo--dark { display: none; }
 
-.theme-toggle__thumb {
-  position: absolute;
-  top: 1px;
-  left: 1px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-  transition: transform 0.2s ease;
-}
+/* .theme-toggle__thumb removed 28 Agu 2026 — old switch UI replaced by
+   .theme-toggle-btn (circular icon button). */
 
-.theme-toggle__input:checked ~ .theme-toggle__track { background: var(--green); border-color: transparent; }
-.theme-toggle__input:checked ~ .theme-toggle__track .theme-toggle__thumb { transform: translateX(16px); }
-.theme-toggle__input:focus-visible ~ .theme-toggle__track { box-shadow: 0 0 0 2px var(--border-glow); }
-
-@media (max-width: 640px) {
-  .theme-toggle { padding: 7px 9px; }
-}
+/* Old .theme-toggle__input checked/focus states removed 28 Agu 2026 —
+   see .theme-toggle-btn above. */
 
 /* ============================================================
    GLASS / CARD PRIMITIVES
@@ -1627,9 +1600,10 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 }
 .search-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2); }
 .search-form button {
-  padding: 0 26px; border-radius: 999px; border: none; background: var(--grad-brand); color: #fff;
-  font-weight: 600; cursor: pointer;
+  width: 48px; height: 48px; flex: 0 0 auto; padding: 0; border-radius: 999px; border: none;
+  background: var(--grad-brand); color: #0a0618; display: grid; place-items: center; cursor: pointer;
 }
+.search-form button svg { width: 19px; height: 19px; display: block; }
 
 .empty-state { text-align: center; padding: 60px 20px; color: var(--text-faint); }
 .empty-state svg { width: 40px; height: 40px; margin-bottom: 14px; opacity: 0.5; }

@@ -51,8 +51,7 @@ require __DIR__ . '/includes/site-header.php';
 <section class="page-hero">
     <div class="crypto-container">
         <nav class="breadcrumb" aria-label="Breadcrumb"><a href="<?= wpm_esc(wpm_site_url('')) ?>">Beranda</a> <span>/</span> Pencarian</nav>
-        <span class="section-kicker">Cari</span>
-        <h1>Cari Artikel</h1>
+        <h1>Cari Berita</h1>
         <form class="search-form" method="get" action="<?= wpm_esc(wpm_url_pencarian()) ?>">
             <input type="search" name="q" value="<?= wpm_esc($query) ?>" placeholder="Cari berita bola, tim, atau topik lainnya..." minlength="2" required>
             <button type="submit"><?= wpm_icon('search') ?></button>

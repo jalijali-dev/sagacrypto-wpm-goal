@@ -157,14 +157,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 
         <div class="crypto-nav__actions">
             <a class="crypto-nav__search-btn" href="<?= wpm_esc(wpm_url_pencarian()) ?>" aria-label="Cari"><?= wpm_icon('search') ?></a>
-            <label class="theme-toggle" for="theme-toggle-input">
-                <span class="theme-toggle__icon"><?= wpm_icon('moon') ?></span>
-                <span class="theme-toggle__label u-hide-mobile">Mode Gelap</span>
-                <span class="theme-toggle__switch">
-                    <input type="checkbox" id="theme-toggle-input" class="theme-toggle__input" aria-label="Mode Gelap">
-                    <span class="theme-toggle__track"><span class="theme-toggle__thumb"></span></span>
-                </span>
-            </label>
+            <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" aria-label="Ganti mode tampilan">
+                <span class="theme-toggle-btn__icon theme-toggle-btn__icon--sun"><?= wpm_icon('sun') ?></span>
+                <span class="theme-toggle-btn__icon theme-toggle-btn__icon--moon"><?= wpm_icon('moon') ?></span>
+            </button>
             <button type="button" class="crypto-nav__toggle" id="crypto-nav-toggle" aria-label="Buka menu">
                 <span></span>
             </button>
