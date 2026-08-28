@@ -20,6 +20,19 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/site-bootstrap.php';
 
+// wpm_base_path() (site-bootstrap.php) derives the site's URL base from
+// $_SERVER['SCRIPT_NAME'] — normally correct (it's always the PHYSICAL
+// script that ran), but this endpoint lives one level deeper than the
+// pages it's rendering rows FOR (api/load-more-articles.php vs.
+// index.php at the site root). Left alone, every absolute-rooted image
+// path built by wpm_image() (paths starting with "/") would resolve
+// against "/api" instead of the actual site root, 404ing every thumbnail
+// in the appended rows. Spoof SCRIPT_NAME to look like it ran from the
+// root, matching where the fetched HTML actually gets inserted into the
+// DOM (index.php's own document) — fixed 28 Agu 2026 after images broke
+// on "Muat Lebih Banyak".
+$_SERVER['SCRIPT_NAME'] = '/index.php';
+
 header('Content-Type: text/html; charset=utf-8');
 
 $tab = ($_GET['tab'] ?? '') === 'untuk-anda' ? 'untuk-anda' : 'terbaru';
