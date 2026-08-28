@@ -68,13 +68,21 @@ if ($token === '' || strlen($token) > 512) {
     cms_push_subscribe_respond(['success' => false, 'error' => 'Invalid or missing fcm_token.']);
 }
 
+// Raw User-Agent (27 Agu 2026) — parsed into a readable "Chrome di
+// Android"-style label only at display time (cms_push_parse_user_agent(),
+// PushNotificationHelper.php), not here; this just captures whatever the
+// browser sent as-is. No length validation beyond the column width —
+// truncating a malformed/oversized UA string here is harmless (it only
+// ever feeds the admin-facing label parser, never a security decision).
+$userAgent = substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 512);
+
 try {
     $stmt = $pdo->prepare(
-        'INSERT INTO push_subscribers (fcm_token, created_at, last_seen_at, is_active)
-         VALUES (:token, NOW(), NOW(), 1)
-         ON DUPLICATE KEY UPDATE last_seen_at = NOW(), is_active = 1'
+        'INSERT INTO push_subscribers (fcm_token, user_agent, created_at, last_seen_at, is_active)
+         VALUES (:token, :user_agent, NOW(), NOW(), 1)
+         ON DUPLICATE KEY UPDATE user_agent = :user_agent_update, last_seen_at = NOW(), is_active = 1'
     );
-    $stmt->execute(['token' => $token]);
+    $stmt->execute(['token' => $token, 'user_agent' => $userAgent, 'user_agent_update' => $userAgent]);
 } catch (Throwable $e) {
     cms_push_subscribe_respond(['success' => false, 'error' => 'Could not save subscription.'], 500);
 }

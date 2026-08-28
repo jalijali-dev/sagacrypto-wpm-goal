@@ -82,7 +82,7 @@ try {
     // glance. Capped at 200 rows; this is an admin glance-view, not a
     // paginated report, so no LIMIT/OFFSET UI for now.
     $pushSubscriberRows = $pdo->query(
-        'SELECT id, fcm_token, is_active, created_at, last_seen_at FROM push_subscribers ORDER BY created_at DESC LIMIT 200'
+        'SELECT id, fcm_token, user_agent, is_active, created_at, last_seen_at FROM push_subscribers ORDER BY created_at DESC LIMIT 200'
     )->fetchAll();
 } catch (Throwable $e) {
     // Table may not exist yet on a fresh install before the push feature's
@@ -372,6 +372,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                             <tr>
                                 <th>#</th>
                                 <th>Status</th>
+                                <th>Device/Browser</th>
                                 <th>Pertama klik "Aktifkan Notifikasi"</th>
                                 <th>Terakhir aktif</th>
                             </tr>
@@ -387,6 +388,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                                             <span style="color:var(--muted,#888);">Nonaktif</span>
                                         <?php endif; ?>
                                     </td>
+                                    <td><?= cms_esc(cms_push_parse_user_agent($row['user_agent'] ?? null)) ?></td>
                                     <td><?= cms_esc((string) $row['created_at']) ?></td>
                                     <td><?= cms_esc((string) $row['last_seen_at']) ?></td>
                                 </tr>

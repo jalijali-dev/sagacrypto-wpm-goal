@@ -67,6 +67,93 @@ if (!function_exists('cms_push_ensure_schema')) {
              is_active TINYINT DEFAULT 1,
              UNIQUE KEY uniq_push_fcm_token (fcm_token)'
         );
+        // Raw User-Agent at subscribe time (27 Agu 2026) — cms_ensure_table()
+        // above only creates the table if it's missing entirely, so a
+        // column added after that table already exists on a live install
+        // needs its own cms_ensure_column() call here, same as every other
+        // "add a column to something that already shipped" case in this
+        // project. Stored as-is (not parsed at write time) — see
+        // cms_push_parse_user_agent() below for the display-time parse;
+        // keeping the raw string means a smarter parser later can be
+        // applied retroactively to old rows too, not just new ones.
+        cms_ensure_column($pdo, 'push_subscribers', 'user_agent', 'VARCHAR(512) NULL AFTER fcm_token');
+    }
+}
+
+/**
+ * Turns a raw User-Agent string into a short admin-facing label like
+ * "Chrome di Android" or "Safari di iPhone" (27 Agu 2026) — for the
+ * "Push Notification — Subscribers" table (cms-admin/pages/
+ * site-settings.php), so an operator can tell at a glance what kind of
+ * device/browser each subscriber came from without reading a raw UA
+ * string. Deliberately simple regex matching, not a UA-parser library —
+ * this project has no Composer/vendor dir at all (see CLAUDE.md), and a
+ * rough "browser + OS" label is all the brief asks for, not precise
+ * version/model detection.
+ *
+ * Order matters: OS checks for Android/iPhone/iPad run BEFORE the
+ * generic Windows/Mac/Linux checks, because an Android UA string also
+ * contains the substring "Linux" (Android is Linux-based) — checking
+ * generic Linux first would misidentify every Android device. Same
+ * logic for browser checks: Edge and Samsung Internet UA strings both
+ * also contain "Chrome" (they're Chromium-based), so those more-specific
+ * substrings are checked before the generic "Chrome" one.
+ *
+ * Never throws and never returns '' — empty/unrecognized input falls
+ * back to "Browser tidak dikenal" rather than a blank table cell or a
+ * crash (see api/push-subscribe.php, which stores whatever User-Agent
+ * header a request happened to send, including none at all).
+ */
+if (!function_exists('cms_push_parse_user_agent')) {
+    function cms_push_parse_user_agent(?string $userAgent): string
+    {
+        $ua = trim((string) $userAgent);
+        if ($ua === '') {
+            return 'Browser tidak dikenal';
+        }
+
+        $os = 'Tidak dikenal';
+        if (preg_match('/iPhone/i', $ua)) {
+            $os = 'iPhone';
+        } elseif (preg_match('/iPad/i', $ua)) {
+            $os = 'iPad';
+        } elseif (preg_match('/Android/i', $ua)) {
+            $os = 'Android';
+        } elseif (preg_match('/Windows/i', $ua)) {
+            $os = 'Windows';
+        } elseif (preg_match('/Macintosh|Mac OS X/i', $ua)) {
+            $os = 'Mac';
+        } elseif (preg_match('/Linux/i', $ua)) {
+            $os = 'Linux';
+        }
+
+        $browser = null;
+        if (preg_match('/SamsungBrowser/i', $ua)) {
+            $browser = 'Samsung Internet';
+        } elseif (preg_match('/\bEdgA?\/|\bEdge\//i', $ua)) {
+            $browser = 'Edge';
+        } elseif (preg_match('/\bOPR\/|Opera/i', $ua)) {
+            $browser = 'Opera';
+        } elseif (preg_match('/Firefox/i', $ua)) {
+            $browser = 'Firefox';
+        } elseif (preg_match('/CriOS/i', $ua)) {
+            // Chrome on iOS reports as "CriOS", not "Chrome" — still
+            // genuinely Chrome (just Apple's WebKit-only rule on iOS
+            // means it's Safari's engine underneath), worth naming
+            // distinctly from Safari itself for an operator glancing at
+            // this table.
+            $browser = 'Chrome iOS';
+        } elseif (preg_match('/Chrome/i', $ua)) {
+            $browser = 'Chrome';
+        } elseif (preg_match('/Safari/i', $ua)) {
+            $browser = 'Safari';
+        }
+
+        if ($browser === null) {
+            return $os === 'Tidak dikenal' ? 'Browser tidak dikenal' : 'Browser tidak dikenal di ' . $os;
+        }
+
+        return $os === 'Tidak dikenal' ? $browser : $browser . ' di ' . $os;
     }
 }
 
