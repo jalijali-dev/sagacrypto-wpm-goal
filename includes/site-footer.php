@@ -171,6 +171,26 @@ $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushW
   }
   .wpm-push-optin[hidden] { display: none; }
   @media (min-width: 768px) { .wpm-push-optin { left: 24px; bottom: 24px; } }
+
+  /* Fixed 28 Agu 2026 — this <style> block is printed near the end of
+     <body>, so it loads AFTER assets/css/site.css (linked in <head>).
+     At equal selector specificity, later source order wins regardless
+     of @media conditions, so site.css's own
+     "@media (max-width:767px) .wpm-push-optin { bottom: calc(...) }"
+     rule (added when the floating bottom nav was introduced, meant to
+     shift this button up so the bottom nav doesn't cover it) was being
+     silently overridden right back down to bottom:16px by the
+     unconditional rule above — and with z-index:40 vs the bottom nav's
+     z-index:260, the opaque bottom nav bar then rendered completely on
+     top of this button, hiding it entirely. Redeclaring the shift AND a
+     higher z-index here (same file, guaranteed to load last) fixes it
+     without relying on cross-file cascade order. */
+  @media (max-width: 767px) {
+    .wpm-push-optin {
+      bottom: calc(var(--wpm-bottom-nav-space, 78px) + env(safe-area-inset-bottom) + 4px);
+      z-index: 270;
+    }
+  }
 </style>
 <script>
 (function () {
