@@ -1642,7 +1642,13 @@ require dirname(__DIR__) . '/includes/alerts.php';
       statusEl.textContent = 'Generating…';
 
       var controller = new AbortController();
-      var abortTimer = setTimeout(function () { controller.abort(); }, 65000);
+      // Raised 65s -> 5 menit (28 Agu 2026, permintaan operator) — 65s
+      // masih kepotong buat artikel yang butuh waktu lebih lama digenerate.
+      // Backend juga dinaikkan biar konsisten: set_time_limit(130 -> 310)
+      // di article-generate.php, CURLOPT_TIMEOUT (120 -> 280) di
+      // ai-helpers.php — semua di atas 5 menit client-side ini biar PHP
+      // tidak motong request duluan sebelum abort timer ini sempat jalan.
+      var abortTimer = setTimeout(function () { controller.abort(); }, 300000);
 
       fetch('<?= cms_esc(cms_api_href('article-generate.php')) ?>', {
         method: 'POST',

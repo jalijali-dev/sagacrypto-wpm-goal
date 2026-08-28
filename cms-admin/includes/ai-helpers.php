@@ -223,11 +223,15 @@ function cms_ai_call_anthropic(
         // means the request never even got a first byte back in 30s, not a
         // malformed/rejected request. cms_ai_call_openai_image() below
         // already uses 90s for the same "this genuinely takes longer"
-        // reason; bumped further to 120s here since full-article text
-        // generation can run longer than image generation for a big
-        // max_tokens value. Short calls (SEO meta only, etc.) finish well
-        // before this and are unaffected — this only raises the ceiling.
-        CURLOPT_TIMEOUT => 120,
+        // reason; bumped to 120s, then to 280s (28 Aug 2026, operator still
+        // hit the 120s ceiling) since full-article text generation can run
+        // longer than image generation for a big max_tokens value — paired
+        // with the client-side abort timer bump to 5 menit and
+        // set_time_limit(310) in article-generate.php so nothing downstream
+        // cuts the request off before this has a chance to finish. Short
+        // calls (SEO meta only, etc.) finish well before this and are
+        // unaffected — this only raises the ceiling.
+        CURLOPT_TIMEOUT => 280,
     ]);
     $response = curl_exec($ch);
     $httpStatus = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -291,8 +295,9 @@ function cms_ai_call_openai(
         ],
         CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE),
         // See the matching comment in cms_ai_call_anthropic() above — same
-        // fix, same reason (30s was too short for full article generation).
-        CURLOPT_TIMEOUT => 120,
+        // fix, same reason (30s was too short for full article generation,
+        // then 120s too on some slower generations; now 280s, 28 Aug 2026).
+        CURLOPT_TIMEOUT => 280,
     ]);
     $response = curl_exec($ch);
     $httpStatus = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
