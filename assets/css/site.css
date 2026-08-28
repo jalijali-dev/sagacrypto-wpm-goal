@@ -1378,6 +1378,18 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 .pagination .is-current { background: var(--grad-brand); color: #fff; border-color: transparent; }
 .pagination .is-disabled { opacity: 0.35; pointer-events: none; }
 
+/* "Muat Lebih Banyak" (28 Agu 2026) — replaces numbered .pagination on
+   index.php's homepage feed only; kategori.php/pencarian.php still use
+   the numbered nav above for now. */
+.load-more { display: flex; justify-content: center; margin-top: 32px; }
+.load-more__btn {
+  padding: 12px 32px; border-radius: 999px; border: 1px solid var(--border-glass);
+  background: var(--surface-glass-2); color: var(--text); font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: border-color 0.16s ease, background 0.16s ease, opacity 0.16s ease;
+}
+.load-more__btn:hover { border-color: var(--border-glow); background: rgba(var(--accent-rgb), 0.10); }
+.load-more__btn:disabled { opacity: 0.6; cursor: default; }
+
 /* ============================================================
    ARTICLE DETAIL PAGE
    ============================================================ */

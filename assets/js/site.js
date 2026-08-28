@@ -51,6 +51,53 @@
     });
   }
 
+  /* Homepage "Muat Lebih Banyak" (28 Agu 2026) — replaces numbered
+     pagination on index.php. Fetches api/load-more-articles.php (an HTML
+     fragment, not JSON) and appends rows into #wpm-news-list. Button
+     itself carries all the state (tab/sport/next page) via data-*
+     attributes set server-side in index.php, so this needs no knowledge
+     of the current URL's query string. */
+  var loadMoreWrap = document.getElementById("wpm-load-more");
+  var loadMoreBtn = document.getElementById("wpm-load-more-btn");
+  var newsList = document.getElementById("wpm-news-list");
+  if (loadMoreWrap && loadMoreBtn && newsList) {
+    loadMoreBtn.addEventListener("click", function () {
+      var tab = loadMoreWrap.getAttribute("data-tab") || "terbaru";
+      var sport = loadMoreWrap.getAttribute("data-sport") || "";
+      var nextPage = parseInt(loadMoreWrap.getAttribute("data-next-page") || "2", 10) || 2;
+
+      var url = "api/load-more-articles.php?tab=" + encodeURIComponent(tab) + "&page=" + nextPage;
+      if (sport !== "") { url += "&sport=" + encodeURIComponent(sport); }
+
+      loadMoreBtn.disabled = true;
+      loadMoreBtn.textContent = "Memuat...";
+
+      fetch(url)
+        .then(function (res) {
+          var hasMore = res.headers.get("X-Has-More") === "1";
+          return res.text().then(function (html) { return { html: html, hasMore: hasMore }; });
+        })
+        .then(function (result) {
+          if (result.html.trim() !== "") {
+            newsList.insertAdjacentHTML("beforeend", result.html);
+          }
+          if (result.hasMore) {
+            loadMoreWrap.setAttribute("data-next-page", String(nextPage + 1));
+            loadMoreBtn.disabled = false;
+            loadMoreBtn.textContent = "Muat Lebih Banyak";
+          } else {
+            loadMoreWrap.remove();
+          }
+        })
+        .catch(function () {
+          // Network hiccup — let the visitor retry instead of silently
+          // stranding them with a dead button.
+          loadMoreBtn.disabled = false;
+          loadMoreBtn.textContent = "Coba Lagi";
+        });
+    });
+  }
+
   /* Popup / sticky-bottom ad dismiss buttons */
   var popupAd = document.getElementById("wpm-popup-ad");
   var popupClose = document.getElementById("wpm-popup-ad-close");

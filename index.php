@@ -163,7 +163,7 @@ require __DIR__ . '/includes/site-header.php';
                 <?php endif; ?>
 
                 <?php if ($feedArticles !== []) : ?>
-                    <div class="news-list">
+                    <div class="news-list" id="wpm-news-list">
                         <?php foreach ($feedArticles as $i => $article) : ?>
                             <?= wpm_news_list_row($article) ?>
                             <?php if ($i === 4) : ?>
@@ -176,13 +176,19 @@ require __DIR__ . '/includes/site-header.php';
                 <?php endif; ?>
 
                 <?php if ($totalPages > 1) : ?>
-                <nav class="pagination" aria-label="Pagination">
-                    <a class="<?= $page <= 1 ? 'is-disabled' : '' ?>" href="<?= wpm_esc($paginateUrl(max(1, $page - 1))) ?>">&larr;</a>
-                    <?php for ($p = 1; $p <= $totalPages; $p++) : ?>
-                        <a class="<?= $p === $page ? 'is-current' : '' ?>" href="<?= wpm_esc($paginateUrl($p)) ?>"><?= $p ?></a>
-                    <?php endfor; ?>
-                    <a class="<?= $page >= $totalPages ? 'is-disabled' : '' ?>" href="<?= wpm_esc($paginateUrl(min($totalPages, $page + 1))) ?>">&rarr;</a>
-                </nav>
+                <!-- "Muat Lebih Banyak" (28 Agu 2026) — ganti numbered pagination
+                     yang dirasa kaku di mobile (permintaan operator). JS di
+                     assets/js/site.js fetch api/load-more-articles.php dan
+                     append hasilnya ke #wpm-news-list. data-* di sini bawa
+                     semua state (tab/sport/page) yang tadinya ada di URL
+                     query string $paginateUrl(). -->
+                <div class="load-more" id="wpm-load-more"
+                     data-tab="<?= wpm_esc($tab) ?>"
+                     data-sport="<?= wpm_esc($activeSportKey ?? '') ?>"
+                     data-next-page="<?= $page + 1 ?>"
+                     data-has-more="<?= $page < $totalPages ? '1' : '0' ?>">
+                    <button type="button" class="load-more__btn" id="wpm-load-more-btn">Muat Lebih Banyak</button>
+                </div>
                 <?php endif; ?>
             </div>
 
