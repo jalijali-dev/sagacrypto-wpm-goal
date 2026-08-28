@@ -1834,7 +1834,10 @@ a.contact-info-row__value:hover { color: var(--cyan); }
    visible under. */
 @media (max-width: 767px) {
   .wpm-sticky-ad { bottom: calc(var(--wpm-bottom-nav-space) + env(safe-area-inset-bottom)); }
-  .wpm-push-optin { bottom: calc(var(--wpm-bottom-nav-space) + env(safe-area-inset-bottom) + 4px); }
+  /* .wpm-push-optin rule removed 28 Agu 2026 — that floating button was
+     replaced by a centered modal popup (see includes/site-footer.php,
+     .wpm-push-modal), which doesn't sit at the bottom of the screen and
+     has no collision with the bottom nav to correct for. */
   .floating-contact { bottom: calc(var(--wpm-bottom-nav-space) + env(safe-area-inset-bottom) + 4px); }
 
   /* The bottom nav is position:fixed (overlays content, doesn't push

@@ -157,65 +157,136 @@ $wpmPushWebConfig = $wpmPushWebConfigRaw !== '' ? json_decode($wpmPushWebConfigR
 $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushWebConfig);
 ?>
 <?php if ($wpmPushReady) : ?>
-<button type="button" id="wpm-push-optin" class="wpm-push-optin" aria-label="Aktifkan notifikasi artikel baru" hidden>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="18" height="18"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-    <span>Aktifkan Notifikasi</span>
-</button>
+<!-- Redesigned 28 Agu 2026 (was a floating bottom pill button — kept
+     colliding/stacking with other floating mobile elements: sticky ad,
+     WhatsApp/Telegram, bottom nav). Now a centered modal with
+     persuasive copy, shown once per eligible visit rather than a
+     persistent floating button. -->
+<div id="wpm-push-modal" class="wpm-push-modal" hidden>
+    <div class="wpm-push-modal__backdrop" id="wpm-push-modal-backdrop"></div>
+    <div class="wpm-push-modal__card" role="dialog" aria-modal="true" aria-labelledby="wpm-push-modal-title">
+        <div class="wpm-push-modal__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="28" height="28"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </div>
+        <h3 id="wpm-push-modal-title" class="wpm-push-modal__title">Jangan Ketinggalan Berita Bola!</h3>
+        <p class="wpm-push-modal__body">Aktifkan notifikasi biar kamu tau duluan tiap ada hasil pertandingan, gosip transfer, sampai skandal terbaru — langsung masuk ke HP kamu, 100% <strong>GRATIS</strong>. Bisa dimatiin kapan aja.</p>
+        <div class="wpm-push-modal__actions">
+            <button type="button" id="wpm-push-modal-allow" class="wpm-push-modal__btn wpm-push-modal__btn--primary">Aktifkan Notifikasi</button>
+            <button type="button" id="wpm-push-modal-later" class="wpm-push-modal__btn wpm-push-modal__btn--secondary">Nanti Saja</button>
+        </div>
+    </div>
+</div>
 <style>
-  .wpm-push-optin {
-    position: fixed; left: 16px; bottom: 16px; z-index: 40;
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 10px 14px; border-radius: 999px; border: none;
-    background: #fb923c; color: #0a0618; font-size: 13px; font-weight: 600;
-    box-shadow: 0 6px 18px rgba(0,0,0,.25); cursor: pointer;
+  .wpm-push-modal {
+    position: fixed; inset: 0; z-index: 300;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
   }
-  .wpm-push-optin[hidden] { display: none; }
-  @media (min-width: 768px) { .wpm-push-optin { left: 24px; bottom: 24px; } }
-
-  /* Fixed 28 Agu 2026 — this <style> block is printed near the end of
-     <body>, so it loads AFTER assets/css/site.css (linked in <head>).
-     At equal selector specificity, later source order wins regardless
-     of @media conditions, so site.css's own
-     "@media (max-width:767px) .wpm-push-optin { bottom: calc(...) }"
-     rule (added when the floating bottom nav was introduced, meant to
-     shift this button up so the bottom nav doesn't cover it) was being
-     silently overridden right back down to bottom:16px by the
-     unconditional rule above — and with z-index:40 vs the bottom nav's
-     z-index:260, the opaque bottom nav bar then rendered completely on
-     top of this button, hiding it entirely. Redeclaring the shift AND a
-     higher z-index here (same file, guaranteed to load last) fixes it
-     without relying on cross-file cascade order. */
-  @media (max-width: 767px) {
-    .wpm-push-optin {
-      bottom: calc(var(--wpm-bottom-nav-space, 78px) + env(safe-area-inset-bottom) + 4px);
-      z-index: 270;
-    }
+  .wpm-push-modal[hidden] { display: none; }
+  .wpm-push-modal__backdrop {
+    /* Light backdrop, same idea as .wpm-popup-ad's own overlay elsewhere
+       on this site — just enough to separate the card from the page
+       behind it, not a heavy full-screen block-out. */
+    position: absolute; inset: 0;
+    background: rgba(10, 6, 24, 0.4);
   }
+  .wpm-push-modal__card {
+    position: relative;
+    max-width: 320px; width: 100%;
+    background: #17102b;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 18px;
+    padding: 22px 20px 18px;
+    text-align: center;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    animation: wpm-push-modal-in 0.22s ease-out;
+  }
+  @keyframes wpm-push-modal-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .wpm-push-modal__icon {
+    width: 46px; height: 46px; margin: 0 auto 12px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%);
+    color: #0a0618;
+  }
+  .wpm-push-modal__icon svg { width: 22px; height: 22px; }
+  .wpm-push-modal__title {
+    font-size: 16px; font-weight: 700; color: #fff;
+    margin: 0 0 8px; line-height: 1.3;
+  }
+  .wpm-push-modal__body {
+    font-size: 13px; line-height: 1.55; color: rgba(255, 255, 255, 0.75);
+    margin: 0 0 18px;
+  }
+  .wpm-push-modal__body strong { color: #fb923c; }
+  .wpm-push-modal__actions { display: flex; flex-direction: column; gap: 10px; }
+  .wpm-push-modal__btn {
+    width: 100%; padding: 12px 16px; border-radius: 999px; border: none;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+  .wpm-push-modal__btn:active { transform: scale(0.98); }
+  .wpm-push-modal__btn--primary {
+    background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%);
+    color: #0a0618;
+    box-shadow: 0 6px 18px rgba(251, 146, 60, 0.35);
+  }
+  .wpm-push-modal__btn--secondary {
+    background: transparent; color: rgba(255, 255, 255, 0.55);
+  }
+  .wpm-push-modal__btn:disabled { opacity: 0.6; cursor: default; }
 </style>
 <script>
 (function () {
-  var btn = document.getElementById('wpm-push-optin');
-  if (!btn || !('Notification' in window) || !('serviceWorker' in navigator)) { return; }
+  var modal = document.getElementById('wpm-push-modal');
+  var allowBtn = document.getElementById('wpm-push-modal-allow');
+  var laterBtn = document.getElementById('wpm-push-modal-later');
+  var backdrop = document.getElementById('wpm-push-modal-backdrop');
+  if (!modal || !allowBtn || !('Notification' in window) || !('serviceWorker' in navigator)) { return; }
 
   var VAPID_KEY = <?= json_encode($wpmPushVapidKey) ?>;
   var WEB_CONFIG = <?= json_encode($wpmPushWebConfig) ?>;
   var SUBSCRIBE_URL = <?= json_encode(wpm_esc(wpm_site_url('api/push-subscribe.php'))) ?>;
 
-  // Fixed 27 Aug 2026: this used to also gate on a localStorage flag
-  // ('wpm_push_subscribed') set the first time someone subscribed. That
-  // flag never got cleared, so a visitor who later hit Chrome's own
-  // per-notification "Unsubscribe" action (which resets the browser's
-  // Notification.permission back to 'default') would never see the
-  // opt-in button reappear — the stale flag kept hiding it forever.
-  // Notification.permission itself is the single source of truth for
-  // "can we (re-)offer this right now": 'default' means never
-  // granted/denied, OR reset back to that state after an unsubscribe —
-  // either way, offering the button again is exactly correct. A denied
-  // permission can't be re-requested by JS anyway (browser policy), so
-  // there's nothing useful to offer in that state.
-  if (Notification.permission === 'default') {
-    btn.hidden = false;
+  // "Nanti Saja" dismissal — redesigned 28 Agu 2026 from a persistent
+  // floating button into a modal popup. A modal that pops up on EVERY
+  // page view for a visitor who already said "not now" would get
+  // annoying fast (unlike the old quiet floating button), so dismissing
+  // suppresses it for a few days rather than the whole rest of the
+  // session/forever. Notification.permission is still the real source
+  // of truth for "has this been resolved" (see the 27 Aug 2026 fix
+  // below it) — this localStorage key ONLY throttles re-showing the
+  // popup itself, it never blocks the actual subscribe flow.
+  var DISMISS_KEY = 'wpm_push_modal_dismissed_at';
+  var DISMISS_SNOOZE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+  function recentlyDismissed() {
+    try {
+      var at = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10) || 0;
+      return (Date.now() - at) < DISMISS_SNOOZE_MS;
+    } catch (e) { return false; }
   }
+  function markDismissed() {
+    try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (e) {}
+  }
+
+  // Fixed 27 Aug 2026, still applies to the modal: Notification.permission
+  // itself is the single source of truth for "can we (re-)offer this
+  // right now" — 'default' means never granted/denied, OR reset back to
+  // that state after a browser-level unsubscribe. A denied permission
+  // can't be re-requested by JS anyway, so there's nothing to offer then.
+  if (Notification.permission === 'default' && !recentlyDismissed()) {
+    // Small delay so the popup doesn't fight the page's own initial
+    // render/paint, and doesn't feel like it's ambushing the visitor
+    // before they've even seen the page.
+    setTimeout(function () { modal.hidden = false; }, 1500);
+  }
+
+  function closeModal() { modal.hidden = true; }
+  laterBtn.addEventListener('click', function () { markDismissed(); closeModal(); });
+  backdrop.addEventListener('click', function () { markDismissed(); closeModal(); });
 
   var firebaseLoadPromise = null;
   function loadFirebaseSdk() {
@@ -281,22 +352,24 @@ $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushW
       });
   }
 
-  btn.addEventListener('click', function () {
-    btn.disabled = true;
+  allowBtn.addEventListener('click', function () {
+    allowBtn.disabled = true;
     Notification.requestPermission().then(function (permission) {
       if (permission !== 'granted') {
-        btn.hidden = true; // denied or dismissed — stop offering this session
+        closeModal(); // denied or dismissed — stop offering this session
         return;
       }
       return registerToken().then(function () {
-        btn.hidden = true;
+        closeModal();
       });
     }).catch(function () {
       // Permission API rejected, Firebase CDN unreachable, getToken()
-      // failed, subscribe request failed — whatever it was, just leave
-      // the button visible/re-enabled so the visitor can try again,
-      // never let this throw further or break the rest of the page.
-      btn.disabled = false;
+      // failed, subscribe request failed — whatever it was, just close
+      // the popup so the visitor isn't stuck staring at it; the modal
+      // reappears on a later visit (subject to the dismiss snooze) since
+      // Notification.permission is still 'default' if it never granted.
+      allowBtn.disabled = false;
+      closeModal();
     });
   });
 
