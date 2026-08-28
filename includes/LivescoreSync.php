@@ -237,6 +237,14 @@ function wpm_sync_leagues_teams(PDO $pdo, bool $force = false): array
  */
 function wpm_sync_fixtures(PDO $pdo, bool $force = false): array
 {
+    // Audit trail for "when was this fixture's score last actually
+    // confirmed against the API" (28 Aug 2026, stale-FT-score fix — see
+    // docs/DECISIONS.md). Before this column existed there was no way to
+    // tell from the DB alone whether a fixture's score was fresh or had
+    // been sitting stale since some earlier sync gap; only status_short
+    // was visible. Set on every row $upsertBatch touches, further down.
+    cms_ensure_column($pdo, 'fixtures', 'score_last_verified_at', 'DATETIME NULL');
+
     $messages = [];
 
     if (!LivescoreSettings::isActive($pdo)) {
@@ -261,21 +269,30 @@ function wpm_sync_fixtures(PDO $pdo, bool $force = false): array
     // (a team plays several fixtures across the date + live passes).
     $seenTeamIds = [];
 
+    // score_last_verified_at is set to UTC_TIMESTAMP() directly in the SQL
+    // (not a bound :placeholder) on both the INSERT and UPDATE branches —
+    // this project's PDO connection runs with native prepares
+    // (ATTR_EMULATE_PREPARES => false), which does NOT allow reusing one
+    // named placeholder twice in the same statement, so a literal SQL
+    // function call here sidesteps that entirely rather than needing two
+    // separate `:verified_at_insert`/`:verified_at_update` params bound to
+    // the same PHP-side value.
     $fixtureUpsert = $pdo->prepare(
         'INSERT INTO fixtures (
             id, league_id, season, round, kickoff_at, timezone, venue_name, referee,
             status_short, status_long, elapsed, home_team_id, away_team_id,
-            home_score, away_score, ht_home_score, ht_away_score
+            home_score, away_score, ht_home_score, ht_away_score, score_last_verified_at
          ) VALUES (
             :id, :league_id, :season, :round, :kickoff_at, :timezone, :venue_name, :referee,
             :status_short, :status_long, :elapsed, :home_team_id, :away_team_id,
-            :home_score, :away_score, :ht_home_score, :ht_away_score
+            :home_score, :away_score, :ht_home_score, :ht_away_score, UTC_TIMESTAMP()
          )
          ON DUPLICATE KEY UPDATE
            round = VALUES(round), kickoff_at = VALUES(kickoff_at), venue_name = VALUES(venue_name),
            referee = VALUES(referee), status_short = VALUES(status_short), status_long = VALUES(status_long),
            elapsed = VALUES(elapsed), home_score = VALUES(home_score), away_score = VALUES(away_score),
-           ht_home_score = VALUES(ht_home_score), ht_away_score = VALUES(ht_away_score)'
+           ht_home_score = VALUES(ht_home_score), ht_away_score = VALUES(ht_away_score),
+           score_last_verified_at = UTC_TIMESTAMP()'
     );
 
     /**
@@ -390,19 +407,73 @@ function wpm_sync_fixtures(PDO $pdo, bool $force = false): array
         }
     }
 
-    // Pass 2.5 — finalization safety net (25 Jul 2026 stale-fixture fix).
-    // The live pass above only ever UPSERTs whatever API-Football's
-    // ?live= endpoint currently returns — once a fixture finishes, the
-    // provider drops it from that response entirely instead of reporting
-    // it as FT, so nothing in this file ever explicitly closes it out. If
-    // a quota outage (or any gap) happens to hit right as a match ends,
-    // that fixture is stuck on its last live status (1H/HT/2H/ET/P)
-    // forever. This is a pure DB UPDATE — zero API calls, safe to run
-    // unconditionally on every invocation regardless of throttling.
-    // Threshold: kickoff + 3h covers every normal match length (incl.
-    // extra time) with margin; NS is deliberately excluded here — a
-    // fixture that never went live isn't safe to assume finished (could
-    // be genuinely postponed), see the stale-NS re-verify pass below instead.
+    // Pass 2.5 — finalization safety net (25 Jul 2026 stale-fixture fix;
+    // score-reconcile-before-force-close added 28 Aug 2026, see
+    // docs/DECISIONS.md). The live pass above only ever UPSERTs whatever
+    // API-Football's ?live= endpoint currently returns — once a fixture
+    // finishes, the provider drops it from that response entirely instead
+    // of reporting it as FT, so nothing else in this file explicitly
+    // closes it out. If a quota outage (or any gap) happens to hit right
+    // as a match ends, that fixture is stuck on its last live status
+    // (1H/HT/2H/ET/P) forever. Threshold: kickoff + 3h covers every normal
+    // match length (incl. extra time) with margin; NS is deliberately
+    // excluded here — a fixture that never went live isn't safe to assume
+    // finished (could be genuinely postponed), see the stale-NS re-verify
+    // pass below instead.
+    //
+    // 28 Aug 2026 fix (operator report: Real Madrid vs Real Sociedad shown
+    // as FT 2-1 on the site, actual final score was 4-1): this pass used
+    // to be a pure status UPDATE that never touched home_score/away_score
+    // — so a fixture that went stale mid-match got its LAST-SEEN score
+    // (not the real final one) locked in permanently the instant status
+    // flipped to FT, with no way to ever correct it afterward (once FT,
+    // nothing else in this file re-touches it). Now re-verifies each
+    // about-to-be-finalized fixture against the API FIRST — same
+    // date-grouped /fixtures?date= pattern as the stale-NS pass below
+    // (confirmed /fixtures?ids= is NOT available on this free plan) — and
+    // upserts whatever comes back (correct status AND score, via
+    // $upsertBatch) before the blind fallback UPDATE ever runs. A fixture
+    // the re-verify successfully refreshes no longer matches the fallback
+    // UPDATE's WHERE clause (its status_short is no longer stuck in the
+    // live-status list), so the fallback can only ever touch fixtures the
+    // re-verify genuinely couldn't confirm — same "we have no better data,
+    // don't invent a score" last-resort case as before, just no longer the
+    // ONLY path. Capped to 3 distinct dates per run, same budget as the
+    // stale-NS pass, so a large backlog (e.g. after long cron downtime)
+    // can't blow the quota by itself.
+    $staleLiveDates = $pdo->query(
+        "SELECT DISTINCT DATE(kickoff_at) AS d FROM fixtures
+         WHERE status_short IN ('1H','HT','2H','ET','P')
+           AND kickoff_at < UTC_TIMESTAMP() - INTERVAL 3 HOUR
+         ORDER BY d ASC
+         LIMIT 3"
+    )->fetchAll(PDO::FETCH_COLUMN);
+
+    $staleLiveReverified = 0;
+    foreach ($staleLiveDates as $staleLiveDate) {
+        $reverifyResult = $client->fixtures(['date' => $staleLiveDate]);
+        if (!$reverifyResult['ok']) {
+            $messages[] = "Finalization re-verify ({$staleLiveDate}): FAILED ({$reverifyResult['error']})";
+            wpm_log_api_error($pdo, 'football_fixtures_finalize_reverify', "{$staleLiveDate}: {$reverifyResult['error']}");
+            if (wpm_is_quota_error($reverifyResult['error'])) {
+                LivescoreSettings::recordSyncFailure($pdo, $reverifyResult['error']);
+                $quotaFailureThisRun = true;
+            }
+            break;
+        }
+        $staleLiveReverified += $upsertBatch($reverifyResult['data']['response'] ?? []);
+    }
+    if ($staleLiveReverified > 0) {
+        $messages[] = "Finalization re-verify: {$staleLiveReverified} stale live fixture(s) refreshed with real status/score across " . count($staleLiveDates) . " date(s).";
+    }
+
+    // Fallback — whatever is STILL stuck in a live status after the
+    // re-verify above (API didn't return it this run, re-verify call
+    // itself failed, or more than 3 stale dates existed) gets force-closed
+    // to FT exactly like before, WITHOUT touching home_score/away_score —
+    // last-resort behavior unchanged, this is the "no better data
+    // available" case, never a place to invent a score. Pure DB UPDATE,
+    // zero API calls, safe to run unconditionally every invocation.
     $finalizeStmt = $pdo->prepare(
         "UPDATE fixtures
          SET status_short = 'FT', status_long = 'Match Finished (auto-finalized — stale live status)'
@@ -412,7 +483,7 @@ function wpm_sync_fixtures(PDO $pdo, bool $force = false): array
     $finalizeStmt->execute();
     $staleFinalized = $finalizeStmt->rowCount();
     if ($staleFinalized > 0) {
-        $messages[] = "Finalization: {$staleFinalized} stale live fixture(s) force-closed to FT (kickoff was 3h+ ago).";
+        $messages[] = "Finalization: {$staleFinalized} stale live fixture(s) force-closed to FT (kickoff was 3h+ ago) — no fresh score data available for these from the re-verify pass.";
     }
 
     // Pass 2.6 — stale-NS re-verify (25 Jul 2026). Unlike the live-status
