@@ -268,12 +268,12 @@ $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushW
   // into permanently blocking notifications (a 'denied' permission
   // can't be reset by JS, unlike 'default'), and Chrome can silently
   // downgrade an origin's permission prompts to a "quiet" UI site-wide
-  // if it detects spammy repeated requests. 6 hours is still much more
-  // frequent than typical (industry norm is usually 3-7 days), while
-  // staying well clear of that risk. Still fully silenced the moment
-  // permission is actually 'granted' or 'denied' (see the check below),
-  // so this only affects visitors who keep saying "not now".
-  var DISMISS_SNOOZE_MS = 6 * 60 * 60 * 1000; // 6 hours
+  // if it detects spammy repeated requests. Operator explicitly requested
+  // shortening from 6h -> 1h (28 Agu 2026) for more frequent re-prompting.
+  // Still fully silenced the moment permission is actually 'granted' or
+  // 'denied' (see the check below), so this only affects visitors who
+  // keep saying "not now".
+  var DISMISS_SNOOZE_MS = 1 * 60 * 60 * 1000; // 1 hour
   function recentlyDismissed() {
     try {
       var at = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10) || 0;
