@@ -261,7 +261,19 @@ $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushW
   // below it) — this localStorage key ONLY throttles re-showing the
   // popup itself, it never blocks the actual subscribe flow.
   var DISMISS_KEY = 'wpm_push_modal_dismissed_at';
-  var DISMISS_SNOOZE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+  // Changed 28 Agu 2026 (was 3 days, briefly tried 5 minutes) — operator
+  // wants visitors who haven't subscribed yet to keep getting
+  // re-prompted more often than the original 3-day snooze, but 5
+  // minutes turned out too aggressive: real risk of annoying visitors
+  // into permanently blocking notifications (a 'denied' permission
+  // can't be reset by JS, unlike 'default'), and Chrome can silently
+  // downgrade an origin's permission prompts to a "quiet" UI site-wide
+  // if it detects spammy repeated requests. 6 hours is still much more
+  // frequent than typical (industry norm is usually 3-7 days), while
+  // staying well clear of that risk. Still fully silenced the moment
+  // permission is actually 'granted' or 'denied' (see the check below),
+  // so this only affects visitors who keep saying "not now".
+  var DISMISS_SNOOZE_MS = 6 * 60 * 60 * 1000; // 6 hours
   function recentlyDismissed() {
     try {
       var at = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10) || 0;
@@ -277,12 +289,28 @@ $wpmPushReady = $wpmPushEnabled && $wpmPushVapidKey !== '' && is_array($wpmPushW
   // right now" — 'default' means never granted/denied, OR reset back to
   // that state after a browser-level unsubscribe. A denied permission
   // can't be re-requested by JS anyway, so there's nothing to offer then.
+  function maybeShowModal() {
+    if (Notification.permission === 'default' && modal.hidden && !recentlyDismissed()) {
+      modal.hidden = false;
+    }
+  }
+
   if (Notification.permission === 'default' && !recentlyDismissed()) {
     // Small delay so the popup doesn't fight the page's own initial
     // render/paint, and doesn't feel like it's ambushing the visitor
     // before they've even seen the page.
-    setTimeout(function () { modal.hidden = false; }, 1500);
+    setTimeout(maybeShowModal, 1500);
   }
+
+  // Re-check periodically (28 Agu 2026) — a visitor who dismisses and
+  // then just keeps reading the SAME page (no reload/navigation) would
+  // otherwise never see this again until their next page load, even
+  // after the 5-minute snooze above expires. This makes the snooze
+  // actually take effect while staying on one page too, not just across
+  // navigations. Harmless once permission is granted/denied — the
+  // Notification.permission check inside maybeShowModal() makes this a
+  // no-op forever after that point.
+  setInterval(maybeShowModal, 5 * 60 * 1000);
 
   function closeModal() { modal.hidden = true; }
   laterBtn.addEventListener('click', function () { markDismissed(); closeModal(); });
