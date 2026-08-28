@@ -1649,7 +1649,13 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 
 @media (max-width: 640px) {
   .article-share { flex-wrap: wrap; }
-  .crypto-nav__search-btn { display: none; }
+  /* .crypto-nav__search-btn used to be display:none here (search was
+     unreachable on mobile at all — no icon anywhere) — removed 28 Agu
+     2026. Originally hidden to save cramped header space when the
+     hamburger toggle (.crypto-nav__toggle) also lived here; now that the
+     hamburger is itself hidden on mobile (bottom nav's own "Menu" button
+     replaces it, see @media max-width:767px rule for .crypto-nav__toggle
+     further down), there's room for this again. */
   /* Same specificity (0,2,0) as the desktop-only 2-col override above, but
      declared later in the cascade so it wins the tie at this breakpoint —
      without it the compound selector's specificity would beat the plain

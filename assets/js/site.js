@@ -13,10 +13,18 @@
   function closeMobile() {
     if (mobile) { mobile.classList.remove("is-open"); }
   }
+  // Toggle (28 Agu 2026) — the bottom nav's "Menu" button used to only
+  // ever call openMobile(), so clicking it again while the drawer was
+  // already open did nothing (only the X button or backdrop/Escape could
+  // close it). Now it flips open/closed like a normal toggle button.
+  function toggleMobile() {
+    if (!mobile) { return; }
+    if (mobile.classList.contains("is-open")) { closeMobile(); } else { openMobile(); }
+  }
 
-  if (toggle) { toggle.addEventListener("click", openMobile); }
+  if (toggle) { toggle.addEventListener("click", toggleMobile); }
   if (closeBtn) { closeBtn.addEventListener("click", closeMobile); }
-  if (bottomNavMenuBtn) { bottomNavMenuBtn.addEventListener("click", openMobile); }
+  if (bottomNavMenuBtn) { bottomNavMenuBtn.addEventListener("click", toggleMobile); }
   if (mobile) {
     mobile.addEventListener("click", function (e) {
       if (e.target === mobile) { closeMobile(); }
