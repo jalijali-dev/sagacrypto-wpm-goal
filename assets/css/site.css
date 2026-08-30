@@ -502,10 +502,16 @@ body.crypto-theme {
    width/height/display:grid sizing, which isn't right for this much
    wider horizontal lockup. */
 .app-promo-card__logo { max-width: 220px; margin: 0 auto 18px; }
-.app-promo-card__logo img { width: 100%; height: auto; display: block; }
-.app-promo-logo--black { display: none; }
-:root[data-theme="light"] .app-promo-logo--white { display: none; }
-:root[data-theme="light"] .app-promo-logo--black { display: block; }
+.app-promo-card__logo img { width: 100%; height: auto; }
+/* Fixed 30 Agu 2026 — the show/hide rules below were losing to the plain
+   ".app-promo-card__logo img" rule above on CSS specificity (class+tag
+   beats a single class, regardless of cascade order), so both logos
+   showed stacked in dark mode. Every rule here now matches that same
+   ".app-promo-card__logo img.<class>" shape so specificity is equal and
+   the LAST matching rule (cascade order) correctly wins, like intended. */
+.app-promo-card__logo img.app-promo-logo--black { display: none; }
+:root[data-theme="light"] .app-promo-card__logo img.app-promo-logo--white { display: none; }
+:root[data-theme="light"] .app-promo-card__logo img.app-promo-logo--black { display: block; }
 .app-promo-card__title { font-size: 22px; }
 
 /* Selector qualified with .app-promo-card (not just .app-promo-card__subtitle)
