@@ -1070,7 +1070,10 @@ function wpm_app_promo_section(?PDO $pdo = null): string
 <section class="crypto-section--tight">
     <div class="crypto-container">
         <div class="glass-card crypto-card app-promo-card">
-            <div class="crypto-card__icon app-promo-card__icon">' . wpm_icon('rocket') . '</div>
+            <div class="app-promo-card__logo">
+                <img class="app-promo-logo--white" src="assets/img/sagagoal-logo-white.png" alt="Sagagoal">
+                <img class="app-promo-logo--black" src="assets/img/sagagoal-logo-black.png" alt="Sagagoal">
+            </div>
             <h3 class="app-promo-card__title">Aplikasi Sagagoal — Segera Hadir</h3>
             <p class="app-promo-card__subtitle">Pantau live score dan jadwal pertandingan langsung dari genggaman. Aplikasi Android &amp; iOS sedang dalam pengembangan.</p>
             <div class="app-promo-card__badges">

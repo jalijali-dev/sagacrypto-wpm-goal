@@ -494,7 +494,18 @@ body.crypto-theme {
   background: linear-gradient(160deg, rgba(var(--accent-rgb), 0.12), rgba(var(--accent-rgb), 0.02) 60%), var(--surface-glass);
 }
 
-.app-promo-card__icon { margin: 0 auto 16px; }
+/* Replaced 30 Agu 2026 (was a rocket icon in a small gradient square) —
+   operator wants the actual Sagagoal logo lockup here instead, sized
+   "pas" (not too big). Same light/dark swap pattern as the header's dual
+   logo (.wpm-logo--light/--dark) but its own class names — reusing those
+   header classes directly would inherit .crypto-logo__mark's own
+   width/height/display:grid sizing, which isn't right for this much
+   wider horizontal lockup. */
+.app-promo-card__logo { max-width: 220px; margin: 0 auto 18px; }
+.app-promo-card__logo img { width: 100%; height: auto; display: block; }
+.app-promo-logo--black { display: none; }
+:root[data-theme="light"] .app-promo-logo--white { display: none; }
+:root[data-theme="light"] .app-promo-logo--black { display: block; }
 .app-promo-card__title { font-size: 22px; }
 
 /* Selector qualified with .app-promo-card (not just .app-promo-card__subtitle)
