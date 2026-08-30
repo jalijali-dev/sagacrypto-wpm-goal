@@ -304,10 +304,10 @@ require __DIR__ . '/includes/site-header.php';
 
                 <div class="article-share">
                     <span class="article-share__label">Bagikan:</span>
-                    <a href="https://wa.me/?text=<?= urlencode((string) $article['title'] . ' ' . $shareUrl) ?>" target="_blank" rel="noopener" aria-label="Bagikan ke WhatsApp"><?= wpm_icon('chat') ?></a>
-                    <a href="https://twitter.com/intent/tweet?text=<?= urlencode((string) $article['title']) ?>&amp;url=<?= urlencode($shareUrl) ?>" target="_blank" rel="noopener" aria-label="Bagikan ke Twitter/X"><?= wpm_icon('share') ?></a>
-                    <a href="https://www.facebook.com/sharer/sharer.php?u=<?= urlencode($shareUrl) ?>" target="_blank" rel="noopener" aria-label="Bagikan ke Facebook"><?= wpm_icon('network') ?></a>
-                    <button type="button" id="wpm-copy-link" title="Salin link" aria-label="Salin link"><?= wpm_icon('tag') ?></button>
+                    <a href="https://wa.me/?text=<?= urlencode((string) $article['title'] . ' ' . $shareUrl) ?>" target="_blank" rel="noopener" aria-label="Bagikan ke WhatsApp"><?= wpm_icon('whatsapp') ?></a>
+                    <a href="https://twitter.com/intent/tweet?text=<?= urlencode((string) $article['title']) ?>&amp;url=<?= urlencode($shareUrl) ?>" target="_blank" rel="noopener" aria-label="Bagikan ke Twitter/X"><?= wpm_icon('x-twitter') ?></a>
+                    <a href="https://www.facebook.com/sharer/sharer.php?u=<?= urlencode($shareUrl) ?>" target="_blank" rel="noopener" aria-label="Bagikan ke Facebook"><?= wpm_icon('facebook') ?></a>
+                    <button type="button" id="wpm-copy-link" title="Salin link" aria-label="Salin link"><?= wpm_icon('link') ?></button>
                 </div>
 
                 <?php if ($faqItems !== []) : ?>

@@ -32,6 +32,14 @@ function wpm_icon(string $name): string
 {
     static $icons = [
         'news' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='4' width='14' height='16' rx='1.5'/><path d='M17 8h3v10a2 2 0 0 1-2 2H7'/><line x1='6.5' y1='8' x2='13.5' y2='8'/><line x1='6.5' y1='11.5' x2='13.5' y2='11.5'/><line x1='6.5' y1='15' x2='11' y2='15'/></svg>",
+        // Brand icons for artikel.php's "Bagikan" row (28 Agu 2026) — the
+        // old row used generic icons (chat bubble/nodes/network shape) that
+        // didn't actually resemble WhatsApp/X/Facebook, just a rough
+        // visual stand-in. These are the real recognizable brand marks.
+        'whatsapp' => "<svg viewBox='0 0 24 24' fill='currentColor'><path d='M12 2.5A9.5 9.5 0 0 0 3.6 17l-1.1 4.5 4.6-1.2A9.5 9.5 0 1 0 12 2.5Zm5.6 13.4c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .1-1.7-.1-.4-.1-.9-.3-1.5-.6-2.7-1.2-4.5-3.9-4.6-4.1-.1-.2-1.1-1.4-1.1-2.7s.7-1.9 1-2.2c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.4.2.5.7 1.8.8 1.9.1.2.1.3 0 .5-.1.2-.1.3-.3.5l-.4.5c-.1.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.4.1.6-.1l.9-1c.2-.3.4-.2.7-.1.3.1 1.7.8 2 1 .3.1.5.2.5.3.1.2.1.6-.1 1.2Z'/></svg>",
+        'x-twitter' => "<svg viewBox='0 0 24 24' fill='currentColor'><path d='M13.6 10.6 20.3 3h-1.6l-5.8 6.6L8.3 3H3l7 10-7 8h1.6l6.1-7 4.9 7H21l-7.3-10.4Zm-2.2 2.5-.7-1L5.2 4.2h2.4l4.5 6.4.7 1 5.9 8.3h-2.4l-4.9-6.9Z'/></svg>",
+        'facebook' => "<svg viewBox='0 0 24 24' fill='currentColor'><path d='M14.5 21v-7.6h2.6l.4-3h-3v-1.9c0-.9.2-1.5 1.5-1.5h1.6V4.1c-.3 0-1.2-.1-2.3-.1-2.3 0-3.8 1.4-3.8 3.9v2.2H9v3h2.5V21h3Z'/></svg>",
+        'link' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M9.5 14.5 14.5 9.5'/><path d='M11 6.5l1-1a3.5 3.5 0 0 1 5 5l-1 1'/><path d='M13 17.5l-1 1a3.5 3.5 0 0 1-5-5l1-1'/></svg>",
         'chart' => "<svg viewBox='0 0 24 24' fill='currentColor'><rect x='3' y='13' width='4' height='8' rx='1'/><rect x='10' y='7' width='4' height='14' rx='1'/><rect x='17' y='10' width='4' height='11' rx='1'/></svg>",
         'eye' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><path d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z'/><circle cx='12' cy='12' r='3'/></svg>",
         'book' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><path d='M4 5.5A2.5 2.5 0 0 1 6.5 3H12v18H6.5A2.5 2.5 0 0 1 4 18.5v-13Z'/><path d='M20 5.5A2.5 2.5 0 0 0 17.5 3H12v18h5.5a2.5 2.5 0 0 0 2.5-2.5v-13Z'/></svg>",
