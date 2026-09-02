@@ -1,0 +1,215 @@
+/**
+ * Sagagoal Games — shared base styles (30 Agu 2026, Games Hub MVP).
+ *
+ * Deliberately its OWN design system, not a reuse of assets/css/site.css's
+ * orange/purple + glass-card look — operator explicitly asked for a
+ * different "gaming vibe" (neon, higher contrast) so this zone reads as a
+ * distinct product, not a themed extension of the news site. See
+ * docs/DECISIONS.md (30 Agu 2026) for the full reasoning. Loaded on BOTH
+ * games/index.php and games/air-hockey/index.php — air-hockey.css layers
+ * game-specific rules on top of this file, never duplicates it.
+ */
+
+:root {
+  --ah-bg: #06080f;
+  --ah-bg-2: #0c1120;
+  --ah-neon-green: #39ff88;
+  --ah-neon-cyan: #35e6ff;
+  --ah-neon-pink: #ff3d9a;
+  --ah-text: #eef3ff;
+  --ah-text-muted: #93a0c2;
+  --ah-border: rgba(57, 255, 136, 0.25);
+  --ah-font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+/* Slow-drifting multi-color glow behind the whole page (30 Agu 2026
+   revamp, "portal game" CrazyGames-style reference) — 3 radial blobs in
+   different accent colors, animated via background-position only (cheap:
+   no JS, no filter/blur recalculated per frame, just a compositor-level
+   position tween). Respects prefers-reduced-motion. */
+@keyframes wpmGamesBgDrift {
+  0%   { background-position: 15% 0%, 100% 20%, 40% 100%; }
+  50%  { background-position: 25% 10%, 90% 30%, 55% 90%; }
+  100% { background-position: 15% 0%, 100% 20%, 40% 100%; }
+}
+
+body.wpm-games {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--ah-bg);
+  background-image:
+    radial-gradient(ellipse 60% 40% at 15% 0%, rgba(53, 230, 255, 0.16) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 45% at 100% 20%, rgba(255, 61, 154, 0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 40% 100%, rgba(255, 176, 59, 0.12) 0%, transparent 55%);
+  background-size: 160% 160%;
+  animation: wpmGamesBgDrift 22s ease-in-out infinite;
+  color: var(--ah-text);
+  font-family: var(--ah-font);
+  -webkit-font-smoothing: antialiased;
+  padding: 16px 16px 40px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.wpm-games { animation: none; }
+}
+
+body.wpm-games a { color: inherit; text-decoration: none; }
+
+.wpm-games-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ah-neon-cyan);
+  padding: 8px 4px;
+}
+.wpm-games-back:hover { color: var(--ah-text); }
+
+/* ---- Landing hub ---- */
+.wpm-games-hero {
+  max-width: 720px;
+  margin: 24px auto 32px;
+  text-align: center;
+}
+.wpm-games-hero__kicker {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--ah-neon-green);
+}
+.wpm-games-hero__title {
+  margin: 0 0 10px;
+  font-size: clamp(28px, 6vw, 44px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-shadow: 0 0 24px rgba(57, 255, 136, 0.35);
+}
+.wpm-games-hero__sub {
+  margin: 0;
+  color: var(--ah-text-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.wpm-games-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* Per-card accent colors (30 Agu 2026 revamp) — CrazyGames-style "every
+   card its own color" instead of the MVP's one-green-for-everything.
+   Each variant only sets 2 custom properties; every other rule below
+   (icon tint, border, hover glow, active status pill) reads from these
+   instead of hardcoding a color, so adding a 4th/5th accent later is
+   just one more 2-line block, not new selectors scattered around. */
+.wpm-game-card--orange { --card-accent: #ffb03b; --card-accent-rgb: 255, 176, 59; }
+.wpm-game-card--cyan   { --card-accent: #35e6ff; --card-accent-rgb: 53, 230, 255; }
+.wpm-game-card--purple { --card-accent: #c05bff; --card-accent-rgb: 192, 91, 255; }
+
+.wpm-game-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 28px 20px 24px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--card-accent-rgb), 0.3);
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.wpm-game-card--active {
+  cursor: pointer;
+}
+.wpm-game-card--active:hover {
+  transform: translateY(-4px);
+  border-color: var(--card-accent);
+  box-shadow: 0 12px 40px rgba(var(--card-accent-rgb), 0.28);
+}
+
+.wpm-game-card--soon { opacity: 0.6; filter: saturate(0.7); }
+
+.wpm-game-card__icon {
+  display: flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(var(--card-accent-rgb), 0.14);
+  color: var(--card-accent);
+  box-shadow: 0 0 20px rgba(var(--card-accent-rgb), 0.25);
+}
+.wpm-game-card__icon svg { width: 26px; height: 26px; }
+
+.wpm-game-card__title { margin: 4px 0 0; font-size: 18px; font-weight: 700; }
+.wpm-game-card__tagline { margin: 0; font-size: 13px; color: var(--ah-text-muted); line-height: 1.5; }
+
+.wpm-game-card__status {
+  margin-top: 6px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wpm-game-card__status--active {
+  background: rgba(var(--card-accent-rgb), 0.18);
+  color: var(--card-accent);
+  border: 1px solid rgba(var(--card-accent-rgb), 0.45);
+}
+.wpm-game-card__status--soon {
+  background: rgba(147, 160, 194, 0.12);
+  color: var(--ah-text-muted);
+  border: 1px solid rgba(147, 160, 194, 0.25);
+}
+
+.wpm-games-footer {
+  max-width: 900px;
+  margin: 40px auto 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--ah-text-muted);
+}
+.wpm-games-footer a { color: var(--ah-neon-cyan); font-weight: 600; }
+
+/* ---- Shared small buttons (used by air-hockey.css too) ---- */
+.wpm-ah-btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--ah-font);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 12px 22px;
+  border-radius: 999px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.wpm-ah-btn:active { transform: scale(0.97); }
+
+.wpm-ah-btn--primary {
+  background: linear-gradient(135deg, var(--ah-neon-green), var(--ah-neon-cyan));
+  color: #04140c;
+  box-shadow: 0 8px 26px rgba(57, 255, 136, 0.3);
+}
+
+.wpm-ah-btn--ghost {
+  background: transparent;
+  color: var(--ah-text-muted);
+  border: 1px solid var(--ah-border);
+}
+.wpm-ah-btn--ghost:hover { color: var(--ah-text); border-color: var(--ah-neon-cyan); }
+
+@media (min-width: 768px) {
+  body.wpm-games { padding: 24px 24px 56px; }
+}

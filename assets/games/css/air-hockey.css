@@ -1,0 +1,195 @@
+/**
+ * Air Hockey — page-specific styles (30 Agu 2026, Games Hub MVP).
+ * Layers on top of games-landing.css (shared base/buttons) — never
+ * duplicates those rules.
+ *
+ * Show/hide for the 3 panels (#ah-panel-start, #ah-board, #ah-panel-end)
+ * uses the native `hidden` attribute, toggled from JS as a plain boolean
+ * (`el.hidden = true/false`) — never a custom CSS class for this. Every
+ * rule that shows one of these panels is gated `:not([hidden])`, so its
+ * specificity always includes the attribute check and can only ever win
+ * when the element ISN'T hidden; when it IS hidden, nothing here
+ * overrides the browser's own `[hidden] { display: none }` UA rule. This
+ * is deliberate after the 30 Agu 2026 "logo dobel muncul" bug elsewhere
+ * on the site (a plain `.class { display: none }` lost to an unrelated
+ * `.other-class img { display: block }` purely because the second
+ * selector happened to be more specific, not because it was meant to
+ * win) — see docs/DECISIONS.md. An unconditional `#id { display: flex }`
+ * here would reproduce exactly that bug against the `hidden` attribute.
+ */
+
+.wpm-ah-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 520px;
+  margin: 0 auto 8px;
+}
+.wpm-ah-topbar__title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ah-text-muted);
+}
+.wpm-ah-topbar__link { padding: 6px 4px; }
+.wpm-ah-topbar__right { display: flex; align-items: center; gap: 4px; }
+
+/* Sound toggle (30 Agu 2026 revamp) — plain emoji glyph, no icon font/SVG
+   sprite needed, swapped between 🔊/🔇 from JS on click. */
+.wpm-ah-mute-btn {
+  appearance: none;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ah-border);
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ah-text);
+}
+.wpm-ah-mute-btn:hover { border-color: var(--ah-neon-cyan); }
+.wpm-ah-mute-btn[aria-pressed="true"] { opacity: 0.5; }
+
+.wpm-ah-stage {
+  max-width: 520px;
+  margin: 12px auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.wpm-ah-panel {
+  width: 100%;
+  text-align: center;
+  padding: 32px 22px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--ah-border);
+}
+.wpm-ah-panel--overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  max-width: 340px;
+  margin: auto;
+  height: fit-content;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.wpm-ah-panel--overlay:not([hidden]) { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+.wpm-ah-panel__title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 800;
+  text-shadow: 0 0 20px rgba(57, 255, 136, 0.3);
+}
+.wpm-ah-panel__hint {
+  margin: 0 0 20px;
+  color: var(--ah-text-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.wpm-ah-panel--overlay .wpm-ah-panel__hint { margin-bottom: 4px; }
+
+.wpm-ah-difficulty {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+.wpm-ah-difficulty__btn {
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--ah-font);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ah-border);
+  color: var(--ah-text-muted);
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+.wpm-ah-difficulty__btn.is-selected {
+  color: #04140c;
+  background: var(--ah-neon-green);
+  border-color: var(--ah-neon-green);
+}
+
+.wpm-ah-board:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+/* "Gamer" scoreboard (30 Agu 2026 revamp) — bevel/gradient plate instead
+   of the plain flat-grey MVP readout, per the operator's arcade-scoreboard
+   reference. Achieved with layered CSS only (gradient background + inset
+   highlight/shadow + a gradient text fill on the numbers) — no images. */
+.wpm-ah-scoreboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #1c2540 0%, #0b0f1e 100%);
+  border: 1px solid rgba(53, 230, 255, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.5),
+    0 6px 22px rgba(0, 0, 0, 0.35);
+}
+.wpm-ah-scoreboard__side { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px; }
+.wpm-ah-scoreboard__label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ah-text-muted); }
+.wpm-ah-scoreboard__score {
+  font-size: 34px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #9fe8ff 60%, #35e6ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 18px rgba(53, 230, 255, 0.45);
+}
+.wpm-ah-scoreboard__vs {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #fff;
+  padding: 5px 12px;
+  background: linear-gradient(135deg, var(--ah-neon-pink), #ff8a3d);
+  border-radius: 999px;
+  box-shadow: 0 0 14px rgba(255, 61, 154, 0.5);
+}
+
+/* Rink frame (30 Agu 2026 revamp) — the pitch texture itself (gradient +
+   vignette + faint grid) is drawn ON the canvas in air-hockey.js's draw()
+   so it works at any resolution/DPR without an image asset; this wrapper
+   just adds the arcade-cabinet-style bezel + glow around it. */
+.wpm-ah-canvas-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  aspect-ratio: 2 / 3;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 3px solid rgba(255, 176, 59, 0.55);
+  box-shadow:
+    0 0 50px rgba(255, 176, 59, 0.22),
+    0 0 18px rgba(57, 255, 136, 0.18),
+    inset 0 0 30px rgba(0, 0, 0, 0.6);
+  touch-action: none;
+}
+#ah-canvas { display: block; width: 100%; height: 100%; }
+
+@media (min-width: 768px) {
+  .wpm-ah-stage { margin-top: 20px; }
+  .wpm-ah-canvas-wrap { max-width: 440px; }
+}
