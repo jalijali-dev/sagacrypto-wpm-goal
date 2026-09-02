@@ -203,6 +203,18 @@ require __DIR__ . '/includes/site-header.php';
                 </div>
                 <?php endif; ?>
 
+                <!-- Games Hub promo slot (30 Agu 2026, Games Hub MVP brief;
+                     moved ABOVE sidebar-right 2 Sep 2026 per operator request
+                     — wants it as the first/top ad in the sidebar stack, not
+                     the last) — reuses the same ad-slot system as everything
+                     else on this page (wpm_render_ad_slot()), NOT a separate
+                     ads mechanism. Renders empty until an operator creates
+                     the 'games-promo' position (cms-admin/pages/ad-positions.php)
+                     and an ad pointing at games/air-hockey/ for it
+                     (cms-admin/pages/ads.php) — same "safe to call before
+                     it's configured" behavior as sidebar-right below. -->
+                <?= wpm_render_ad_slot($pdo, 'games-promo', 'homepage') ?>
+
                 <!-- Slot iklan sidebar homepage (10 Agu 2026, permintaan
                      operator) — sebelumnya iklan cuma ada di antara
                      konten berita (homepage-hero, between-article-cards).
@@ -216,16 +228,6 @@ require __DIR__ . '/includes/site-header.php';
                      — otomatis render string kosong (lihat
                      wpm_render_ad_slot()). -->
                 <?= wpm_render_ad_slot($pdo, 'sidebar-right', 'homepage') ?>
-
-                <!-- Games Hub promo slot (30 Agu 2026, Games Hub MVP brief)
-                     — reuses the same ad-slot system as everything else on
-                     this page (wpm_render_ad_slot()), NOT a separate ads
-                     mechanism. Renders empty until an operator creates the
-                     'games-promo' position (cms-admin/pages/ad-positions.php)
-                     and an ad pointing at games/air-hockey/ for it
-                     (cms-admin/pages/ads.php) — same "safe to call before
-                     it's configured" behavior as sidebar-right above. -->
-                <?= wpm_render_ad_slot($pdo, 'games-promo', 'homepage') ?>
             </aside>
         </div>
     </div>
