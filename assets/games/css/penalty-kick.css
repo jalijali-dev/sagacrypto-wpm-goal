@@ -1,0 +1,247 @@
+/**
+ * Penalty Kick — page-specific styles (2 Sep 2026, Games Hub game #2).
+ * Layers on top of games-landing.css (shared base/buttons/CSS vars) —
+ * never duplicates those rules, same as air-hockey.css does for game #1.
+ *
+ * Deliberately a SEPARATE file from air-hockey.css (brief requirement,
+ * "jangan modify air-hockey.css") — but same design LANGUAGE by intent
+ * (gradient/bevel scoreboard plate, glow canvas frame, same `--ah-*`
+ * custom properties from games-landing.css), so the two games read as
+ * one product family instead of visually unrelated. Class names use a
+ * `wpm-pk-*` prefix (not `wpm-ah-*`) purely to keep "which file defines
+ * this" unambiguous — this page never loads air-hockey.css, so there's
+ * no actual collision risk either way, this is just naming hygiene.
+ *
+ * Show/hide for the 3 panels (#pk-panel-start, #pk-board, #pk-panel-end)
+ * uses the native `hidden` attribute + `:not([hidden])` specificity gate,
+ * same pattern (and same reason — see air-hockey.css's own comment on
+ * this, and docs/DECISIONS.md's "logo dobel muncul" bug) as air-hockey.css.
+ */
+
+.wpm-pk-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 520px;
+  margin: 0 auto 8px;
+}
+.wpm-pk-topbar__title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ah-text-muted);
+}
+.wpm-pk-topbar__link { padding: 6px 4px; }
+.wpm-pk-topbar__right { display: flex; align-items: center; gap: 4px; }
+
+.wpm-pk-mute-btn {
+  appearance: none;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ah-border);
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ah-text);
+}
+.wpm-pk-mute-btn:hover { border-color: var(--ah-neon-cyan); }
+.wpm-pk-mute-btn[aria-pressed="true"] { opacity: 0.5; }
+
+.wpm-pk-stage {
+  max-width: 520px;
+  margin: 12px auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.wpm-pk-panel {
+  width: 100%;
+  text-align: center;
+  padding: 32px 22px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--ah-border);
+}
+.wpm-pk-panel--overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  max-width: 340px;
+  margin: auto;
+  height: fit-content;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.wpm-pk-panel--overlay:not([hidden]) { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+.wpm-pk-panel__title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 800;
+  text-shadow: 0 0 20px rgba(53, 230, 255, 0.35);
+}
+.wpm-pk-panel__hint {
+  margin: 0 0 20px;
+  color: var(--ah-text-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.wpm-pk-panel--overlay .wpm-pk-panel__hint { margin-bottom: 4px; }
+
+/* Team select grid (2 Sep 2026, operator request) — up to ~48 flag
+   buttons, scrollable so it never forces the panel taller than the
+   viewport on mobile. Rendered by JS (penalty-kick.js's TEAMS array +
+   renderTeamGrid()), this is just the grid/button chrome. */
+.wpm-pk-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 4px 2px 6px;
+  margin-bottom: 4px;
+}
+.wpm-pk-team-btn {
+  appearance: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ah-border);
+  color: var(--ah-text-muted);
+  font-family: var(--ah-font);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease, transform 0.1s ease;
+}
+.wpm-pk-team-btn__flag { font-size: 22px; line-height: 1; }
+.wpm-pk-team-btn:hover { border-color: var(--ah-neon-cyan); color: var(--ah-text); }
+.wpm-pk-team-btn:active { transform: scale(0.96); }
+.wpm-pk-team-btn.is-selected {
+  color: #04141c;
+  background: var(--ah-neon-cyan);
+  border-color: var(--ah-neon-cyan);
+}
+
+.wpm-pk-change-team-btn {
+  appearance: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  margin-top: 10px;
+  font-family: var(--ah-font);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ah-text-muted);
+  text-decoration: underline;
+}
+.wpm-pk-change-team-btn:hover { color: var(--ah-neon-cyan); }
+
+.wpm-pk-difficulty {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+.wpm-pk-difficulty__btn {
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--ah-font);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ah-border);
+  color: var(--ah-text-muted);
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+.wpm-pk-difficulty__btn.is-selected {
+  color: #04141c;
+  background: var(--ah-neon-cyan);
+  border-color: var(--ah-neon-cyan);
+}
+
+.wpm-pk-board:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+/* "Gamer" scoreboard, same bevel/gradient-plate technique as
+   air-hockey.css's .wpm-ah-scoreboard — cyan-toned instead of the
+   air-hockey blue/cyan mix, to match this game's own accent (see
+   games-landing.css's --card-accent for penalty-kick = cyan). */
+.wpm-pk-scoreboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #142334 0%, #060f18 100%);
+  border: 1px solid rgba(53, 230, 255, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.5),
+    0 6px 22px rgba(0, 0, 0, 0.35);
+}
+.wpm-pk-scoreboard__side { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px; }
+.wpm-pk-scoreboard__label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ah-text-muted); }
+.wpm-pk-scoreboard__score {
+  font-size: 30px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #9fe8ff 60%, #35e6ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 18px rgba(53, 230, 255, 0.45);
+}
+.wpm-pk-scoreboard__vs {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #04141c;
+  padding: 5px 12px;
+  background: linear-gradient(135deg, var(--ah-neon-cyan), #35a8ff);
+  border-radius: 999px;
+  box-shadow: 0 0 14px rgba(53, 230, 255, 0.5);
+}
+
+/* Goal-view canvas frame — same arcade-cabinet bezel/glow idea as
+   air-hockey.css's .wpm-ah-canvas-wrap, cyan-tinted; the pitch texture
+   itself is drawn ON the canvas in penalty-kick.js, not here. */
+.wpm-pk-canvas-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  aspect-ratio: 4 / 3;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 3px solid rgba(53, 230, 255, 0.55);
+  box-shadow:
+    0 0 50px rgba(53, 230, 255, 0.22),
+    0 0 18px rgba(255, 176, 59, 0.16),
+    inset 0 0 30px rgba(0, 0, 0, 0.6);
+  touch-action: none;
+  cursor: pointer;
+}
+#pk-canvas { display: block; width: 100%; height: 100%; }
+
+@media (min-width: 768px) {
+  .wpm-pk-stage { margin-top: 20px; }
+  .wpm-pk-canvas-wrap { max-width: 460px; }
+}

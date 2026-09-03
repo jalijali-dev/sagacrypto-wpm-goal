@@ -55,8 +55,8 @@ $wpmGames = [
         'title' => 'Penalty Kick',
         'tagline' => 'Adu penalti lawan kiper. Bidik sudut, jangan ketahuan arahnya.',
         'icon' => 'trophy',
-        'href' => null,
-        'status' => 'Segera Hadir',
+        'href' => 'games/penalty-kick/',
+        'status' => 'Main Sekarang',
         'accent' => 'cyan',
     ],
     [
