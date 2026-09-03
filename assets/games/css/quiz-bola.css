@@ -1,0 +1,302 @@
+/**
+ * Kuis Bola — page-specific styles (3 Sep 2026, Games Hub game #3).
+ * Layers on top of games-landing.css (shared base/buttons/CSS vars) —
+ * never duplicates those rules, same pattern as air-hockey.css and
+ * penalty-kick.css. Deliberately a SEPARATE file from both ("jangan
+ * modify game lain") — class names use a `wpm-qb-*` prefix.
+ *
+ * Accent color: purple (#d374ff / 211,116,255) — matches the `purple`
+ * accent already assigned to the quiz-bola card in games/index.php's
+ * $wpmGames array + games-landing.css's .wpm-game-card--purple, so the
+ * landing card and the game's own UI read as the same product instead
+ * of introducing a new random color. Defined locally here (not read
+ * from games-landing.css's card-only custom properties, which only
+ * exist inside .wpm-game-card) so this page's UI has its own accent
+ * vars, same approach as penalty-kick.css using --ah-neon-cyan.
+ *
+ * This game is DOM/CSS-driven (question card + option buttons + timer
+ * bar), not Canvas — see quiz-bola.js's docblock for why. Show/hide
+ * for the 3 panels uses the native `hidden` attribute + `:not([hidden])`
+ * specificity gate, same reason as the other two games (see
+ * docs/DECISIONS.md's "logo dobel muncul" bug).
+ */
+
+:root {
+  --qb-purple: #d374ff;
+  --qb-purple-rgb: 211, 116, 255;
+  --qb-correct: #39ff88;
+  --qb-wrong: #ff3d9a;
+}
+
+.wpm-qb-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 640px;
+  margin: 0 auto 8px;
+}
+.wpm-qb-topbar__title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ah-text-muted);
+}
+.wpm-qb-topbar__link { padding: 6px 4px; }
+.wpm-qb-topbar__right { display: flex; align-items: center; gap: 4px; }
+
+.wpm-qb-mute-btn {
+  appearance: none;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ah-border);
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ah-text);
+}
+.wpm-qb-mute-btn:hover { border-color: var(--qb-purple); }
+.wpm-qb-mute-btn[aria-pressed="true"] { opacity: 0.5; }
+
+.wpm-qb-stage {
+  max-width: 640px;
+  margin: 12px auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.wpm-qb-panel {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  text-align: center;
+  padding: 32px 22px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--qb-purple-rgb), 0.35);
+}
+.wpm-qb-panel--overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  max-width: 340px;
+  margin: auto;
+  height: fit-content;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.wpm-qb-panel--overlay:not([hidden]) { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+.wpm-qb-panel__logo {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+  margin-bottom: 6px;
+  filter: drop-shadow(0 0 18px rgba(var(--qb-purple-rgb), 0.55));
+}
+
+.wpm-qb-panel__title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 800;
+  text-shadow: 0 0 20px rgba(var(--qb-purple-rgb), 0.4);
+}
+.wpm-qb-panel__hint {
+  margin: 0 0 20px;
+  color: var(--ah-text-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.wpm-qb-panel--overlay .wpm-qb-panel__hint { margin-bottom: 4px; }
+
+/* Big final-score readout on the end overlay — same gradient-text
+   treatment as the scoreboard numbers below, just larger. */
+.wpm-qb-panel__score {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #e8c4ff 55%, var(--qb-purple) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 22px rgba(var(--qb-purple-rgb), 0.5);
+}
+
+.wpm-qb-difficulty {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+.wpm-qb-difficulty__btn {
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--ah-font);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ah-border);
+  color: var(--ah-text-muted);
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+.wpm-qb-difficulty__btn.is-selected {
+  color: #1d0326;
+  background: var(--qb-purple);
+  border-color: var(--qb-purple);
+}
+
+.wpm-qb-board:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+/* "Gamer" scoreboard — same bevel/gradient-plate technique as
+   air-hockey.css's .wpm-ah-scoreboard and penalty-kick.css's
+   .wpm-pk-scoreboard, purple-toned to match this game's accent. */
+.wpm-qb-scoreboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #241a34 0%, #0d0818 100%);
+  border: 1px solid rgba(var(--qb-purple-rgb), 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.5),
+    0 6px 22px rgba(0, 0, 0, 0.35);
+}
+.wpm-qb-scoreboard__side { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 72px; }
+.wpm-qb-scoreboard__label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ah-text-muted); }
+.wpm-qb-scoreboard__score {
+  font-size: 26px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #e8c4ff 60%, var(--qb-purple) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 18px rgba(var(--qb-purple-rgb), 0.45);
+}
+.wpm-qb-scoreboard__vs {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #1d0326;
+  padding: 5px 12px;
+  background: linear-gradient(135deg, var(--qb-purple), #a855f7);
+  border-radius: 999px;
+  box-shadow: 0 0 14px rgba(var(--qb-purple-rgb), 0.5);
+  white-space: nowrap;
+}
+
+/* Countdown timer bar — the "Kahoot-style" visible-shrinking bar the
+   brief asked for ("bukan cuma angka detik doang"). Width is driven
+   from quiz-bola.js via a CSS transition (set to 100% instantly on a
+   new question, then to 0% on the next frame so the transition
+   actually animates) rather than a JS-driven rAF redraw loop — cheap,
+   and the exact remaining-time value used for SCORING is tracked
+   separately in JS via performance.now(), this bar is purely the
+   visual cue. Color shifts via a modifier class as time runs low. */
+.wpm-qb-timer-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--qb-purple-rgb), 0.25);
+  overflow: hidden;
+}
+.wpm-qb-timer-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--qb-purple), #7c3aed);
+  box-shadow: 0 0 12px rgba(var(--qb-purple-rgb), 0.6);
+  transition: width linear 1s, background-color 0.2s ease;
+}
+.wpm-qb-timer-fill.is-urgent {
+  background: linear-gradient(90deg, var(--qb-wrong), #ff8a3d);
+  box-shadow: 0 0 14px rgba(255, 61, 154, 0.55);
+}
+
+.wpm-qb-card {
+  width: 100%;
+  padding: 26px 20px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--qb-purple-rgb), 0.3);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
+}
+.wpm-qb-card__question {
+  margin: 0 0 20px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* Answer grid — 2 columns on mobile-and-up so buttons stay big/tappable
+   (brief: "tombol pilihan harus cukup besar buat di-tap di HP"),
+   stacking to 1 column only on very narrow phones via the media query
+   below. */
+.wpm-qb-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 420px) {
+  .wpm-qb-options { grid-template-columns: 1fr; }
+}
+
+.wpm-qb-option-btn {
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--ah-font);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ah-text);
+  padding: 14px 16px;
+  min-height: 52px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ah-border);
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.1s ease;
+}
+.wpm-qb-option-btn:hover:not(:disabled) { border-color: var(--qb-purple); background: rgba(var(--qb-purple-rgb), 0.08); }
+.wpm-qb-option-btn:active:not(:disabled) { transform: scale(0.98); }
+.wpm-qb-option-btn:disabled { cursor: default; }
+
+/* Answer-feedback states, applied by quiz-bola.js after a pick (or on
+   timeout) — correct answer always highlighted green so the player
+   sees what they missed even when they picked wrong or ran out of
+   time. */
+.wpm-qb-option-btn.is-correct {
+  border-color: var(--qb-correct);
+  background: rgba(57, 255, 136, 0.16);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(57, 255, 136, 0.35);
+}
+.wpm-qb-option-btn.is-wrong {
+  border-color: var(--qb-wrong);
+  background: rgba(255, 61, 154, 0.16);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(255, 61, 154, 0.3);
+}
+
+@media (min-width: 768px) {
+  .wpm-qb-stage { margin-top: 20px; }
+  .wpm-qb-card__question { font-size: 19px; }
+}

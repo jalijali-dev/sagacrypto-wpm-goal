@@ -678,3 +678,110 @@ only, tidak ada di kode production) buat verifikasi visual manual.
 ZONES/GOAL_*/figure yang saat ini sudah battle-tested; kalau operator
 masih merasa kurang "3D" setelah pass ini, itu next candidate yang
 jelas paling mahal secara refactor dari semua opsi yang ada di brief.
+
+---
+
+## 2026-09-03 — Games Hub: game ketiga, Kuis Bola (timed multiple choice)
+
+**Keputusan:** Game ketiga dari 3 slot yang sudah direncanakan sejak
+Games Hub MVP (30 Agu 2026) ditambahkan — slug `quiz-bola`, sudah punya
+card + logo PNG di landing sejak revisi 3 Sep 2026 sebelumnya (status
+"Segera Hadir"), sekarang jadi "Main Sekarang". Operator secara
+eksplisit menyebut instalasi awal ketiga game (Air Hockey, Penalty
+Kick, Kuis Bola) sebagai **"versi 1"** — polish grafik lanjutan untuk
+ketiganya jadi "versi 2" di brief terpisah nanti, dicatat di sini biar
+sesi berikutnya tidak salah kira scope brief ini termasuk over-polish.
+
+File baru: `games/quiz-bola/index.php`, `assets/games/css/quiz-bola.css`,
+`assets/games/js/quiz-bola.js`. File modified: `games/index.php` (cuma
+field `href`/`status` untuk entry `quiz-bola` di `$wpmGames`, persis
+pola `air-hockey`/`penalty-kick`).
+
+1. **Sumber soal: hardcode di JS, bukan database+admin panel** —
+   keputusan operator, dipilih eksplisit dari 2 opsi yang ditanyakan.
+   `QUESTION_BANK` di `quiz-bola.js` berisi **70 soal** (di atas target
+   minimal 40-60 di brief) — campuran aturan dasar, sejarah Piala
+   Dunia, klub-klub besar Eropa, pemain terkenal, plus sebagian kecil
+   soal Indonesia (Liga 1, Timnas, pemain naturalisasi) biar relevan
+   buat audiens Sagagoal tanpa jadi mayoritas niche. Tidak ada
+   backend/API/tabel DB baru — 100% klien, tidak setengah-setengah.
+   Tiap sesi: `pickSessionQuestions()` random-pick 10 dari bank
+   (`shuffle()` Fisher-Yates) + shuffle independen urutan opsi jawaban
+   tiap soal (jadi jawaban benar tidak selalu di slot yang sama), hasil
+   shuffle-nya objek baru — `QUESTION_BANK` sendiri tidak pernah
+   dimutasi.
+2. **Model gameplay: Timed multiple choice ala Kahoot** — keputusan
+   operator, bukan survival/streak atau kuis tanpa timer. 1 sesi = 10
+   soal random. 3 level kesulitan dibedakan lewat **durasi timer per
+   soal**, bukan bank soal terpisah per level (sesuai saran brief,
+   supaya tidak 3x kerjaan bikin soal): Easy 18 detik, Medium 12 detik,
+   Hard 8 detik (`DIFFICULTY_TIMER_MS`). Skor: `BASE_POINTS` (1000)
+   dikali fraksi waktu tersisa saat menjawab benar (linear falloff,
+   `Math.round(1000 * (1 - elapsed/duration))`), jawaban salah atau
+   waktu habis = 0 poin untuk soal itu — insentif jawab cepat terasa
+   langsung di angka (diuji: klik instan dapat ~950-1000 poin, klik
+   mendekati waktu habis dapat puluhan poin, timeout dapat 0). Setelah
+   10 soal: overlay skor total + "X dari 10 jawaban benar" + tombol
+   "Main Lagi" (reset penuh ke panel start, termasuk re-pick 10 soal
+   baru di sesi berikutnya).
+3. **Timer visual "genting" ala Kahoot** — bar (`.wpm-qb-timer-fill`)
+   di-drive murni lewat CSS `transition: width linear <durasi>s`
+   (instant reset ke 100% tanpa transisi, lalu di-set ke 0% di frame
+   berikutnya biar transisi-nya benar-benar animasi), bukan redraw tiap
+   frame — ringan, tidak butuh rAF buat elemen visualnya sendiri. Warna
+   berubah ke merah/oranye (`.is-urgent`) saat sisa waktu ≤25% durasi.
+   Skor TETAP dihitung presisi dari `performance.now()` di satu-
+   satunya rAF loop di file ini (`startTimer()`'s `poll()`) — loop ini
+   cuma baca jam & cek waktu habis, tidak pernah menggambar apa pun,
+   beda total dari render loop Canvas di 2 game sebelumnya.
+4. **DOM/CSS, bukan Canvas** — brief eksplisit bilang kuis pilihan
+   ganda lebih natural sebagai DOM (kartu soal, tombol pilihan, timer
+   bar) dibanding dipaksa ke Canvas seperti Air Hockey/Penalty Kick.
+   Tidak ada `<canvas>` sama sekali di `games/quiz-bola/index.php`.
+5. **Audio & visual konsisten** — pola sintesis nada Web Audio
+   (`initAudio()`/`playTone()`/objek `sfx`) di-copy ulang dari
+   air-hockey.js/penalty-kick.js (by design, bukan import — tetap self-
+   contained per file, sama seperti 2 game sebelumnya), dengan cue baru
+   yang relevan buat kuis: `correct` (2-note naik), `wrong` (sawtooth
+   turun), `timeout` (nada rendah), `tick` (blip pendek 3 detik
+   terakhir), `finish` (4-note arpeggio di layar akhir). Mute button di
+   topbar, pola sama persis. Accent warna **purple** (`#d374ff` /
+   `211,116,255`) didefinisikan lokal di `quiz-bola.css` (bukan baca
+   custom property `.wpm-game-card` yang cuma ada di scope card
+   landing) — sudah senada dengan `accent: 'purple'` yang dipasang di
+   `games/index.php` sejak card ini dibuat. `games-landing.css` dan
+   file game lain tidak disentuh sama sekali.
+6. **Mobile/touch** — grid opsi jawaban 2 kolom di layar ≥421px,
+   turun ke 1 kolom di layar sempit (`@media max-width:420px`), tombol
+   `min-height:52px` biar cukup besar buat di-tap.
+
+**Alasan:** Semua keputusan gameplay (sumber soal, model timed-MC,
+skema skor, pemisahan level lewat durasi timer bukan bank soal) sudah
+diputuskan eksplisit oleh operator lewat pertanyaan pilihan sebelum
+brief ditulis — bukan devs berimprovisasi, dicatat di sini biar tidak
+di-re-litigasi sesi berikutnya.
+
+**Verifikasi:** Diuji end-to-end langsung di browser (desktop & mobile
+375px): pilih difficulty → mulai → jawab benar (skor naik proporsional
+ke kecepatan, opsi benar di-highlight hijau) → jawab salah (skor tidak
+berubah, opsi salah merah + opsi benar tetap hijau) → biarkan timer
+habis tanpa klik (bar habis penuh, opsi benar ter-highlight otomatis,
+skor tidak berubah) → lanjut sampai soal ke-10 → overlay hasil akhir
+tampil benar (skor total + breakdown "X dari 10") → "Main Lagi" reset
+balik ke panel start dengan benar. Landing page (`games/index.php`)
+dicek ulang — ketiga card sekarang tampil "MAIN SEKARANG" dengan accent
+masing-masing (orange/cyan/purple). `php -l` bersih di
+`games/quiz-bola/index.php` dan `games/index.php`; brace/paren JS &
+CSS balanced. Beda dari 2 entri Penalty Kick sebelumnya: game ini TIDAK
+butuh monkey-patch `requestAnimationFrame`→`setTimeout` buat testing —
+karena render-nya DOM/CSS-driven (bukan Canvas redraw loop), animasi
+timer & transisi state semuanya jalan normal di environment testing
+sesi devs ini walau `document.hidden` masih `true` di sana.
+
+**Alternatif yang dipertimbangkan:** Skor eksponensial/step-based
+(bukan linear falloff) — ditolak, linear paling gampang diimplementasi
+dan dipahami ulang, insentif "cepat = lebih banyak poin" tetap terasa
+tanpa perlu tuning kurva. Variasi soal per level kesulitan (disebut
+opsional di brief) — tidak dikerjakan, brief eksplisit bilang jangan
+sampai bikin brief ini membengkak jadi 3x kerjaan; kalau operator mau
+soal per-level yang beda kontennya, itu scope brief terpisah.
