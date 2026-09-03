@@ -167,7 +167,7 @@ $wpmGames = [
     </main>
 
     <footer class="wpm-games-footer">
-        <img class="wpm-games-footer__logo" src="assets/img/sagagoal-logo-white.png" alt="Sagagoal" loading="lazy" width="110" height="50">
+        <img class="wpm-games-footer__logo" src="assets/img/sagagoal-logo-white.png" alt="Sagagoal" loading="lazy" width="120" height="55">
         <p>&copy; <?= wpm_esc(date('Y')) ?> <a href="./">sagagoal.com</a></p>
     </footer>
 </body>
