@@ -74,7 +74,7 @@ $wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
         <!-- Difficulty picker + start (shown before a match) -->
         <div class="wpm-ah-panel" id="ah-panel-start">
             <h1 class="wpm-ah-panel__title">Air Hockey</h1>
-            <p class="wpm-ah-panel__hint">Gerakin kaki (mallet) buat mantulin bola ke gawang lawan. First to 7 menang.</p>
+            <p class="wpm-ah-panel__hint">Gerakin kaki (mallet) buat mantulin bola ke gawang lawan. First to 5 menang.</p>
             <div class="wpm-ah-difficulty" role="group" aria-label="Pilih tingkat kesulitan">
                 <button type="button" class="wpm-ah-difficulty__btn" data-difficulty="easy">Easy</button>
                 <button type="button" class="wpm-ah-difficulty__btn is-selected" data-difficulty="medium">Medium</button>

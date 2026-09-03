@@ -27,7 +27,7 @@
   var PUCK_R = 13;
   var MALLET_R = 26;
   var CENTER_Y = H / 2;
-  var WIN_SCORE = 7;
+  var WIN_SCORE = 5;
 
   var canvas = document.getElementById('ah-canvas');
   var ctx = canvas ? canvas.getContext('2d') : null;
