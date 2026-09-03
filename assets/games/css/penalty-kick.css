@@ -23,7 +23,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  max-width: 520px;
+  /* Matches .wpm-pk-stage's max-width below so the topbar stays visually
+     aligned above the (now much wider) board/canvas — 2 Sep 2026,
+     "layar lebih lebar" pass. */
+  max-width: 1100px;
   margin: 0 auto 8px;
 }
 .wpm-pk-topbar__title {
@@ -51,8 +54,17 @@
 .wpm-pk-mute-btn:hover { border-color: var(--ah-neon-cyan); }
 .wpm-pk-mute-btn[aria-pressed="true"] { opacity: 0.5; }
 
+/* Widened 2 Sep 2026 ("layar lebih lebar" pass, operator request) — was
+   520px, which visibly boxed the whole game (panels AND canvas) into a
+   small centered card even on wide desktop viewports. This is now just
+   the outer ceiling; .wpm-pk-panel (below) pulls the TEXT panels
+   (team-select/difficulty-picker/end-overlay) back down to a readable
+   width of their own, while .wpm-pk-board/.wpm-pk-canvas-wrap use the
+   full stage width — a giant stretched paragraph of difficulty buttons
+   would look wrong, but the actual play area filling more of the
+   screen is exactly what was asked for. */
 .wpm-pk-stage {
-  max-width: 520px;
+  max-width: 1100px;
   margin: 12px auto 0;
   display: flex;
   flex-direction: column;
@@ -61,6 +73,8 @@
 
 .wpm-pk-panel {
   width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
   text-align: center;
   padding: 32px 22px;
   border-radius: 18px;
@@ -227,7 +241,11 @@
 .wpm-pk-canvas-wrap {
   position: relative;
   width: 100%;
-  max-width: 420px;
+  /* Widened 2 Sep 2026 (was 420px) — mobile now fills the available
+     column width (body padding is already the only margin, per brief's
+     "margin minimal" ask) almost up to this cap; the real jump is the
+     desktop tier below. */
+  max-width: 560px;
   aspect-ratio: 4 / 3;
   border-radius: 14px;
   overflow: hidden;
@@ -243,5 +261,9 @@
 
 @media (min-width: 768px) {
   .wpm-pk-stage { margin-top: 20px; }
-  .wpm-pk-canvas-wrap { max-width: 460px; }
+  /* Was 460px — the operator's core complaint ("terkurung dalam card
+     kecil"). aspect-ratio:4/3 above keeps height proportional
+     automatically (900px wide -> 675px tall), so this alone is the fix,
+     no separate height rule needed. */
+  .wpm-pk-canvas-wrap { max-width: 900px; }
 }

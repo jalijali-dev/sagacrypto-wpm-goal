@@ -582,8 +582,11 @@
   // second, smaller "back" frame set above+inset from the front frame,
   // joined by short strut lines — no real 3D transform, just enough of
   // a cue to read as a box instead of a picture-frame outline.
-  var GOAL_DEPTH_X = 10;
-  var GOAL_DEPTH_Y = 16;
+  // Bumped up from 10/16 (2 Sep 2026, stronger pseudo-3D pass — operator
+  // asked for a more convincing vanishing point after the first attempt
+  // still read as fairly flat).
+  var GOAL_DEPTH_X = 18;
+  var GOAL_DEPTH_Y = 26;
 
   function drawGoal() {
     var backLeft = GOAL_LEFT + GOAL_DEPTH_X;
@@ -614,6 +617,16 @@
       ctx.beginPath(); ctx.moveTo(rx, GOAL_TOP); ctx.lineTo(rx - 6, backTop); ctx.stroke();
     }
     ctx.beginPath(); ctx.moveTo(GOAL_LEFT, GOAL_TOP + 4); ctx.lineTo(backLeft, backTop + 4); ctx.stroke();
+
+    // Darken the roof toward the back bar — the "further away = dimmer"
+    // cue the brief asked for, layered as a gradient overlay rather than
+    // changing the net-line strokes above (keeps the crosshatch itself
+    // unchanged, just tints what's already there).
+    var roofShade = ctx.createLinearGradient(0, GOAL_TOP, 0, backTop);
+    roofShade.addColorStop(0, 'rgba(0,0,0,0)');
+    roofShade.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = roofShade;
+    ctx.fillRect(GOAL_LEFT - 20, backTop, GOAL_W + 40, GOAL_TOP - backTop);
     ctx.restore();
 
     // Net — front face crosshatch, clipped to the front frame (unchanged
@@ -665,17 +678,15 @@
     ctx.beginPath(); ctx.ellipse(GOAL_RIGHT, GOAL_BOTTOM + 2, 5, 2.2, 0, 0, Math.PI * 2); ctx.fill();
   }
 
-  function drawZoneHints() {
-    if (!state || state.phase !== 'aiming') { return; }
-    for (var i = 0; i < ZONES.length; i++) {
-      var z = ZONES[i];
-      ctx.beginPath();
-      ctx.arc(z.x, z.y, 16, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(53,230,255,0.35)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-  }
+  // drawZoneHints() (the 4 outline-ring click-target indicators) was
+  // REMOVED here on 2 Sep 2026 per explicit operator feedback ("tanda
+  // digawang nya itu gausah") — the 5 aimable ZONES themselves (and
+  // nearestZone()'s click-to-zone mapping in attemptKick()) are
+  // completely UNCHANGED; only this purely-visual ring indicator is
+  // gone. Deliberately not replaced with a subtler hover-only affordance
+  // either — brief explicitly said "kalau ragu, hilangkan saja", so this
+  // leans on the literal request (a fully blank goal to aim at) rather
+  // than devs inventing a new hint mechanism.
 
   /**
    * Goalkeeper — a small stick figure (head/torso/arms/legs), not the
@@ -696,6 +707,14 @@
     var homeX = W / 2;
     var tiltMax = 0.5;
     var tilt = Math.max(-tiltMax, Math.min(tiltMax, (x - homeX) / 60));
+
+    // Ground shadow (2 Sep 2026, stronger pseudo-3D pass) — drawn in
+    // world space, BEFORE the translate/rotate below, so it stays flat
+    // on the grass instead of tilting with the figure.
+    ctx.beginPath();
+    ctx.ellipse(x, y + 15, 14, 3.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fill();
 
     ctx.save();
     ctx.translate(x, y);
@@ -743,9 +762,15 @@
     ctx.moveTo(0, shoulderY); ctx.lineTo(18, shoulderY - 6);
     ctx.stroke();
 
-    // Head.
+    // Head — radial gradient instead of flat fill (2 Sep 2026, stronger
+    // pseudo-3D pass) for a touch of volume, same sphere-shading idea as
+    // the ball's gradient below.
+    var headGrad = ctx.createRadialGradient(-headR * 0.3, headY - headR * 0.3, headR * 0.2, 0, headY, headR);
+    headGrad.addColorStop(0, '#fff3c4');
+    headGrad.addColorStop(1, color);
     ctx.beginPath();
     ctx.arc(0, headY, headR, 0, Math.PI * 2);
+    ctx.fillStyle = headGrad;
     ctx.fill();
 
     ctx.restore();
@@ -803,6 +828,15 @@
     var headX = shoulderX + Math.sin(torsoLean) * headR;
     var headY = shoulderY - headR - 2;
 
+    // Ground shadow (2 Sep 2026, stronger pseudo-3D pass) — the kicker
+    // stands closest to camera, so this is the biggest/darkest of the
+    // three ground shadows in the scene (ball's and keeper's are
+    // smaller), consistent with "closer = bigger shadow" depth logic.
+    ctx.beginPath();
+    ctx.ellipse(hipX, hipY + legLen + 2, 15, 4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.fill();
+
     // Glow halo.
     ctx.beginPath();
     ctx.arc(hipX, hipY - torsoLen / 2, 16, 0, Math.PI * 2);
@@ -849,9 +883,14 @@
     ctx.lineTo(shoulderX + 8, shoulderY - 2 + torsoLean * 6);
     ctx.stroke();
 
-    // Head.
+    // Head — radial gradient instead of flat fill (2 Sep 2026, same
+    // touch of volume as the keeper's head/the ball's sphere shading).
+    var kHeadGrad = ctx.createRadialGradient(headX - headR * 0.3, headY - headR * 0.3, headR * 0.2, headX, headY, headR);
+    kHeadGrad.addColorStop(0, '#c8faff');
+    kHeadGrad.addColorStop(1, color);
     ctx.beginPath();
     ctx.arc(headX, headY, headR, 0, Math.PI * 2);
+    ctx.fillStyle = kHeadGrad;
     ctx.fill();
 
     ctx.shadowBlur = 0;
@@ -942,6 +981,35 @@
     ctx.stroke();
   }
 
+  /**
+   * Pitch lines that CONVERGE toward the goal instead of flat parallel
+   * bands (2 Sep 2026, stronger pseudo-3D pass — operator asked for
+   * perspective lines specifically). Two side edges narrow from the
+   * near/bottom edge (closest to camera) to the goal's own width, plus
+   * one crossing "box line" interpolated partway between — a cheap,
+   * classic vanishing-point trick, not a real projection.
+   */
+  function drawPitchPerspectiveLines() {
+    var nearLeftX = 10, nearRightX = W - 10, nearY = H - 2;
+    var farLeftX = GOAL_LEFT - 6, farRightX = GOAL_RIGHT + 6, farY = GOAL_BOTTOM;
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(nearLeftX, nearY); ctx.lineTo(farLeftX, farY);
+    ctx.moveTo(nearRightX, nearY); ctx.lineTo(farRightX, farY);
+    ctx.stroke();
+
+    var midT = 0.55;
+    var midY = nearY + (farY - nearY) * midT;
+    var midLeftX = nearLeftX + (farLeftX - nearLeftX) * midT;
+    var midRightX = nearRightX + (farRightX - nearRightX) * midT;
+    ctx.beginPath();
+    ctx.moveTo(midLeftX, midY);
+    ctx.lineTo(midRightX, midY);
+    ctx.stroke();
+  }
+
   function draw() {
     ctx.fillStyle = getPitchGradient();
     ctx.fillRect(0, 0, W, H);
@@ -951,6 +1019,8 @@
     for (var stripe = 0; stripe < H; stripe += 30) {
       if ((stripe / 30) % 2 === 0) { ctx.fillRect(0, stripe, W, 30); }
     }
+
+    drawPitchPerspectiveLines();
 
     // Penalty spot + arc, purely decorative context.
     ctx.beginPath();
@@ -967,7 +1037,6 @@
 
     if (!state) { drawBall(BALL_START_X, BALL_START_Y); return; }
 
-    drawZoneHints();
     drawKicker();
     drawKeeper(state.keeper.x, state.keeper.y);
     // Depth scale: 1 at the penalty spot (closest to camera), shrinking
