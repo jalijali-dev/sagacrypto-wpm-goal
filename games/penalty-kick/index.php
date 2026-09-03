@@ -24,6 +24,17 @@ $pageTitle = 'Penalty Kick — Sagagoal Games';
 $pageDescription = 'Adu penalti lawan kiper komputer langsung di browser. Bidik sudut, jangan ketahuan arahnya. Pilih level Easy, Medium, atau Hard.';
 $cssVer = @filemtime(__DIR__ . '/../../assets/games/css/penalty-kick.css') ?: 1;
 $jsVer = @filemtime(__DIR__ . '/../../assets/games/js/penalty-kick.js') ?: 1;
+
+// Browser tab favicon (3 Sep 2026) — same fix as games/index.php and
+// games/air-hockey/index.php, see the former's comment for why this is
+// needed on every standalone games/* page, and why this deliberately
+// does NOT use wpm_image() (wrong nested-directory base prefix).
+$wpmSiteSettings = wpm_site_settings($pdo);
+$wpmFaviconRaw = trim((string) ($wpmSiteSettings['favicon_path'] ?? ''));
+if ($wpmFaviconRaw === '') {
+    $wpmFaviconRaw = trim((string) ($wpmSiteSettings['logo_path'] ?? ''));
+}
+$wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -38,6 +49,11 @@ $jsVer = @filemtime(__DIR__ . '/../../assets/games/js/penalty-kick.js') ?: 1;
     <title><?= wpm_esc($pageTitle) ?></title>
     <meta name="description" content="<?= wpm_esc($pageDescription) ?>">
     <meta name="robots" content="noindex, follow">
+    <?php if ($wpmFaviconUrl !== null) : ?>
+        <link rel="icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
+        <link rel="shortcut icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
+        <link rel="apple-touch-icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
+    <?php endif; ?>
     <link rel="stylesheet" href="assets/games/css/games-landing.css?v=<?= (int) $cssVer ?>">
     <link rel="stylesheet" href="assets/games/css/penalty-kick.css?v=<?= (int) $cssVer ?>">
 </head>

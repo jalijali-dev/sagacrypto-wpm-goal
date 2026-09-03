@@ -21,6 +21,18 @@ $pageTitle = 'Air Hockey — Sagagoal Games';
 $pageDescription = 'Main Air Hockey bertema sepak bola langsung di browser. Lawan komputer, pilih level Easy, Medium, atau Hard.';
 $cssVer = @filemtime(__DIR__ . '/../../assets/games/css/air-hockey.css') ?: 1;
 $jsVer = @filemtime(__DIR__ . '/../../assets/games/js/air-hockey.js') ?: 1;
+
+// Browser tab favicon (3 Sep 2026) — same fix as games/index.php, see
+// that file's comment for why this is needed on every standalone
+// games/* page (none of them include site-header.php), and why this
+// deliberately does NOT use wpm_image() (it would prefix the stored
+// absolute "/uploads/..." path with the wrong nested-directory base).
+$wpmSiteSettings = wpm_site_settings($pdo);
+$wpmFaviconRaw = trim((string) ($wpmSiteSettings['favicon_path'] ?? ''));
+if ($wpmFaviconRaw === '') {
+    $wpmFaviconRaw = trim((string) ($wpmSiteSettings['logo_path'] ?? ''));
+}
+$wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -34,6 +46,11 @@ $jsVer = @filemtime(__DIR__ . '/../../assets/games/js/air-hockey.js') ?: 1;
     <title><?= wpm_esc($pageTitle) ?></title>
     <meta name="description" content="<?= wpm_esc($pageDescription) ?>">
     <meta name="robots" content="noindex, follow">
+    <?php if ($wpmFaviconUrl !== null) : ?>
+        <link rel="icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
+        <link rel="shortcut icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
+        <link rel="apple-touch-icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
+    <?php endif; ?>
     <link rel="stylesheet" href="assets/games/css/games-landing.css?v=<?= (int) $cssVer ?>">
     <link rel="stylesheet" href="assets/games/css/air-hockey.css?v=<?= (int) $cssVer ?>">
 </head>

@@ -25,6 +25,30 @@ $pageTitle = 'Sagagoal Games — Main Game Bola Gratis';
 $pageDescription = 'Main mini-game bertema sepak bola langsung di browser, gratis, tanpa install. Air Hockey sudah bisa dimainkan — game lain segera hadir.';
 $cssVer = @filemtime(__DIR__ . '/../assets/games/css/games-landing.css') ?: 1;
 
+// Browser tab favicon (3 Sep 2026) — this page never included
+// site-header.php (deliberately, see file-level comment above), so it
+// never got the <link rel="icon"> tags every other page gets from
+// there. Reuses the site-settings-driven favicon (falls back to the
+// main site logo) instead of hardcoding a path, so it stays in sync if
+// the operator ever changes it in cms-admin → Site Settings.
+//
+// NOT wpm_image() here — uploaded logo/favicon paths are stored as
+// absolute web paths (e.g. "/uploads/site/favicon/x.png"), and
+// wpm_image() prefixes those with wpm_base_path() (dirname of
+// $_SERVER['SCRIPT_NAME']), which resolves to ".../games" on this
+// nested page instead of the real site root — same class of bug as
+// wpm_base_href()/wpm_site_url(), see the <base> comment above. An
+// absolute "/..." path already ignores <base href> and resolves from
+// the domain root on its own (per how browsers handle absolute-path
+// URLs), so we use the raw stored path untouched — correct in
+// production (root deploy) and in any local subfolder dev setup alike.
+$wpmSiteSettings = wpm_site_settings($pdo);
+$wpmFaviconRaw = trim((string) ($wpmSiteSettings['favicon_path'] ?? ''));
+if ($wpmFaviconRaw === '') {
+    $wpmFaviconRaw = trim((string) ($wpmSiteSettings['logo_path'] ?? ''));
+}
+$wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
+
 /**
  * One card = one game. `href` null means it's a "Segera Hadir" placeholder
  * (not clickable) — the whole reason this is a list instead of hardcoded
@@ -98,6 +122,11 @@ $wpmGames = [
     <title><?= wpm_esc($pageTitle) ?></title>
     <meta name="description" content="<?= wpm_esc($pageDescription) ?>">
     <meta name="robots" content="noindex, follow">
+    <?php if ($wpmFaviconUrl !== null) : ?>
+        <link rel="icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
+        <link rel="shortcut icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
+        <link rel="apple-touch-icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
+    <?php endif; ?>
     <link rel="stylesheet" href="assets/games/css/games-landing.css?v=<?= (int) $cssVer ?>">
 </head>
 <body class="wpm-games">
