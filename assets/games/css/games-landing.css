@@ -25,31 +25,48 @@
 * { box-sizing: border-box; }
 
 /* Slow-drifting multi-color glow behind the whole page (30 Agu 2026
-   revamp, "portal game" CrazyGames-style reference) — 3 radial blobs in
+   revamp, "portal game" CrazyGames-style reference) — 4 radial blobs in
    different accent colors, animated via background-position only (cheap:
    no JS, no filter/blur recalculated per frame, just a compositor-level
-   position tween). Respects prefers-reduced-motion. */
+   position tween). Respects prefers-reduced-motion.
+   Layer order/count in this keyframe MUST match body.wpm-games's
+   background-image list below exactly: [dark overlay (static), blob
+   cyan, blob pink, blob orange, blob green, stadium photo (static)] —
+   6 comma-separated values every time, one per layer, even for the 2
+   static layers (overlay/photo just repeat the same position so they
+   never move while the blobs drift over the photo). */
 @keyframes wpmGamesBgDrift {
-  0%   { background-position: 15% 0%, 100% 20%, 40% 100%; }
-  50%  { background-position: 25% 10%, 90% 30%, 55% 90%; }
-  100% { background-position: 15% 0%, 100% 20%, 40% 100%; }
+  0%   { background-position: 0% 0%, 15% 0%, 100% 20%, 40% 100%, 85% 90%, center center; }
+  50%  { background-position: 0% 0%, 25% 10%, 90% 30%, 55% 90%, 75% 80%, center center; }
+  100% { background-position: 0% 0%, 15% 0%, 100% 20%, 40% 100%, 85% 90%, center center; }
 }
 
 body.wpm-games {
   margin: 0;
   min-height: 100vh;
   background-color: var(--ah-bg);
-  /* Brighter/more saturated glow blobs (3 Sep 2026, "bikin lebih cerah"
-     revision) — same 3-blob drift, just noticeably higher opacity +
-     bigger spread than the original MVP tuning so the page reads as
-     more vivid/energetic at a glance, not just "dark with tiny hints
-     of color". */
+  /* Stadium crowd/fireworks photo (3 Sep 2026, "euforia pertandingan"
+     revision) — operator-supplied image (games/assets/img/1169c2899bd3cf0..webp,
+     recompressed to assets/games/img/stadium-bg.webp, 1920x1080, ~168KB)
+     as the base layer, dark overlay gradient on top of it so card/text
+     contrast stays readable (WCAG-ish legibility, not just "looks ok"),
+     then the same brighter accent-color blobs from the 3 Sep "bikin
+     lebih cerah" revision tinting on top of the photo instead of over
+     flat black. A pure-CSS light-beam/sparkle effect was tried first
+     (see docs/DECISIONS.md) but the operator wanted the actual photo,
+     not a simulation — this replaces that attempt (kept in ::before/
+     ::after below, layered on top of the photo, since those effects
+     still read well over it). */
   background-image:
-    radial-gradient(ellipse 65% 45% at 15% 0%, rgba(53, 230, 255, 0.28) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 50% at 100% 20%, rgba(255, 61, 154, 0.24) 0%, transparent 60%),
-    radial-gradient(ellipse 55% 45% at 40% 100%, rgba(255, 176, 59, 0.22) 0%, transparent 60%),
-    radial-gradient(ellipse 45% 35% at 85% 90%, rgba(57, 255, 136, 0.16) 0%, transparent 60%);
-  background-size: 160% 160%;
+    linear-gradient(180deg, rgba(4, 5, 10, 0.88) 0%, rgba(4, 5, 10, 0.8) 40%, rgba(4, 5, 10, 0.93) 100%),
+    radial-gradient(ellipse 65% 45% at 15% 0%, rgba(53, 230, 255, 0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 100% 20%, rgba(255, 61, 154, 0.18) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 40% 100%, rgba(255, 176, 59, 0.16) 0%, transparent 60%),
+    radial-gradient(ellipse 45% 35% at 85% 90%, rgba(57, 255, 136, 0.12) 0%, transparent 60%),
+    url('../img/stadium-bg.webp');
+  background-size: 100% 100%, 160% 160%, 160% 160%, 160% 160%, 160% 160%, cover;
+  background-repeat: no-repeat;
+  background-attachment: scroll;
   animation: wpmGamesBgDrift 22s ease-in-out infinite;
   color: var(--ah-text);
   font-family: var(--ah-font);
@@ -59,6 +76,78 @@ body.wpm-games {
 
 @media (prefers-reduced-motion: reduce) {
   body.wpm-games { animation: none; }
+}
+
+/* ---- Stadium atmosphere, extra layers (3 Sep 2026, "euforia
+   pertandingan" revision) ----
+   First attempt at this used pure CSS gradients standing in for a
+   stadium photo (no photo asset at all) — operator tried it live and
+   said it read as too subtle/flat, and supplied an actual stadium
+   crowd+fireworks photo instead (now the base layer of
+   body.wpm-games's own background, see above). These two pseudo-
+   elements are kept layered ON TOP of that photo rather than removed —
+   the floodlight-beam sway + firework sparkle animations still add
+   motion/depth over a static photo, they just no longer have to carry
+   the whole "stadium feeling" by themselves. Zero KB added (still pure
+   gradients/keyframes), same performance profile as the bg-drift
+   animation above. Lives on ::before/::after so it never touches the
+   actual DOM/markup. */
+body.wpm-games::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  /* Two floodlight cones sweeping down from the top corners (conic
+     gradient wedges) + a warm horizon glow low in the frame standing in
+     for "packed crowd under stadium lights". */
+  background:
+    conic-gradient(from 200deg at 12% -10%, rgba(255, 255, 255, 0.10) 0deg, transparent 26deg),
+    conic-gradient(from 160deg at 88% -10%, rgba(255, 255, 255, 0.08) 0deg, transparent 30deg),
+    radial-gradient(ellipse 90% 40% at 50% 115%, rgba(255, 140, 60, 0.22) 0%, transparent 65%);
+  animation: wpmStadiumSway 14s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+@keyframes wpmStadiumSway {
+  0%   { opacity: 0.85; transform: rotate(-1deg); }
+  50%  { opacity: 1;    transform: rotate(1deg); }
+  100% { opacity: 0.85; transform: rotate(-1deg); }
+}
+
+/* Firework/confetti sparkles — a handful of small radial-gradient dots
+   scattered around the upper half, each one "twinkling" via an opacity
+   keyframe (cheap: opacity + transform only, never layout/paint-heavy
+   properties). Positions are hand-placed, not random/JS-generated, so
+   this stays a pure CSS decoration with no runtime cost at all. */
+body.wpm-games::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle, #ffe37a 0%, transparent 70%),
+    radial-gradient(circle, #ff8fd1 0%, transparent 70%),
+    radial-gradient(circle, #7af0ff 0%, transparent 70%),
+    radial-gradient(circle, #ffe37a 0%, transparent 70%),
+    radial-gradient(circle, #9dff9d 0%, transparent 70%),
+    radial-gradient(circle, #ff8fd1 0%, transparent 70%);
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 4px 4px, 6px 6px, 4px 4px, 5px 5px, 4px 4px;
+  background-position:
+    18% 22%, 34% 12%, 62% 8%, 78% 18%, 48% 28%, 88% 30%;
+  animation: wpmStadiumSparkle 3.6s ease-in-out infinite;
+}
+
+@keyframes wpmStadiumSparkle {
+  0%, 100% { opacity: 0.15; }
+  50%      { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.wpm-games::before,
+  body.wpm-games::after { animation: none; }
 }
 
 body.wpm-games a { color: inherit; text-decoration: none; }
@@ -270,7 +359,7 @@ body.wpm-games a { color: inherit; text-decoration: none; }
    Sagagoal" without competing with the neon per-game branding above
    it (hover restores full opacity as a subtle interactive nicety). */
 .wpm-games-footer__logo {
-  width: 120px;
+  width: 140px;
   height: auto;
   opacity: 0.55;
   transition: opacity 0.15s ease;

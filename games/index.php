@@ -97,8 +97,8 @@ $wpmGames = [
         'tagline' => 'Seberapa jago kamu soal sepak bola? Buktikan lewat kuis cepat.',
         'icon' => 'flame',
         'logo' => 'assets/games/img/quiz-bola.png',
-        'href' => null,
-        'status' => 'Segera Hadir',
+        'href' => 'games/quiz-bola/',
+        'status' => 'Main Sekarang',
         'accent' => 'purple',
     ],
 ];
@@ -167,7 +167,7 @@ $wpmGames = [
     </main>
 
     <footer class="wpm-games-footer">
-        <img class="wpm-games-footer__logo" src="assets/img/sagagoal-logo-white.png" alt="Sagagoal" loading="lazy" width="120" height="55">
+        <img class="wpm-games-footer__logo" src="assets/img/sagagoal-logo-white.png" alt="Sagagoal" loading="lazy" width="140" height="64">
         <p>&copy; <?= wpm_esc(date('Y')) ?> <a href="./">sagagoal.com</a></p>
     </footer>
 </body>
