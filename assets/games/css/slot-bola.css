@@ -1,0 +1,239 @@
+/**
+ * Slot Bola — page-specific styles (3 Sep 2026, Games Hub game #4).
+ * Layers on top of games-landing.css (shared base/buttons/CSS vars) —
+ * never duplicates those rules, same pattern as the other 3 games'
+ * CSS files. Deliberately a SEPARATE file ("jangan modify game lain")
+ * — class names use a `wpm-sb-*` prefix.
+ *
+ * Accent: gold (#ffd23f / 255,210,63) — same value as
+ * games-landing.css's new .wpm-game-card--gold variant (3 Sep 2026),
+ * defined locally here too (not read from the card-only custom
+ * property) so this page's own UI has its own accent vars, same
+ * approach as penalty-kick.css/quiz-bola.css.
+ *
+ * DOM/CSS-driven reels (no Canvas) — see slot-bola.js's docblock for
+ * why. Show/hide uses the native `hidden` attribute, same pattern as
+ * the other 3 games (see docs/DECISIONS.md's "logo dobel muncul" bug).
+ */
+
+:root {
+  --sb-gold: #ffd23f;
+  --sb-gold-rgb: 255, 210, 63;
+  --sb-win: #39ff88;
+}
+
+.wpm-sb-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 560px;
+  margin: 0 auto 8px;
+}
+.wpm-sb-topbar__title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ah-text-muted);
+}
+.wpm-sb-topbar__link { padding: 6px 4px; }
+.wpm-sb-topbar__right { display: flex; align-items: center; gap: 4px; }
+
+.wpm-sb-mute-btn {
+  appearance: none;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ah-border);
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ah-text);
+}
+.wpm-sb-mute-btn:hover { border-color: var(--sb-gold); }
+.wpm-sb-mute-btn[aria-pressed="true"] { opacity: 0.5; }
+
+.wpm-sb-stage {
+  max-width: 560px;
+  margin: 12px auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+
+.wpm-sb-hint {
+  margin: 0;
+  color: var(--ah-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 420px;
+}
+
+.wpm-sb-scoreboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 22px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #34260c 0%, #140d02 100%);
+  border: 1px solid rgba(var(--sb-gold-rgb), 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.5),
+    0 6px 22px rgba(0, 0, 0, 0.35);
+}
+.wpm-sb-scoreboard__label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ah-text-muted); }
+.wpm-sb-scoreboard__score {
+  font-size: 24px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #ffe9a8 60%, var(--sb-gold) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 18px rgba(var(--sb-gold-rgb), 0.45);
+}
+
+/* The "cabinet" frame around the reels — same arcade-bezel/glow idea
+   as the other 3 games' canvas-wrap frames, gold-tinted. */
+.wpm-sb-machine {
+  width: 100%;
+  max-width: 360px;
+  padding: 14px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
+  border: 3px solid rgba(var(--sb-gold-rgb), 0.55);
+  box-shadow:
+    0 0 50px rgba(var(--sb-gold-rgb), 0.22),
+    inset 0 0 30px rgba(0, 0, 0, 0.6);
+}
+
+/* Reel viewport: fixed height = 3 symbol cells (3 * 76px), overflow
+   hidden so the strip can translateY through extra "blur" symbols
+   above without the page layout shifting. Grid of 3 side-by-side
+   reels, with 3 absolutely-positioned payline bars overlaid on top
+   (one per row) for the win-highlight — see slot-bola.js. */
+.wpm-sb-reels {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.wpm-sb-reel {
+  position: relative;
+  height: 228px; /* 3 * 76px cell */
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(var(--sb-gold-rgb), 0.25);
+}
+.wpm-sb-reel__strip {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+}
+.wpm-sb-reel__cell {
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  line-height: 1;
+}
+
+/* Payline highlight bars — one per row, hidden by default, shown by
+   JS adding .is-win on the paylines that matched. Positioned to
+   overlay exactly one 76px row of all 3 reels combined; pointer-events
+   none so they never intercept clicks meant for the spin button/page. */
+.wpm-sb-payline {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 76px;
+  border-radius: 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  box-shadow: 0 0 0 2px var(--sb-win), 0 0 18px rgba(57, 255, 136, 0.6);
+  background: rgba(57, 255, 136, 0.12);
+}
+.wpm-sb-payline[data-row="0"] { top: 4px; }
+.wpm-sb-payline[data-row="1"] { top: 80px; }
+.wpm-sb-payline[data-row="2"] { top: 156px; }
+.wpm-sb-payline.is-win { opacity: 1; }
+
+.wpm-sb-result {
+  margin: 0;
+  min-height: 20px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sb-gold);
+  text-shadow: 0 0 14px rgba(var(--sb-gold-rgb), 0.5);
+}
+
+.wpm-sb-spin-btn {
+  min-width: 200px;
+  padding: 16px 28px;
+  font-size: 17px;
+  background: linear-gradient(135deg, var(--sb-gold), #ff9f3d);
+  box-shadow: 0 8px 26px rgba(var(--sb-gold-rgb), 0.35);
+}
+.wpm-sb-spin-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+
+.wpm-sb-paytable-toggle {
+  appearance: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: var(--ah-font);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ah-text-muted);
+  text-decoration: underline;
+  padding: 4px;
+}
+.wpm-sb-paytable-toggle:hover { color: var(--sb-gold); }
+
+.wpm-sb-paytable {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(var(--sb-gold-rgb), 0.25);
+}
+.wpm-sb-paytable__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--ah-text);
+}
+.wpm-sb-paytable__row span:first-child { font-size: 20px; }
+.wpm-sb-paytable__row span:last-child { color: var(--ah-text-muted); font-variant-numeric: tabular-nums; }
+
+@media (min-width: 480px) {
+  .wpm-sb-machine { max-width: 400px; }
+  .wpm-sb-reel { height: 252px; }
+  .wpm-sb-reel__cell { height: 84px; font-size: 46px; }
+  .wpm-sb-payline { height: 84px; }
+  .wpm-sb-payline[data-row="0"] { top: 4px; }
+  .wpm-sb-payline[data-row="1"] { top: 88px; }
+  .wpm-sb-payline[data-row="2"] { top: 172px; }
+}
+
+@media (min-width: 768px) {
+  .wpm-sb-stage { margin-top: 20px; }
+}
