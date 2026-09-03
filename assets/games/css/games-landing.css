@@ -30,15 +30,15 @@
    no JS, no filter/blur recalculated per frame, just a compositor-level
    position tween). Respects prefers-reduced-motion.
    Layer order/count in this keyframe MUST match body.wpm-games's
-   background-image list below exactly: [dark overlay (static), blob
-   cyan, blob pink, blob orange, blob green, stadium photo (static)] —
-   6 comma-separated values every time, one per layer, even for the 2
-   static layers (overlay/photo just repeat the same position so they
-   never move while the blobs drift over the photo). */
+   background-image list below exactly: [center vignette (static), top/
+   bottom fade (static), blob cyan, blob pink, blob orange, blob green,
+   stadium photo (static)] — 7 comma-separated values every time, one
+   per layer, even for the 3 static layers (they just repeat the same
+   position so they never move while the blobs drift over the photo). */
 @keyframes wpmGamesBgDrift {
-  0%   { background-position: 0% 0%, 15% 0%, 100% 20%, 40% 100%, 85% 90%, center center; }
-  50%  { background-position: 0% 0%, 25% 10%, 90% 30%, 55% 90%, 75% 80%, center center; }
-  100% { background-position: 0% 0%, 15% 0%, 100% 20%, 40% 100%, 85% 90%, center center; }
+  0%   { background-position: 50% 45%, 0% 0%, 15% 0%, 100% 20%, 40% 100%, 85% 90%, center center; }
+  50%  { background-position: 50% 45%, 0% 0%, 25% 10%, 90% 30%, 55% 90%, 75% 80%, center center; }
+  100% { background-position: 50% 45%, 0% 0%, 15% 0%, 100% 20%, 40% 100%, 85% 90%, center center; }
 }
 
 body.wpm-games {
@@ -48,23 +48,28 @@ body.wpm-games {
   /* Stadium crowd/fireworks photo (3 Sep 2026, "euforia pertandingan"
      revision) — operator-supplied image (games/assets/img/1169c2899bd3cf0..webp,
      recompressed to assets/games/img/stadium-bg.webp, 1920x1080, ~168KB)
-     as the base layer, dark overlay gradient on top of it so card/text
-     contrast stays readable (WCAG-ish legibility, not just "looks ok"),
-     then the same brighter accent-color blobs from the 3 Sep "bikin
-     lebih cerah" revision tinting on top of the photo instead of over
-     flat black. A pure-CSS light-beam/sparkle effect was tried first
-     (see docs/DECISIONS.md) but the operator wanted the actual photo,
-     not a simulation — this replaces that attempt (kept in ::before/
-     ::after below, layered on top of the photo, since those effects
-     still read well over it). */
+     as the base layer.
+     Darkening overlay reworked 3 Sep 2026 (2nd pass) — the original
+     single full-width linear-gradient darkened the ENTIRE image
+     uniformly, and the photo's own edges (flag pole on the left, plain
+     night sky on the right) are naturally dark already, so on wide
+     desktop viewports that combination read as flat dead-looking bars
+     on both sides ("kaya potongan", "kurang bagus buat background" —
+     operator feedback). Fixed by swapping to an ELLIPTICAL vignette
+     centered on the hero/card content (where text legibility actually
+     matters) + a much lighter top/bottom fade for the header/footer —
+     left/right edges now stay close to full brightness so the photo
+     reads as a real, full-bleed background instead of a boxed-in
+     center crop. */
   background-image:
-    linear-gradient(180deg, rgba(4, 5, 10, 0.88) 0%, rgba(4, 5, 10, 0.8) 40%, rgba(4, 5, 10, 0.93) 100%),
+    radial-gradient(ellipse 78% 88% at 50% 45%, rgba(4, 5, 10, 0.93) 0%, rgba(4, 5, 10, 0.72) 55%, rgba(4, 5, 10, 0.4) 80%),
+    linear-gradient(180deg, rgba(4, 5, 10, 0.82) 0%, rgba(4, 5, 10, 0.4) 18%, rgba(4, 5, 10, 0.4) 78%, rgba(4, 5, 10, 0.87) 100%),
     radial-gradient(ellipse 65% 45% at 15% 0%, rgba(53, 230, 255, 0.22) 0%, transparent 60%),
     radial-gradient(ellipse 60% 50% at 100% 20%, rgba(255, 61, 154, 0.18) 0%, transparent 60%),
     radial-gradient(ellipse 55% 45% at 40% 100%, rgba(255, 176, 59, 0.16) 0%, transparent 60%),
     radial-gradient(ellipse 45% 35% at 85% 90%, rgba(57, 255, 136, 0.12) 0%, transparent 60%),
     url('../img/stadium-bg.webp');
-  background-size: 100% 100%, 160% 160%, 160% 160%, 160% 160%, 160% 160%, cover;
+  background-size: 100% 100%, 100% 100%, 160% 160%, 160% 160%, 160% 160%, 160% 160%, cover;
   background-repeat: no-repeat;
   background-attachment: scroll;
   animation: wpmGamesBgDrift 22s ease-in-out infinite;
