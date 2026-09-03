@@ -39,10 +39,16 @@ body.wpm-games {
   margin: 0;
   min-height: 100vh;
   background-color: var(--ah-bg);
+  /* Brighter/more saturated glow blobs (3 Sep 2026, "bikin lebih cerah"
+     revision) — same 3-blob drift, just noticeably higher opacity +
+     bigger spread than the original MVP tuning so the page reads as
+     more vivid/energetic at a glance, not just "dark with tiny hints
+     of color". */
   background-image:
-    radial-gradient(ellipse 60% 40% at 15% 0%, rgba(53, 230, 255, 0.16) 0%, transparent 55%),
-    radial-gradient(ellipse 55% 45% at 100% 20%, rgba(255, 61, 154, 0.14) 0%, transparent 55%),
-    radial-gradient(ellipse 50% 40% at 40% 100%, rgba(255, 176, 59, 0.12) 0%, transparent 55%);
+    radial-gradient(ellipse 65% 45% at 15% 0%, rgba(53, 230, 255, 0.28) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 100% 20%, rgba(255, 61, 154, 0.24) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 40% 100%, rgba(255, 176, 59, 0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 45% 35% at 85% 90%, rgba(57, 255, 136, 0.16) 0%, transparent 60%);
   background-size: 160% 160%;
   animation: wpmGamesBgDrift 22s ease-in-out infinite;
   color: var(--ah-text);
@@ -86,7 +92,11 @@ body.wpm-games a { color: inherit; text-decoration: none; }
   font-size: clamp(28px, 6vw, 44px);
   font-weight: 800;
   letter-spacing: -0.01em;
-  text-shadow: 0 0 24px rgba(57, 255, 136, 0.35);
+  background: linear-gradient(90deg, var(--ah-neon-cyan), var(--ah-neon-green) 45%, var(--ah-neon-pink) 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 36px rgba(57, 255, 136, 0.45);
 }
 .wpm-games-hero__sub {
   margin: 0;
@@ -97,9 +107,9 @@ body.wpm-games a { color: inherit; text-decoration: none; }
 
 .wpm-games-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 18px;
-  max-width: 900px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 22px;
+  max-width: 960px;
   margin: 0 auto;
 }
 
@@ -109,9 +119,12 @@ body.wpm-games a { color: inherit; text-decoration: none; }
    (icon tint, border, hover glow, active status pill) reads from these
    instead of hardcoding a color, so adding a 4th/5th accent later is
    just one more 2-line block, not new selectors scattered around. */
-.wpm-game-card--orange { --card-accent: #ffb03b; --card-accent-rgb: 255, 176, 59; }
-.wpm-game-card--cyan   { --card-accent: #35e6ff; --card-accent-rgb: 53, 230, 255; }
-.wpm-game-card--purple { --card-accent: #c05bff; --card-accent-rgb: 192, 91, 255; }
+/* Brighter/more saturated per-card accents (3 Sep 2026 revision — same
+   3 slots, just punched-up hex values so cards read as vivid instead of
+   pastel-ish against the dark background). */
+.wpm-game-card--orange { --card-accent: #ffc247; --card-accent-rgb: 255, 194, 71; }
+.wpm-game-card--cyan   { --card-accent: #4df1ff; --card-accent-rgb: 77, 241, 255; }
+.wpm-game-card--purple { --card-accent: #d374ff; --card-accent-rgb: 211, 116, 255; }
 
 .wpm-game-card {
   position: relative;
@@ -120,23 +133,51 @@ body.wpm-games a { color: inherit; text-decoration: none; }
   align-items: center;
   text-align: center;
   gap: 10px;
-  padding: 28px 20px 24px;
-  border-radius: 16px;
-  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
-  border: 1px solid rgba(var(--card-accent-rgb), 0.3);
-  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  padding: 32px 20px 26px;
+  border-radius: 18px;
+  overflow: hidden;
+  /* Brighter card body — accent color now bleeds subtly into the
+     gradient itself (not just the border/icon), so each card feels
+     tinted by its own color instead of every card sharing one flat
+     dark panel. */
+  background:
+    radial-gradient(140% 100% at 50% -10%, rgba(var(--card-accent-rgb), 0.16) 0%, transparent 55%),
+    linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(var(--card-accent-rgb), 0.4);
+  box-shadow: 0 4px 24px rgba(var(--card-accent-rgb), 0.1);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .wpm-game-card--active {
   cursor: pointer;
 }
 .wpm-game-card--active:hover {
-  transform: translateY(-4px);
+  transform: translateY(-6px) scale(1.015);
   border-color: var(--card-accent);
-  box-shadow: 0 12px 40px rgba(var(--card-accent-rgb), 0.28);
+  box-shadow: 0 16px 48px rgba(var(--card-accent-rgb), 0.4);
 }
 
-.wpm-game-card--soon { opacity: 0.6; filter: saturate(0.7); }
+.wpm-game-card--soon { opacity: 0.65; filter: saturate(0.75); }
+
+/* "MAIN SEKARANG" ribbon badge on active cards (3 Sep 2026) — small
+   extra flourish so the hub doesn't read as 3 near-identical cards;
+   purely decorative, doesn't touch the status pill's own text/logic. */
+.wpm-game-card--active::before {
+  content: '\26A1';
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 13px;
+  background: rgba(var(--card-accent-rgb), 0.16);
+  color: var(--card-accent);
+  box-shadow: 0 0 14px rgba(var(--card-accent-rgb), 0.5);
+}
 
 .wpm-game-card__icon {
   display: flex;
@@ -151,12 +192,48 @@ body.wpm-games a { color: inherit; text-decoration: none; }
 }
 .wpm-game-card__icon svg { width: 26px; height: 26px; }
 
-.wpm-game-card__title { margin: 4px 0 0; font-size: 18px; font-weight: 700; }
+/* Per-game PNG logo (3 Sep 2026, enlarged in the same-day follow-up
+   revision) — replaces the generic icon glyph when the game has custom
+   artwork (see `logo` field in games/index.php). Sized MUCH bigger than
+   the plain-icon variant since the artwork is the card's whole visual
+   identity, not a small decorative glyph. A soft radial glow sits
+   behind it (::after) so the logo feels like it's floating in a pool
+   of the card's accent color, not just pasted flat on the card. */
+.wpm-game-card__icon:has(img) {
+  position: relative;
+  width: clamp(120px, 32vw, 168px);
+  height: clamp(120px, 32vw, 168px);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  margin-bottom: 2px;
+}
+.wpm-game-card__icon:has(img)::after {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--card-accent-rgb), 0.35) 0%, transparent 70%);
+  filter: blur(6px);
+}
+.wpm-game-card__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 20px rgba(var(--card-accent-rgb), 0.55));
+  transition: transform 0.2s ease;
+}
+.wpm-game-card--active:hover .wpm-game-card__icon img {
+  transform: scale(1.05);
+}
+
+.wpm-game-card__title { margin: 4px 0 0; font-size: 20px; font-weight: 800; }
 .wpm-game-card__tagline { margin: 0; font-size: 13px; color: var(--ah-text-muted); line-height: 1.5; }
 
 .wpm-game-card__status {
   margin-top: 6px;
-  padding: 5px 14px;
+  padding: 6px 16px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
@@ -164,9 +241,10 @@ body.wpm-games a { color: inherit; text-decoration: none; }
   text-transform: uppercase;
 }
 .wpm-game-card__status--active {
-  background: rgba(var(--card-accent-rgb), 0.18);
+  background: rgba(var(--card-accent-rgb), 0.22);
   color: var(--card-accent);
-  border: 1px solid rgba(var(--card-accent-rgb), 0.45);
+  border: 1px solid rgba(var(--card-accent-rgb), 0.55);
+  box-shadow: 0 0 16px rgba(var(--card-accent-rgb), 0.3);
 }
 .wpm-game-card__status--soon {
   background: rgba(147, 160, 194, 0.12);

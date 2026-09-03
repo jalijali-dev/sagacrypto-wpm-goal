@@ -36,6 +36,12 @@ $cssVer = @filemtime(__DIR__ . '/../assets/games/css/games-landing.css') ?: 1;
  * a new data concept — CrazyGames-style "each card its own color" per
  * the operator's landing-page reference, still Sagagoal/football themed
  * (icons stay football/trophy/flame, just recolored per card).
+ *
+ * `logo` (3 Sep 2026) — root-relative path to a per-game PNG logo
+ * (operator-supplied artwork, background removed + recompressed, see
+ * assets/games/img/) rendered instead of the generic `icon` glyph when
+ * present. `icon` is kept as the fallback for any future card that
+ * doesn't have custom artwork yet (e.g. quiz-bola once it's built).
  */
 $wpmGames = [
     [
@@ -43,6 +49,7 @@ $wpmGames = [
         'title' => 'Air Hockey',
         'tagline' => 'Lawan komputer, 3 level kesulitan. Gerakin kaki, jaga gawangmu!',
         'icon' => 'football',
+        'logo' => 'assets/games/img/air-hockey.png',
         // Root-relative (matches <base href="../"> below, which points
         // at the site root) — not wpm_site_url(), see the <base> comment
         // further down for why.
@@ -55,6 +62,7 @@ $wpmGames = [
         'title' => 'Penalty Kick',
         'tagline' => 'Adu penalti lawan kiper. Bidik sudut, jangan ketahuan arahnya.',
         'icon' => 'trophy',
+        'logo' => 'assets/games/img/penalty-kick.png',
         'href' => 'games/penalty-kick/',
         'status' => 'Main Sekarang',
         'accent' => 'cyan',
@@ -64,6 +72,7 @@ $wpmGames = [
         'title' => 'Kuis Bola',
         'tagline' => 'Seberapa jago kamu soal sepak bola? Buktikan lewat kuis cepat.',
         'icon' => 'flame',
+        'logo' => 'assets/games/img/quiz-bola.png',
         'href' => null,
         'status' => 'Segera Hadir',
         'accent' => 'purple',
@@ -108,7 +117,13 @@ $wpmGames = [
             <?php else : ?>
                 <div class="<?= $cardClass ?>">
             <?php endif; ?>
-                <span class="wpm-game-card__icon"><?= wpm_icon($game['icon']) ?></span>
+                <span class="wpm-game-card__icon">
+                    <?php if (!empty($game['logo'])) : ?>
+                        <img src="<?= wpm_esc($game['logo']) ?>" alt="" loading="lazy" width="168" height="168">
+                    <?php else : ?>
+                        <?= wpm_icon($game['icon']) ?>
+                    <?php endif; ?>
+                </span>
                 <h2 class="wpm-game-card__title"><?= wpm_esc($game['title']) ?></h2>
                 <p class="wpm-game-card__tagline"><?= wpm_esc($game['tagline']) ?></p>
                 <span class="wpm-game-card__status wpm-game-card__status--<?= $game['href'] !== null ? 'active' : 'soon' ?>">
