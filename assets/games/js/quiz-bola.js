@@ -36,6 +36,7 @@
   var questionCountEl = document.getElementById('qb-question-count');
   var scoreEl = document.getElementById('qb-score');
   var timerFillEl = document.getElementById('qb-timer-fill');
+  var timerSecondsEl = document.getElementById('qb-timer-seconds');
   var questionTextEl = document.getElementById('qb-question-text');
   var optionsEl = document.getElementById('qb-options');
   var endTitleEl = document.getElementById('qb-end-title');
@@ -188,6 +189,28 @@
     { q: 'Teknologi yang digunakan wasit untuk meninjau ulang keputusan kontroversial disebut?', options: ['GPS Tracking', 'VAR (Video Assistant Referee)', 'Hawk-Eye Radar', 'Goal Sensor Chip'], correctIndex: 1, difficulty: 'easy' },
     { q: 'Formasi 4-4-2 dalam sepak bola merujuk pada susunan pemain apa?', options: ['4 kiper, 4 bek, 2 penyerang', '4 bek, 4 gelandang, 2 penyerang', '4 penyerang, 4 gelandang, 2 bek', '4 bek, 2 gelandang, 4 penyerang'], correctIndex: 1, difficulty: 'hard' },
     { q: 'David Beckham terkenal karena keahliannya dalam mengeksekusi tendangan?', options: ['Tendangan penalti', 'Tendangan bebas (free-kick)', 'Tendangan gawang', 'Tendangan sudut'], correctIndex: 1, difficulty: 'medium' },
+    { q: 'Siapa pelatih yang membawa Jerman Barat juara Piala Dunia 1990 setelah sebelumnya ikut juara sebagai pemain di 1974?', options: ['Franz Beckenbauer', 'Jurgen Klinsmann', 'Joachim Low', 'Otto Rehhagel'], correctIndex: 0, difficulty: 'hard' },
+    { q: 'Siapa pelatih yang membawa Prancis juara Piala Dunia 2018 setelah sebelumnya juara sebagai pemain di 1998?', options: ['Zinedine Zidane', 'Didier Deschamps', 'Laurent Blanc', 'Raymond Domenech'], correctIndex: 1, difficulty: 'hard' },
+    { q: 'Selain Beckenbauer dan Deschamps, siapa satu lagi tokoh yang pernah juara Piala Dunia sebagai pemain sekaligus pelatih (Brasil, 1958/1962 sebagai pemain, 1970 sebagai pelatih)?', options: ['Mario Zagallo', 'Carlos Alberto Parreira', 'Vicente del Bosque', 'Aime Jacquet'], correctIndex: 0, difficulty: 'hard' },
+    { q: 'Piala Dunia FIFA 2026 merupakan edisi ke berapa sejak pertama kali digelar tahun 1930?', options: ['21', '22', '23', '24'], correctIndex: 2, difficulty: 'hard' },
+    { q: 'Piala Dunia FIFA 2026 pertama kali diikuti berapa negara peserta (perluasan dari 32 negara sebelumnya)?', options: ['32', '40', '48', '64'], correctIndex: 2, difficulty: 'hard' },
+    { q: 'Siapa peraih Ballon d\'Or terbanyak sepanjang sejarah (hingga 2026), dengan 8 trofi?', options: ['Cristiano Ronaldo', 'Lionel Messi', 'Michel Platini', 'Johan Cruyff'], correctIndex: 1, difficulty: 'hard' },
+    { q: 'Siapa peraih Golden Boot (topskor turnamen) Piala Dunia FIFA 2026?', options: ['Lionel Messi', 'Kylian Mbappe', 'Lamine Yamal', 'Harry Kane'], correctIndex: 1, difficulty: 'hard' },
+    { q: 'Siapa peraih Golden Ball (pemain terbaik turnamen) Piala Dunia FIFA 2026?', options: ['Pedri', 'Rodri', 'Jude Bellingham', 'Vitinha'], correctIndex: 1, difficulty: 'hard' },
+    { q: 'Siapa peraih Golden Glove (kiper terbaik turnamen) Piala Dunia FIFA 2026?', options: ['Unai Simon', 'Emiliano Martinez', 'Thibaut Courtois', 'Alisson Becker'], correctIndex: 0, difficulty: 'hard' },
+    { q: 'Siapa pencetak gol termuda dalam sejarah Piala Dunia FIFA (usia 17 tahun, di Piala Dunia 1958)?', options: ['Pele', 'Michael Owen', 'Kylian Mbappe', 'Ronaldo Nazario'], correctIndex: 0, difficulty: 'hard' },
+    { q: 'Filosofi/sistem taktik yang dipopulerkan Timnas Belanda era Johan Cruyff dikenal dengan istilah?', options: ['Tiki-taka', 'Total Football', 'Catenaccio', 'Gegenpressing'], correctIndex: 1, difficulty: 'hard' },
+    { q: 'Berapa kali Argentina menjadi juara Piala Dunia FIFA hingga 2026?', options: ['2 kali', '3 kali', '4 kali', '5 kali'], correctIndex: 1, difficulty: 'hard' },
+    { q: 'Berapa kali Jerman (termasuk era Jerman Barat) menjadi juara Piala Dunia FIFA hingga 2026?', options: ['3 kali', '4 kali', '5 kali', '6 kali'], correctIndex: 1, difficulty: 'hard' },
+    { q: 'Siapa peraih Golden Boot Piala Dunia FIFA 2022 di Qatar (8 gol), meski timnya bukan juara?', options: ['Lionel Messi', 'Kylian Mbappe', 'Julian Alvarez', 'Olivier Giroud'], correctIndex: 1, difficulty: 'hard' },
+    { q: 'Timnas Brasil dijuluki dengan sebutan?', options: ['Selecao', 'Die Mannschaft', 'La Albiceleste', 'Gli Azzurri'], correctIndex: 0, difficulty: 'medium' },
+    { q: 'Timnas Argentina dijuluki dengan sebutan?', options: ['Selecao', 'La Albiceleste', 'Die Mannschaft', 'Oranje'], correctIndex: 1, difficulty: 'medium' },
+    { q: 'Timnas Jerman dijuluki dengan sebutan?', options: ['Die Mannschaft', 'Gli Azzurri', 'La Albiceleste', 'Les Bleus'], correctIndex: 0, difficulty: 'medium' },
+    { q: 'Timnas Prancis dijuluki dengan sebutan?', options: ['Les Bleus', 'Die Mannschaft', 'Oranje', 'Selecao'], correctIndex: 0, difficulty: 'medium' },
+    { q: 'Ban yang dikenakan di lengan pemain untuk menandakan dia adalah kapten tim disebut?', options: ['Ban kapten', 'Ban lengan', 'Ban pelatih', 'Ban wasit'], correctIndex: 0, difficulty: 'easy' },
+    { q: 'Selain kiper di kotak penaltinya sendiri, bagian tubuh apa yang tidak boleh dipakai mengontrol bola secara sengaja?', options: ['Kaki', 'Kepala', 'Tangan', 'Dada'], correctIndex: 2, difficulty: 'easy' },
+    { q: 'Berapa jumlah wasit utama yang memimpin jalannya satu pertandingan sepak bola resmi?', options: ['1', '2', '3', '4'], correctIndex: 0, difficulty: 'easy' },
+    { q: 'Apa istilah untuk operan/umpan terakhir dari rekan setim yang langsung menghasilkan gol?', options: ['Assist', 'Cross', 'Through pass', 'Deflection'], correctIndex: 0, difficulty: 'easy' },
   ];
 
   var DIFFICULTY_TIMER_MS = { easy: 18000, medium: 12000, hard: 8000 };
@@ -339,6 +362,7 @@
   function startTimer() {
     stopTimer();
     timerFillEl.classList.remove('is-urgent');
+    if (timerSecondsEl) { timerSecondsEl.classList.remove('is-urgent'); }
     // Force the bar to instantly snap to 100% (no transition), then on
     // the next frame set it to 0% so the width transition actually
     // animates the shrink over timerDurationMs.
@@ -346,6 +370,17 @@
     timerFillEl.style.width = '100%';
     timerStartedAt = performance.now();
     lastTickSecond = Math.ceil(timerDurationMs / 1000);
+    // Numeric countdown (3 Sep 2026, operator request — "munculin aja
+    // detiknya juga") — tracked separately from lastTickSecond (which
+    // only fires the last-3-seconds tick sound) so the number updates
+    // every second across the WHOLE countdown, not just near the end.
+    var lastDisplayedSecond = -1;
+    function updateSecondsDisplay(seconds) {
+      if (!timerSecondsEl || seconds === lastDisplayedSecond) { return; }
+      lastDisplayedSecond = seconds;
+      timerSecondsEl.textContent = String(seconds);
+    }
+    updateSecondsDisplay(Math.ceil(timerDurationMs / 1000));
     requestAnimationFrame(function () {
       timerFillEl.style.transition = 'width linear ' + (timerDurationMs / 1000) + 's, background-color 0.2s ease';
       timerFillEl.style.width = '0%';
@@ -355,12 +390,14 @@
       var elapsed = performance.now() - timerStartedAt;
       var remaining = timerDurationMs - elapsed;
       var remainingSeconds = Math.ceil(remaining / 1000);
+      updateSecondsDisplay(Math.max(0, remainingSeconds));
       if (remainingSeconds !== lastTickSecond && remainingSeconds >= 0 && remainingSeconds <= 3) {
         lastTickSecond = remainingSeconds;
         sfx.tick();
       }
       if (remaining <= timerDurationMs * 0.25) {
         timerFillEl.classList.add('is-urgent');
+        if (timerSecondsEl) { timerSecondsEl.classList.add('is-urgent'); }
       }
       if (remaining <= 0) {
         handleTimeout();

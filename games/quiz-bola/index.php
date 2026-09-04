@@ -102,8 +102,11 @@ $wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
                 </div>
             </div>
 
-            <div class="wpm-qb-timer-track" aria-hidden="true">
-                <div class="wpm-qb-timer-fill" id="qb-timer-fill"></div>
+            <div class="wpm-qb-timer-row">
+                <div class="wpm-qb-timer-track" aria-hidden="true">
+                    <div class="wpm-qb-timer-fill" id="qb-timer-fill"></div>
+                </div>
+                <span class="wpm-qb-timer-seconds" id="qb-timer-seconds">0</span>
             </div>
 
             <div class="wpm-qb-card">

@@ -209,7 +209,13 @@
    and the exact remaining-time value used for SCORING is tracked
    separately in JS via performance.now(), this bar is purely the
    visual cue. Color shifts via a modifier class as time runs low. */
+.wpm-qb-timer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .wpm-qb-timer-track {
+  flex: 1 1 auto;
   width: 100%;
   height: 10px;
   border-radius: 999px;
@@ -228,6 +234,27 @@
 .wpm-qb-timer-fill.is-urgent {
   background: linear-gradient(90deg, var(--qb-wrong), #ff8a3d);
   box-shadow: 0 0 14px rgba(255, 61, 154, 0.55);
+}
+
+/* Numeric seconds countdown next to the bar (3 Sep 2026, operator
+   request) — the bar alone gives a quick "how much time left" glance,
+   but the operator specifically wanted the exact second count visible
+   too. Flex-basis fixed via min-width so the layout doesn't jiggle as
+   the digit count changes (2 digits vs 1). Color/glow mirrors the bar's
+   own urgent state via the same .is-urgent class, toggled in JS. */
+.wpm-qb-timer-seconds {
+  flex: 0 0 auto;
+  min-width: 28px;
+  text-align: right;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--qb-purple);
+  text-shadow: 0 0 10px rgba(var(--qb-purple-rgb), 0.5);
+}
+.wpm-qb-timer-seconds.is-urgent {
+  color: var(--qb-wrong);
+  text-shadow: 0 0 12px rgba(255, 61, 154, 0.55);
 }
 
 .wpm-qb-card {
