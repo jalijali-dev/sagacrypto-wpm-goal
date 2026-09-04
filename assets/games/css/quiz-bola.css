@@ -289,9 +289,9 @@
    own urgent state via the same .is-urgent class, toggled in JS. */
 .wpm-qb-timer-seconds {
   flex: 0 0 auto;
-  min-width: 28px;
+  min-width: 52px;
   text-align: right;
-  font-size: 15px;
+  font-size: 28px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--qb-purple);

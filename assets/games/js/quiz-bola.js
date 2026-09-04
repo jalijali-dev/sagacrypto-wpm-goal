@@ -390,7 +390,10 @@
     function updateSecondsDisplay(seconds) {
       if (!timerSecondsEl || seconds === lastDisplayedSecond) { return; }
       lastDisplayedSecond = seconds;
-      timerSecondsEl.textContent = String(seconds);
+      // Zero-padded 2-digit format (3 Sep 2026, "modelny pake 0
+      // depannya 09.08.07...01") — purely cosmetic digital-clock look,
+      // doesn't change the underlying countdown value at all.
+      timerSecondsEl.textContent = (seconds < 10 ? '0' : '') + String(seconds);
     }
     updateSecondsDisplay(Math.ceil(timerDurationMs / 1000));
     requestAnimationFrame(function () {
