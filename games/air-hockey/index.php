@@ -45,7 +45,7 @@ $wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <title><?= wpm_esc($pageTitle) ?></title>
     <meta name="description" content="<?= wpm_esc($pageDescription) ?>">
-    <meta name="robots" content="noindex, follow">
+    <meta name="robots" content="index, follow">
     <?php if ($wpmFaviconUrl !== null) : ?>
         <link rel="icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
         <link rel="shortcut icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
