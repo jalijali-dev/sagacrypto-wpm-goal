@@ -42,6 +42,8 @@
   var endTitleEl = document.getElementById('qb-end-title');
   var endScoreEl = document.getElementById('qb-end-score');
   var endBreakdownEl = document.getElementById('qb-end-breakdown');
+  var perfectBadgeEl = document.getElementById('qb-perfect-badge');
+  var confettiEl = document.getElementById('qb-confetti');
 
   // ---- Audio: short synthesized blips via Web Audio, same rationale
   // as air-hockey.js/penalty-kick.js (zero payload, zero licensing
@@ -95,6 +97,16 @@
       playTone(659.25, 0.12, 'triangle', 0.12, 0.11);
       playTone(783.99, 0.12, 'triangle', 0.12, 0.22);
       playTone(1046.5, 0.24, 'triangle', 0.13, 0.33);
+    },
+    // Bigger fanfare for a perfect 10/10 (3 Sep 2026) — same idea as
+    // finish() but longer/higher, so a flawless run sounds noticeably
+    // more triumphant instead of reusing the regular finish jingle.
+    perfect: function () {
+      playTone(523.25, 0.1, 'triangle', 0.13, 0);
+      playTone(659.25, 0.1, 'triangle', 0.13, 0.1);
+      playTone(783.99, 0.1, 'triangle', 0.13, 0.2);
+      playTone(1046.5, 0.1, 'triangle', 0.14, 0.3);
+      playTone(1318.5, 0.35, 'triangle', 0.15, 0.4);
     },
   };
 
@@ -467,14 +479,43 @@
     showQuestion();
   }
 
+  // Perfect-score flourish (3 Sep 2026, operator request) — a handful
+  // of CSS-animated <span> "confetti" pieces, spawned only on a flawless
+  // run. Cheap: plain absolutely-positioned spans + a CSS keyframe
+  // (transform/opacity only), removed on the next startQuiz()/showStart()
+  // pass via confettiEl.innerHTML reset, never accumulates across replays.
+  var CONFETTI_COLORS = ['#ffd23f', '#35e6ff', '#ff3d9a', '#39ff88', '#d374ff'];
+  function spawnConfetti() {
+    if (!confettiEl) { return; }
+    confettiEl.innerHTML = '';
+    var pieceCount = 36;
+    for (var i = 0; i < pieceCount; i++) {
+      var piece = document.createElement('span');
+      piece.className = 'wpm-qb-confetti__piece';
+      piece.style.left = Math.random() * 100 + 'vw';
+      piece.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+      piece.style.animationDuration = (2.2 + Math.random() * 1.6) + 's';
+      piece.style.animationDelay = (Math.random() * 0.6) + 's';
+      confettiEl.appendChild(piece);
+    }
+  }
+
   function endQuiz() {
     stopTimer();
     boardEl.hidden = true;
     panelEnd.hidden = false;
-    endTitleEl.textContent = 'Selesai!';
+    var isPerfect = correctCount === QUESTIONS_PER_SESSION;
+    endTitleEl.textContent = isPerfect ? 'Sempurna!' : 'Selesai!';
     endScoreEl.textContent = String(score) + ' poin';
     endBreakdownEl.textContent = correctCount + ' dari ' + QUESTIONS_PER_SESSION + ' jawaban benar';
-    sfx.finish();
+    if (perfectBadgeEl) { perfectBadgeEl.hidden = !isPerfect; }
+    if (isPerfect) {
+      spawnConfetti();
+      sfx.perfect();
+    } else {
+      if (confettiEl) { confettiEl.innerHTML = ''; }
+      sfx.finish();
+    }
   }
 
   startBtn.addEventListener('click', startQuiz);

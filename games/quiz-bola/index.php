@@ -117,6 +117,13 @@ $wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
 
         <!-- End-of-quiz overlay -->
         <div class="wpm-qb-panel wpm-qb-panel--overlay" id="qb-panel-end" hidden>
+            <!-- Confetti burst (3 Sep 2026, "yg menang jawab semua soal
+                 kasih informasi/kasih apa gitu" — perfect-score flourish).
+                 Empty by default; quiz-bola.js only populates this with
+                 falling-piece <span>s when correctCount === 10, so a
+                 normal (non-perfect) finish never pays any cost for it. -->
+            <div class="wpm-qb-confetti" id="qb-confetti" aria-hidden="true"></div>
+            <p class="wpm-qb-panel__perfect" id="qb-perfect-badge" hidden>🏆 SKOR SEMPURNA!</p>
             <h2 class="wpm-qb-panel__title" id="qb-end-title">Selesai!</h2>
             <p class="wpm-qb-panel__score" id="qb-end-score"></p>
             <p class="wpm-qb-panel__hint" id="qb-end-breakdown"></p>
