@@ -75,24 +75,48 @@ $wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
     </div>
 
     <main class="wpm-sb-stage">
-        <p class="wpm-sb-hint">Putar gulungan, cocokkan 3 simbol sebaris — spin gratis, tanpa batas, murni buat seru-seruan (bukan judi, tidak ada kredit/koin sama sekali).</p>
+        <p class="wpm-sb-hint">Putar gulungan, cocokkan 3 simbol sebaris (horizontal atau diagonal) — spin gratis, tanpa batas, murni buat seru-seruan (bukan judi, tidak ada kredit/koin sama sekali).</p>
 
         <div class="wpm-sb-scoreboard">
-            <span class="wpm-sb-scoreboard__label">Skor</span>
-            <span class="wpm-sb-scoreboard__score" id="sb-score">0</span>
+            <div class="wpm-sb-scoreboard__main">
+                <span class="wpm-sb-scoreboard__label">Skor</span>
+                <span class="wpm-sb-scoreboard__score" id="sb-score">0</span>
+            </div>
+            <!-- Rank (5 Sep 2026, v2) — permanent, always visible, purely a
+                 local-score-derived label (see RANKS in slot-bola.js), never
+                 a currency/tier that unlocks anything. -->
+            <span class="wpm-sb-rank-badge" id="sb-rank-badge">Pemain Amatir</span>
+            <!-- Win-streak multiplier badge (5 Sep 2026, v2) — hidden until
+                 the first win of a streak, hidden again the instant the
+                 streak breaks (see updateStreakBadge() in slot-bola.js). -->
+            <span class="wpm-sb-streak-badge" id="sb-streak-badge" hidden>🔥 Streak <span id="sb-streak-count"></span> <span id="sb-streak-mult"></span></span>
         </div>
+
+        <!-- Bonus-round banner (5 Sep 2026, v2) — hidden outside the 3
+             auto-spin bonus sequence triggered by landing 🎫🎫🎫 on one row
+             (see startBonusRound()/endBonusRound() in slot-bola.js). The
+             bonus round is still just extra FREE auto-spins, never a
+             separate currency — see the "NO MONEY" note in slot-bola.js. -->
+        <div class="wpm-sb-bonus-banner" id="sb-bonus-banner" hidden>🎉 BONUS ROUND! 3 Spin Gratis</div>
 
         <div class="wpm-sb-machine">
             <div class="wpm-sb-reels" id="sb-reels">
                 <div class="wpm-sb-reel" data-reel="0"><div class="wpm-sb-reel__strip" id="sb-strip-0"></div></div>
                 <div class="wpm-sb-reel" data-reel="1"><div class="wpm-sb-reel__strip" id="sb-strip-1"></div></div>
                 <div class="wpm-sb-reel" data-reel="2"><div class="wpm-sb-reel__strip" id="sb-strip-2"></div></div>
-                <!-- 3 payline markers (top/mid/bottom row), highlighted by
+                <!-- 5 payline markers (3 horizontal rows + 2 diagonals, 5 Sep
+                     2026 v2 — was 3 horizontal-only), highlighted by
                      slot-bola.js on a win — purely visual, sits above the
-                     reels via z-index, doesn't affect reel layout. -->
+                     reels via z-index, doesn't affect reel layout. The 2
+                     diagonal bars' width/rotation is computed at runtime in
+                     JS (layoutDiagonalPaylines()) from the grid's actual
+                     rendered size, not guessed in CSS, since the grid isn't
+                     a perfect square at every breakpoint. -->
                 <div class="wpm-sb-payline" id="sb-payline-0" data-row="0"></div>
                 <div class="wpm-sb-payline" id="sb-payline-1" data-row="1"></div>
                 <div class="wpm-sb-payline" id="sb-payline-2" data-row="2"></div>
+                <div class="wpm-sb-payline wpm-sb-payline--diag" id="sb-payline-3"></div>
+                <div class="wpm-sb-payline wpm-sb-payline--diag" id="sb-payline-4"></div>
             </div>
         </div>
 
@@ -103,6 +127,11 @@ $wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
         <button type="button" class="wpm-sb-paytable-toggle" id="sb-paytable-toggle" aria-expanded="false">Lihat tabel poin</button>
         <div class="wpm-sb-paytable" id="sb-paytable" hidden></div>
     </main>
+
+    <!-- Toast stack (5 Sep 2026, v2) — rank-up + session achievement
+         notices (see showToast() in slot-bola.js). Fixed position, stacks
+         top-down, each toast auto-removes itself after a few seconds. -->
+    <div class="wpm-sb-toast-wrap" id="sb-toast-wrap" aria-live="polite"></div>
 
     <script src="assets/games/js/slot-bola.js?v=<?= (int) $jsVer ?>" defer></script>
 </body>

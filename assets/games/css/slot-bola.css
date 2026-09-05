@@ -14,12 +14,21 @@
  * DOM/CSS-driven reels (no Canvas) — see slot-bola.js's docblock for
  * why. Show/hide uses the native `hidden` attribute, same pattern as
  * the other 3 games (see docs/DECISIONS.md's "logo dobel muncul" bug).
+ *
+ * v2 additions (5 Sep 2026, "Slot Bola v2 — Perdalam Gameplay"): 2
+ * diagonal paylines, win-streak multiplier badge, score-based rank
+ * badge + rank-up toast, bonus-round banner, near-miss reel shake,
+ * achievement toasts. All of these are cosmetic/scoring-abstraction
+ * only — see slot-bola.js's docblock for the still-binding "NO MONEY"
+ * constraint these were built under.
  */
 
 :root {
   --sb-gold: #ffd23f;
   --sb-gold-rgb: 255, 210, 63;
   --sb-win: #39ff88;
+  --sb-streak: #ff8a3d;
+  --sb-streak-rgb: 255, 138, 61;
 }
 
 .wpm-sb-topbar {
@@ -75,6 +84,7 @@
 
 .wpm-sb-scoreboard {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -87,6 +97,7 @@
     inset 0 -6px 14px rgba(0, 0, 0, 0.5),
     0 6px 22px rgba(0, 0, 0, 0.35);
 }
+.wpm-sb-scoreboard__main { display: flex; align-items: center; gap: 8px; }
 .wpm-sb-scoreboard__label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ah-text-muted); }
 .wpm-sb-scoreboard__score {
   font-size: 24px;
@@ -97,6 +108,68 @@
   background-clip: text;
   color: transparent;
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 18px rgba(var(--sb-gold-rgb), 0.45);
+}
+
+/* Rank badge (v2) — permanent, reflects current score bracket (see
+   RANKS in slot-bola.js). A quiet pulse plays briefly on rank-up via
+   .is-leveling-up (added/removed by JS), separate from the toast. */
+.wpm-sb-rank-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--ah-text);
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--sb-gold-rgb), 0.35);
+  white-space: nowrap;
+}
+.wpm-sb-rank-badge.is-leveling-up {
+  animation: wpmSbRankPulse 1s ease-out;
+}
+@keyframes wpmSbRankPulse {
+  0%   { box-shadow: 0 0 0 rgba(var(--sb-gold-rgb), 0); }
+  30%  { box-shadow: 0 0 18px rgba(var(--sb-gold-rgb), 0.85); border-color: var(--sb-gold); }
+  100% { box-shadow: 0 0 0 rgba(var(--sb-gold-rgb), 0); }
+}
+
+/* Win-streak multiplier badge (v2) — hidden by default, shown only
+   while winStreak > 0 (see updateStreakBadge() in slot-bola.js). */
+.wpm-sb-streak-badge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #2b1400;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--sb-streak), #ffce54);
+  box-shadow: 0 0 14px rgba(var(--sb-streak-rgb), 0.5);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wpm-sb-rank-badge.is-leveling-up { animation: none; }
+}
+
+/* Bonus-round banner (v2) — shown only during the 3-auto-spin bonus
+   sequence (see startBonusRound()/endBonusRound() in slot-bola.js).
+   Glow/pulse, not confetti — brief asked for something more "kalem". */
+.wpm-sb-bonus-banner {
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #2b1400;
+  background: linear-gradient(135deg, var(--sb-gold), #ff9f3d);
+  box-shadow: 0 0 22px rgba(var(--sb-gold-rgb), 0.6);
+  animation: wpmSbBonusPulse 1.2s ease-in-out infinite;
+}
+@keyframes wpmSbBonusPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wpm-sb-bonus-banner { animation: none; }
 }
 
 /* The "cabinet" frame around the reels — same arcade-bezel/glow idea
@@ -146,6 +219,22 @@
   line-height: 1;
 }
 
+/* Near-miss shake (v2) — 2-of-3 matched on a line that didn't win (see
+   evaluateLine()'s nearMiss flag). Applied to the single .wpm-sb-reel
+   whose symbol was the "odd one out", removed again after ~450ms by
+   JS — purely cosmetic, never touches scoring. */
+@keyframes wpmSbNearMissShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+.wpm-sb-reel.is-near-miss { animation: wpmSbNearMissShake 0.4s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .wpm-sb-reel.is-near-miss { animation: none; }
+}
+
 /* Payline highlight bars — one per row, hidden by default, shown by
    JS adding .is-win on the paylines that matched. Positioned to
    overlay exactly one 76px row of all 3 reels combined; pointer-events
@@ -166,6 +255,24 @@
 .wpm-sb-payline[data-row="1"] { top: 80px; }
 .wpm-sb-payline[data-row="2"] { top: 156px; }
 .wpm-sb-payline.is-win { opacity: 1; }
+
+/* Diagonal paylines (v2) — 2 corner-to-corner bars, one per diagonal
+   direction. Unlike the 3 horizontal bars above (fixed `top`/`height`
+   from the CSS breakpoints), a diagonal's length/angle depends on the
+   grid's actual rendered width vs height, which isn't a clean CSS
+   value — layoutDiagonalPaylines() in slot-bola.js computes and sets
+   `width`/`transform` on these at runtime (on load + on resize).
+   left/right/top/data-row from the shared .wpm-sb-payline rule above
+   don't apply here (overridden to a center-anchored bar instead). */
+.wpm-sb-payline--diag {
+  left: 50%;
+  right: auto;
+  top: 50%;
+  height: 12px;
+  width: 0; /* set by JS before this is ever shown */
+  transform-origin: center center;
+  transform: translate(-50%, -50%);
+}
 
 .wpm-sb-result {
   margin: 0;
@@ -236,4 +343,49 @@
 
 @media (min-width: 768px) {
   .wpm-sb-stage { margin-top: 20px; }
+}
+
+/* Toast stack (v2) — rank-up + session achievement notices (see
+   showToast() in slot-bola.js). Fixed to the top of the viewport,
+   stacks new toasts downward, each one fades/slides itself out via
+   .is-leaving (added by JS shortly before removal from the DOM). */
+.wpm-sb-toast-wrap {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  width: 100%;
+  padding: 0 16px;
+}
+.wpm-sb-toast {
+  max-width: 320px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  color: #2b1400;
+  background: linear-gradient(135deg, var(--sb-gold), #ff9f3d);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4), 0 0 18px rgba(var(--sb-gold-rgb), 0.5);
+  animation: wpmSbToastIn 0.25s ease-out;
+}
+.wpm-sb-toast.is-leaving {
+  animation: wpmSbToastOut 0.3s ease-in forwards;
+}
+@keyframes wpmSbToastIn {
+  0% { opacity: 0; transform: translateY(-10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes wpmSbToastOut {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wpm-sb-toast, .wpm-sb-toast.is-leaving { animation: none; }
 }
