@@ -219,11 +219,12 @@ body.wpm-games a { color: inherit; text-decoration: none; }
 .wpm-game-card--orange { --card-accent: #ffc247; --card-accent-rgb: 255, 194, 71; }
 .wpm-game-card--cyan   { --card-accent: #4df1ff; --card-accent-rgb: 77, 241, 255; }
 .wpm-game-card--purple { --card-accent: #d374ff; --card-accent-rgb: 211, 116, 255; }
-/* Added 3 Sep 2026 for Slot Bola (game #4) — deliberately more yellow/
-   saturated than --orange above (#ffc247, an amber/orange) so the 4
-   cards stay easy to tell apart at a glance, while still reading as
-   "gold" for the slot-machine theme. */
-.wpm-game-card--gold   { --card-accent: #ffd23f; --card-accent-rgb: 255, 210, 63; }
+/* Added 3 Sep 2026 for Slot Bola (game #4) as --gold (#ffd23f). Operator
+   feedback 5 Sep 2026: too close to --orange (#ffc247) above once real
+   card artwork was in place — both read as "amber/yellow" side by side.
+   Switched to a neon green instead so all 4 cards are unambiguous at a
+   glance (orange / cyan / purple / green). */
+.wpm-game-card--gold   { --card-accent: #39ff88; --card-accent-rgb: 57, 255, 136; }
 
 .wpm-game-card {
   position: relative;
