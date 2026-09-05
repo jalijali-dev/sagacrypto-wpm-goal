@@ -65,10 +65,10 @@ $wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
  * (operator-supplied artwork, background removed + recompressed, see
  * assets/games/img/) rendered instead of the generic `icon` glyph when
  * present. `icon` is kept as the fallback for any future card that
- * doesn't have custom artwork yet — `null` on `slot-bola` below (3 Sep
- * 2026, game #4) is exactly that case: no custom artwork commissioned
- * yet, falls back to the plain `wpm_icon('football')` glyph until the
- * operator supplies one as a separate follow-up.
+ * doesn't have custom artwork yet. `slot-bola` initially shipped with
+ * `logo => null` (3 Sep 2026, game #4, no artwork commissioned yet);
+ * operator supplied one on 5 Sep 2026 (assets/games/img/slot-bola.png),
+ * same background-removal/recompression treatment as the other 3.
  */
 $wpmGames = [
     [
@@ -109,10 +109,11 @@ $wpmGames = [
         'title' => 'Slot Bola',
         'tagline' => 'Putar gulungan, cocokkan simbol bola. Spin gratis, tanpa batas!',
         'icon' => 'football',
-        // No custom PNG artwork yet (3 Sep 2026) — see the `logo` comment
-        // above. Purely hiburan, no coins/credits — see slot-bola.js's
-        // own docblock and docs/DECISIONS.md (3 Sep 2026 entry).
-        'logo' => null,
+        // Custom PNG artwork supplied by operator (5 Sep 2026) — background
+        // removed + recompressed same as the other 3 cards, see `logo`
+        // comment above. Purely hiburan, no coins/credits — see
+        // slot-bola.js's own docblock and docs/DECISIONS.md (3 Sep 2026 entry).
+        'logo' => 'assets/games/img/slot-bola.png',
         'href' => 'games/slot-bola/',
         'status' => 'Main Sekarang',
         'accent' => 'gold',
