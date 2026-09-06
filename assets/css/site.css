@@ -1871,11 +1871,43 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 
 .wpm-bottom-nav__icon {
   display: flex;
+  position: relative;
   width: 22px;
   height: 22px;
   transition: transform 0.15s ease;
 }
 .wpm-bottom-nav__icon svg { width: 100%; height: 100%; stroke-width: 2; }
+
+/* Bottom-nav "Live" item (6 Sep 2026) — only rendered at all when
+   is_live is on (see wpm_bottom_nav_items() in includes/site-bootstrap.php),
+   so this class only ever needs an "active" look, not an "off" one.
+   Icon itself tinted red like the desktop/drawer .is-live badge; the
+   pulsing dot below is the "notif online" the operator asked for. */
+.wpm-bottom-nav__item--live .wpm-bottom-nav__icon { color: #ff3b5c; }
+
+.wpm-bottom-nav__live-dot {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff3b5c;
+  box-shadow: 0 0 0 2px var(--bg-deep, #0a0e1a);
+  animation: wpmLiveDotPulse 1.8s ease-in-out infinite;
+}
+
+/* Separate keyframe from .is-live's wpmLivePulse (that one animates
+   box-shadow directly, which would wipe out this dot's static
+   background-color ring above) — scale/opacity instead, ring stays put. */
+@keyframes wpmLiveDotPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.25); opacity: 0.75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wpm-bottom-nav__live-dot { animation: none; }
+}
 
 .wpm-bottom-nav__label {
   font-size: 10.5px;

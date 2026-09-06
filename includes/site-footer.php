@@ -120,8 +120,17 @@ $wpmBottomNavItems = wpm_bottom_nav_items($wpmMenu);
 ?>
 <nav class="wpm-bottom-nav" aria-label="Navigasi cepat">
     <?php foreach ($wpmBottomNavItems as $item) : ?>
-        <a href="<?= wpm_esc($item['href']) ?>" class="wpm-bottom-nav__item<?= ($activeNav ?? '') === $item['id'] ? ' is-active' : '' ?>">
-            <span class="wpm-bottom-nav__icon"><?= wpm_icon($item['icon']) ?></span>
+        <a href="<?= wpm_esc($item['href']) ?>" class="wpm-bottom-nav__item<?= ($activeNav ?? '') === $item['id'] ? ' is-active' : '' ?><?= !empty($item['is_live']) ? ' wpm-bottom-nav__item--live' : '' ?>">
+            <span class="wpm-bottom-nav__icon">
+                <?= wpm_icon($item['icon']) ?>
+                <?php if (!empty($item['is_live'])) : ?>
+                    <!-- "notif online" (6 Sep 2026, operator request) — pulsing
+                         red dot on the icon itself, reuses the same
+                         wpmLivePulse keyframe as the desktop/drawer nav badge
+                         (see assets/css/site.css's .crypto-nav__menu a.is-live). -->
+                    <span class="wpm-bottom-nav__live-dot" aria-hidden="true"></span>
+                <?php endif; ?>
+            </span>
             <span class="wpm-bottom-nav__label"><?= wpm_esc($item['label']) ?></span>
         </a>
     <?php endforeach; ?>

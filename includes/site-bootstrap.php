@@ -74,6 +74,11 @@ function wpm_icon(string $name): string
         // and 'menu' (drawer trigger, reuses #crypto-nav-mobile).
         'home' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><path d='M3 11.5 12 4l9 7.5'/><path d='M5.5 9.8V20h13V9.8'/><path d='M9.5 20v-6h5v6'/></svg>",
         'menu' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><line x1='4' y1='7' x2='20' y2='7'/><line x1='4' y1='12' x2='20' y2='12'/><line x1='4' y1='17' x2='20' y2='17'/></svg>",
+        // Bottom-nav "Live" icon (6 Sep 2026) — broadcast/signal glyph
+        // (dot + two radiating arcs), reused for wpm_bottom_nav_items()'s
+        // conditional 5th icon. Deliberately distinct from 'news'/'home'
+        // so it reads as "broadcasting", not just another content page.
+        'live' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='2.6' fill='currentColor' stroke='none'/><path d='M8.3 8.3a5.2 5.2 0 0 0 0 7.4M15.7 8.3a5.2 5.2 0 0 1 0 7.4'/><path d='M5.1 5.1a9.4 9.4 0 0 0 0 13.8M18.9 5.1a9.4 9.4 0 0 1 0 13.8'/></svg>",
     ];
 
     return $icons[$name] ?? '';
@@ -485,6 +490,18 @@ function wpm_nav_menu(PDO $pdo): array
  * assuming exactly 4 exist. "Menu" (site-footer.php) is always appended
  * last regardless of how many core items resolved.
  *
+ * "Live" conditional 5th icon (6 Sep 2026, operator: "pastikan juga jika
+ * streaming live diaktifkan tampilan mobile juga ada di menu bawah...
+ * dan notif online nya") — deliberately breaks the "fixed set, never
+ * grows" rule above, but only for as long as is_live is actually on
+ * (see wpm_live_streaming_settings()), which is meant to be a rare,
+ * temporary state (a match actually being broadcast), not a permanent
+ * addition — same spirit as football.php's "Live (N)" toggle only
+ * showing up when there's something live to show. Carries `is_live` on
+ * the item itself so site-footer.php can render the pulsing red
+ * notification dot (`.wpm-bottom-nav__live-dot`, see assets/css/site.css)
+ * without a separate lookup.
+ *
  * @param list<array{id:string,label:string,href:string}> $wpmMenu wpm_nav_menu()'s return value.
  * @return list<array{id:string,label:string,href:string,icon:string}>
  */
@@ -501,6 +518,14 @@ function wpm_bottom_nav_items(array $wpmMenu): array
         if (isset($byId[$wantedId])) {
             $items[] = $byId[$wantedId] + ['icon' => $iconFor[$wantedId]];
         }
+    }
+
+    if (isset($byId['live']) && !empty($byId['live']['is_live'])) {
+        // Plain "Live" label here (not wpm_nav_menu()'s "🔴 Live" text) —
+        // the pulsing red dot rendered on the icon itself (site-footer.php
+        // + .wpm-bottom-nav__live-dot) already signals live status, an
+        // emoji in the label too would be redundant clutter at this size.
+        $items[] = ['id' => 'live', 'label' => 'Live', 'href' => (string) $byId['live']['href'], 'icon' => 'live', 'is_live' => true];
     }
 
     return $items;
