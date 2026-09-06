@@ -311,21 +311,25 @@ function wpm_url_live(): string
 }
 
 /**
- * Live Streaming settings (6 Sep 2026, brief "Live Streaming — Cloudflare
- * Stream") — managed from the admin panel's Live Streaming page
- * (cms-admin/pages/live-streaming.php), stored in the singleton
- * `live_streaming_settings` table (same "one config row" pattern as
- * wpm_site_settings() above). Never throws — returns [] on any DB error
- * or if the table doesn't exist yet (it's created lazily by the admin
- * page's cms_ensure_table() call, not here — this function is read-only
- * and must stay cheap/safe to call from every public page via
- * wpm_nav_menu()). Cached per-request like wpm_site_settings().
+ * Live Streaming settings (6 Sep 2026, brief "Live Streaming") — managed
+ * from the admin panel's Live Streaming page (cms-admin/pages/
+ * live-streaming.php), stored in the singleton `live_streaming_settings`
+ * table (same "one config row" pattern as wpm_site_settings() above).
+ * Never throws — returns [] on any DB error or if the table doesn't
+ * exist yet (it's created lazily by the admin page's cms_ensure_table()
+ * call, not here — this function is read-only and must stay cheap/safe
+ * to call from every public page via wpm_nav_menu()). Cached per-request
+ * like wpm_site_settings().
  *
  * is_live (TINYINT 0/1) drives the nav label switching between the plain
  * "Live Streaming" text and the red "🔴 Live" badge — see wpm_nav_menu().
- * playback_id is the Cloudflare Stream video ID used to build the
- * iframe embed URL on live.php; it is NOT a secret (unlike the RTMP
- * Stream Key used only inside OBS, which is never stored here at all).
+ * embed_code is a free-form field: whatever the operator pasted from
+ * their streaming provider's own "Share/Embed" button (a full <iframe>
+ * snippet from YouTube/Cloudflare Stream/Facebook Live/Twitch/anything,
+ * or just a bare video/player URL) — see wpm_render_live_embed() below
+ * for how live.php turns that into an actual embedded player. It is NOT
+ * a secret (unlike an RTMP Stream Key, which is never stored here at
+ * all — see live-streaming.php's docblock for the full boundary).
  */
 function wpm_live_streaming_settings(PDO $pdo): array
 {
@@ -340,6 +344,52 @@ function wpm_live_streaming_settings(PDO $pdo): array
         $cached = [];
     }
     return $cached;
+}
+
+/**
+ * Turns a free-form `embed_code` value (see wpm_live_streaming_settings()
+ * above) into safe-to-print HTML for live.php's player card. Two shapes
+ * are recognized:
+ *
+ *   1. Already a full embed snippet (contains an <iframe ...>...</iframe>
+ *      tag — what every major platform's own "Share > Embed" button
+ *      gives you) — returned close to verbatim, just re-wrapped so the
+ *      iframe fills wpm_live_player-card__frame's positioned box (see
+ *      assets/css/site.css) regardless of whatever width/height
+ *      attributes the operator's paste happened to carry.
+ *   2. A bare URL (http:// or https://, no markup) — wrapped in a
+ *      minimal <iframe> with the same fill-the-box treatment.
+ *
+ * Anything else (empty, or text that's neither of the above) returns
+ * null so the caller can fall back to the "belum ada siaran" empty
+ * state instead of printing broken/meaningless markup.
+ *
+ * Trust model: embed_code is admin-role-only input (cms_require_role in
+ * live-streaming.php), rendered UNESCAPED here on purpose — same trust
+ * level as special_pages.content (see page.php), NOT sanitized against
+ * XSS, because only trusted operators can ever set it. Never expose a
+ * way for a public visitor or a lower-privilege role to influence this
+ * value.
+ */
+function wpm_render_live_embed(string $embedCode): ?string
+{
+    $embedCode = trim($embedCode);
+    if ($embedCode === '') {
+        return null;
+    }
+
+    if (preg_match('/<iframe\b[^>]*\bsrc=(["\'])(.*?)\1[^>]*>/is', $embedCode, $m) === 1) {
+        $src = $m[2];
+        return '<iframe src="' . wpm_esc($src) . '" style="border:none;position:absolute;top:0;left:0;height:100%;width:100%;" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>';
+    }
+
+    if (preg_match('#^https?://\S+$#i', $embedCode) === 1) {
+        return '<iframe src="' . wpm_esc($embedCode) . '" style="border:none;position:absolute;top:0;left:0;height:100%;width:100%;" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>';
+    }
+
+    // Neither a recognizable <iframe> snippet nor a bare URL — don't
+    // guess, let the caller show the empty state instead.
+    return null;
 }
 
 /**
