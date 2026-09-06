@@ -654,6 +654,7 @@ body.admin-body {
 .admin-navlink[data-icon="star"]   .admin-navlink__icon::before { content: "★"; }
 .admin-navlink[data-icon="sitemap"] .admin-navlink__icon::before { content: "🗺"; }
 .admin-navlink[data-icon="search"] .admin-navlink__icon::before { content: "🔍"; }
+.admin-navlink[data-icon="live"]   .admin-navlink__icon::before { content: "📡"; }
 
 /* "box" (Products) — inline SVG mask icon, not an emoji.
    Renders in the current text colour (--accent / --accent-text) so it

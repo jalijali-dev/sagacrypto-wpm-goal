@@ -150,7 +150,15 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         <nav aria-label="Menu utama">
             <ul class="crypto-nav__menu">
                 <?php foreach ($wpmMenu as $item) : ?>
-                    <li><a href="<?= wpm_esc($item['href']) ?>" class="<?= $activeNav === $item['id'] ? 'is-active' : '' ?>"><?= wpm_esc($item['label']) ?></a></li>
+                    <?php
+                    // "Live Streaming" red badge (6 Sep 2026) — is_live comes
+                    // from wpm_nav_menu()/wpm_live_streaming_settings(), see
+                    // there for the full story. Appended as its own class
+                    // (not baked into is-active) so it still layers correctly
+                    // if a visitor is literally on the /live page.
+                    $navLinkClasses = trim(($activeNav === $item['id'] ? 'is-active' : '') . (!empty($item['is_live']) ? ' is-live' : ''));
+                    ?>
+                    <li><a href="<?= wpm_esc($item['href']) ?>" class="<?= wpm_esc($navLinkClasses) ?>"><?= wpm_esc($item['label']) ?></a></li>
                 <?php endforeach; ?>
             </ul>
         </nav>

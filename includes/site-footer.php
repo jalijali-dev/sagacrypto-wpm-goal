@@ -78,7 +78,13 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
     <div class="crypto-nav__mobile-panel">
         <button type="button" class="crypto-nav__mobile-close" id="crypto-nav-mobile-close" aria-label="Tutup menu">&times;</button>
         <?php foreach ($wpmMenu as $item) : ?>
-            <a href="<?= wpm_esc($item['href']) ?>" class="<?= ($activeNav ?? '') === $item['id'] ? 'is-active' : '' ?>"><?= wpm_esc($item['label']) ?></a>
+            <?php
+            // Same is-live class as site-header.php's desktop <ul> — see
+            // wpm_nav_menu()/wpm_live_streaming_settings() in
+            // includes/site-bootstrap.php for where `is_live` comes from.
+            $navLinkClasses = trim((($activeNav ?? '') === $item['id'] ? 'is-active' : '') . (!empty($item['is_live']) ? ' is-live' : ''));
+            ?>
+            <a href="<?= wpm_esc($item['href']) ?>" class="<?= wpm_esc($navLinkClasses) ?>"><?= wpm_esc($item['label']) ?></a>
             <?php if ($item['id'] === 'berita') : ?>
                 <!-- "Games" (6 Sep 2026) — mobile drawer ONLY, deliberately NOT
                      added to wpm_nav_menu() itself: that array also feeds the

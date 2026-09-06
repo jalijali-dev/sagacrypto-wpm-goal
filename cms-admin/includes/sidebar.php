@@ -124,6 +124,10 @@ $sidebarSections = [
     ['type' => 'link', 'id' => 'dashboard', 'label' => 'Dashboard', 'href' => cms_dashboard_href(), 'icon' => 'grid'],
     ['type' => 'link', 'id' => 'site-settings', 'label' => 'Site Settings', 'href' => cms_nav_href('site-settings.php'), 'icon' => 'gear', 'roles' => $ROLES_ADMIN_UP],
     ['type' => 'link', 'id' => 'banners', 'label' => 'Banners', 'href' => cms_nav_href('banners.php'), 'icon' => 'flag'],
+    // Live Streaming (6 Sep 2026) — toggle is_live + Playback ID, see
+    // cms-admin/pages/live-streaming.php and wpm_live_streaming_settings()
+    // in includes/site-bootstrap.php.
+    ['type' => 'link', 'id' => 'live-streaming', 'label' => 'Live Streaming', 'href' => cms_nav_href('live-streaming.php'), 'icon' => 'live', 'roles' => $ROLES_ADMIN_UP],
     // Admin-managed static pages (Kontak, FAQ, etc.) (Fase 3, Special
     // Pages & Sports Modules spec, 24 Jul 2026) — see includes/SpecialPages.php.
     ['type' => 'link', 'id' => 'special-pages', 'label' => 'Special Pages', 'href' => cms_nav_href('special-pages.php'), 'icon' => 'star', 'roles' => $ROLES_ADMIN_UP],

@@ -305,6 +305,43 @@ function wpm_url_tentang(): string
     return 'tentang-kami';
 }
 
+function wpm_url_live(): string
+{
+    return 'live';
+}
+
+/**
+ * Live Streaming settings (6 Sep 2026, brief "Live Streaming — Cloudflare
+ * Stream") — managed from the admin panel's Live Streaming page
+ * (cms-admin/pages/live-streaming.php), stored in the singleton
+ * `live_streaming_settings` table (same "one config row" pattern as
+ * wpm_site_settings() above). Never throws — returns [] on any DB error
+ * or if the table doesn't exist yet (it's created lazily by the admin
+ * page's cms_ensure_table() call, not here — this function is read-only
+ * and must stay cheap/safe to call from every public page via
+ * wpm_nav_menu()). Cached per-request like wpm_site_settings().
+ *
+ * is_live (TINYINT 0/1) drives the nav label switching between the plain
+ * "Live Streaming" text and the red "🔴 Live" badge — see wpm_nav_menu().
+ * playback_id is the Cloudflare Stream video ID used to build the
+ * iframe embed URL on live.php; it is NOT a secret (unlike the RTMP
+ * Stream Key used only inside OBS, which is never stored here at all).
+ */
+function wpm_live_streaming_settings(PDO $pdo): array
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    try {
+        $row = $pdo->query('SELECT * FROM live_streaming_settings LIMIT 1')->fetch();
+        $cached = $row !== false ? $row : [];
+    } catch (Throwable $e) {
+        $cached = [];
+    }
+    return $cached;
+}
+
 /**
  * Global site settings (name, tagline, logo, contact info, SEO defaults) —
  * managed from the admin panel's Site Settings page (cms-admin/pages/
@@ -351,6 +388,27 @@ function wpm_nav_menu(PDO $pdo): array
         $items[] = ['id' => (string) $module['sport_key'], 'label' => (string) $module['label'], 'href' => (string) $module['route_slug']];
     }
     $items[] = ['id' => 'berita', 'label' => 'Berita', 'href' => wpm_url_kategori()];
+
+    // "Live Streaming" (6 Sep 2026) — a real top-level nav item (operator
+    // confirmed: desktop + mobile, not mobile-drawer-only like Games),
+    // deliberately placed here (right after Berita, before the
+    // special-pages loop below) so it sits with the other "core content"
+    // items rather than trailing after Tentang Kami/Kontak. Label
+    // switches to a red "🔴 Live" badge when the operator flips
+    // is_live on in cms-admin/pages/live-streaming.php — see
+    // wpm_live_streaming_settings()'s docblock. `is_live` is carried on
+    // the item itself (not just baked into the label string) so
+    // site-header.php/site-footer.php can add a distinct pulsing/red CSS
+    // class, not just different text.
+    $liveSettings = wpm_live_streaming_settings($pdo);
+    $isLive = (int) ($liveSettings['is_live'] ?? 0) === 1;
+    $items[] = [
+        'id' => 'live',
+        'label' => $isLive ? '🔴 Live' : 'Live Streaming',
+        'href' => wpm_site_url(wpm_url_live()),
+        'is_live' => $isLive,
+    ];
+
     foreach (wpm_special_pages_for_menu($pdo) as $specialPage) {
         $items[] = ['id' => 'special-' . (string) $specialPage['page_key'], 'label' => (string) $specialPage['title'], 'href' => (string) $specialPage['slug']];
     }

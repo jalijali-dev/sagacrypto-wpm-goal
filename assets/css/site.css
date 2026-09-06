@@ -269,6 +269,32 @@ body.crypto-theme {
   box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.30), 0 0 18px rgba(var(--accent-rgb), 0.25);
 }
 
+/* "Live Streaming" red badge state (6 Sep 2026) — applied on top of the
+   plain nav-link styling above whenever wpm_live_streaming_settings()'s
+   is_live flag is on (see includes/site-bootstrap.php's wpm_nav_menu()).
+   Deliberately red/pulsing, distinct from the accent-color is-active
+   state, so it reads as "something is happening now", not just "you're
+   on this page". Applies to both the desktop <ul class="crypto-nav__menu">
+   (this rule) and the mobile drawer (.crypto-nav__mobile-panel a.is-live
+   further down) since it's the same $item['is_live'] flag on both loops. */
+.crypto-nav__menu a.is-live {
+  color: #ff3b5c;
+  font-weight: 700;
+  background: rgba(255, 59, 92, 0.14);
+  box-shadow: 0 0 0 1px rgba(255, 59, 92, 0.35), 0 0 18px rgba(255, 59, 92, 0.3);
+  animation: wpmLivePulse 1.8s ease-in-out infinite;
+}
+
+@keyframes wpmLivePulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 59, 92, 0.35), 0 0 18px rgba(255, 59, 92, 0.3); }
+  50% { box-shadow: 0 0 0 1px rgba(255, 59, 92, 0.55), 0 0 26px rgba(255, 59, 92, 0.55); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crypto-nav__menu a.is-live,
+  .crypto-nav__mobile-panel a.is-live { animation: none; }
+}
+
 .crypto-nav__actions {
   display: flex;
   align-items: center;
@@ -1634,6 +1660,16 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 }
 .search-form button svg { width: 19px; height: 19px; display: block; }
 
+/* Live Streaming player card (6 Sep 2026) — see live.php. Overrides
+   .glass-card's hover-lift (feels wrong on a video player) and gives the
+   iframe a standard 16:9 responsive box via the classic
+   padding-top-percentage trick (no aspect-ratio fallback needed — this
+   codebase already supports evergreen browsers only, but padding-top is
+   one line cheaper than adding a whole new CSS feature query here). */
+.wpm-live-player-card { padding: 0; overflow: hidden; }
+.wpm-live-player-card:hover { transform: none; }
+.wpm-live-player-card__frame { position: relative; width: 100%; padding-top: 56.25%; }
+
 .empty-state { text-align: center; padding: 60px 20px; color: var(--text-faint); }
 .empty-state svg { width: 40px; height: 40px; margin-bottom: 14px; opacity: 0.5; }
 .empty-state__hint { font-size: 13px; max-width: 380px; margin: 8px auto 0; line-height: 1.5; }
@@ -1731,6 +1767,16 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 .crypto-nav__mobile-panel a.is-active {
   background: rgba(var(--accent-rgb), 0.14);
   color: var(--text);
+}
+
+/* Mobile drawer counterpart of .crypto-nav__menu a.is-live above — same
+   red/pulsing "Live Streaming" badge state, see that rule's comment. */
+.crypto-nav__mobile-panel a.is-live {
+  color: #ff3b5c;
+  font-weight: 700;
+  background: rgba(255, 59, 92, 0.14);
+  box-shadow: 0 0 0 1px rgba(255, 59, 92, 0.35);
+  animation: wpmLivePulse 1.8s ease-in-out infinite;
 }
 
 /* "Games" mobile-drawer entry (6 Sep 2026) — deliberately styled
