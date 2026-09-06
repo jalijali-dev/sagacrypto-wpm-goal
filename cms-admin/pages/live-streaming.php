@@ -157,7 +157,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
 
     <div class="panel">
         <div class="panel__head">
-            <h3 class="panel__title">Cara Setup (provider bebas)</h3>
+            <h3 class="panel__title">Cara Setup (Streaming)</h3>
         </div>
         <div style="padding: 0 20px 20px;">
             <p class="muted" style="margin: 0 0 8px;">Langkah singkat — bisa pakai provider streaming apa saja, semua dilakukan di dashboard provider itu sendiri, bukan di panel ini:</p>
