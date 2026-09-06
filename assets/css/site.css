@@ -1733,6 +1733,38 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   color: var(--text);
 }
 
+/* "Games" mobile-drawer entry (6 Sep 2026) — deliberately styled
+   differently from the plain nav links above/below it, so it reads as a
+   fun feature shortcut rather than another content category. Warm
+   orange->red gradient pill (distinct from the cool accent color used by
+   is-active/hover above), small glow + scale-up on press for a
+   game-y feel. See includes/site-footer.php for why this is hardcoded
+   here rather than looped from $wpmMenu. */
+.crypto-nav__mobile-games {
+  margin-top: 4px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  font-size: 15.5px;
+  font-weight: 700;
+  color: #fff7ec;
+  background: linear-gradient(135deg, #ff8a3d 0%, #ff4d6d 100%);
+  box-shadow: 0 6px 20px rgba(255, 77, 109, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crypto-nav__mobile-games__icon {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.crypto-nav__mobile-games:hover,
+.crypto-nav__mobile-games:active {
+  filter: brightness(1.08);
+  box-shadow: 0 8px 24px rgba(255, 77, 109, 0.5);
+}
+
 /* ============================================================
    Floating bottom nav (mobile only), 27 Agu 2026 — see
    includes/site-footer.php (markup) and wpm_bottom_nav_items()/

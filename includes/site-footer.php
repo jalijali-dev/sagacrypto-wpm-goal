@@ -79,6 +79,24 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
         <button type="button" class="crypto-nav__mobile-close" id="crypto-nav-mobile-close" aria-label="Tutup menu">&times;</button>
         <?php foreach ($wpmMenu as $item) : ?>
             <a href="<?= wpm_esc($item['href']) ?>" class="<?= ($activeNav ?? '') === $item['id'] ? 'is-active' : '' ?>"><?= wpm_esc($item['label']) ?></a>
+            <?php if ($item['id'] === 'berita') : ?>
+                <!-- "Games" (6 Sep 2026) — mobile drawer ONLY, deliberately NOT
+                     added to wpm_nav_menu() itself: that array also feeds the
+                     desktop <ul class="crypto-nav__menu"> in site-header.php,
+                     and the operator confirmed this entry is mobile-only.
+                     Hardcoded here rather than looped from $wpmMenu/DB since
+                     it's not a Special Page / Sports Module — just a static
+                     link to the standalone games/ hub. Placed right after
+                     "Berita" (Opsi A, operator-confirmed 6 Sep 2026) so the
+                     core content nav (Beranda/sport modules/Berita) stays
+                     together above it, ahead of the static Tentang
+                     Kami/Kontak special pages that follow in the loop.
+                     Distinct accent styling (.crypto-nav__mobile-games) so it
+                     reads as a fun/feature entry, not another plain nav link. -->
+                <a href="<?= wpm_esc(wpm_site_url('games/')) ?>" class="crypto-nav__mobile-games">
+                    <span class="crypto-nav__mobile-games__icon">🎮</span> Games
+                </a>
+            <?php endif; ?>
         <?php endforeach; ?>
     </div>
 </div>
