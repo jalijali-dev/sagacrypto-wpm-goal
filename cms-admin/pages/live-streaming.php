@@ -263,9 +263,18 @@ if ($editCustomId > 0) {
 // leagues for the real-fixture rows; custom rows (fixture_id IS NULL)
 // use their own custom_* columns directly, no join needed. UNION so both
 // kinds show in one list, most recently touched first. ──
+// NOTE: every string column below is wrapped in
+// CONVERT(... USING utf8mb4) COLLATE utf8mb4_unicode_ci — without this,
+// MySQL throws "Illegal mix of collations for operation 'UNION'"
+// because league_name/home_name/away_name come from `teams`/`leagues`
+// (whatever collation those tables use) on one side of the UNION but
+// straight off fixture_streams' own custom_* columns on the other side,
+// and the two don't necessarily share a collation (8 Sep 2026 bug).
 $configuredStreams = $pdo->query(
-    "SELECT fs.*, f.kickoff_at, f.status_short, l.name AS league_name,
-            ht.name AS home_name, at.name AS away_name
+    "SELECT fs.*, f.kickoff_at, f.status_short,
+            CONVERT(l.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS league_name,
+            CONVERT(ht.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_name,
+            CONVERT(at.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_name
      FROM fixture_streams fs
      JOIN fixtures f ON f.id = fs.fixture_id
      JOIN leagues l ON l.id = f.league_id
@@ -273,8 +282,10 @@ $configuredStreams = $pdo->query(
      JOIN teams at ON at.id = f.away_team_id
      WHERE fs.is_custom = 0
      UNION ALL
-     SELECT fs.*, NULL AS kickoff_at, NULL AS status_short, fs.custom_league_name AS league_name,
-            fs.custom_home_name AS home_name, fs.custom_away_name AS away_name
+     SELECT fs.*, NULL AS kickoff_at, NULL AS status_short,
+            CONVERT(fs.custom_league_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS league_name,
+            CONVERT(fs.custom_home_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_name,
+            CONVERT(fs.custom_away_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_name
      FROM fixture_streams fs
      WHERE fs.is_custom = 1
      ORDER BY updated_at DESC"

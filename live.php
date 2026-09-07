@@ -221,9 +221,17 @@ try {
     // straight off their own custom_* columns, no kickoff to sort by so
     // NULL falls back to created_at). is_custom flag carried through so
     // the render loop below knows which URL helper/logo source to use.
+    // NOTE: name/league columns wrapped in CONVERT(...USING utf8mb4)
+    // COLLATE utf8mb4_unicode_ci — without this MySQL throws "Illegal mix
+    // of collations for operation 'UNION'" because these come from
+    // `teams`/`leagues` on one side vs fixture_streams' own custom_*
+    // columns on the other, which don't necessarily share a collation
+    // (8 Sep 2026 bug, same root cause as the admin panel's query).
     $liveMatches = $pdo->query(
         "SELECT fs.*, f.status_short, f.elapsed, f.kickoff_at,
-                l.name AS league_name, ht.name AS home_name, at.name AS away_name,
+                CONVERT(l.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS league_name,
+                CONVERT(ht.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_name,
+                CONVERT(at.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_name,
                 ht.logo AS home_logo, at.logo AS away_logo
          FROM fixture_streams fs
          JOIN fixtures f ON f.id = fs.fixture_id
@@ -233,8 +241,9 @@ try {
          WHERE fs.is_live = 1 AND fs.is_custom = 0
          UNION ALL
          SELECT fs.*, NULL AS status_short, NULL AS elapsed, fs.created_at AS kickoff_at,
-                fs.custom_league_name AS league_name,
-                fs.custom_home_name AS home_name, fs.custom_away_name AS away_name,
+                CONVERT(fs.custom_league_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS league_name,
+                CONVERT(fs.custom_home_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_name,
+                CONVERT(fs.custom_away_name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_name,
                 NULL AS home_logo, NULL AS away_logo
          FROM fixture_streams fs
          WHERE fs.is_live = 1 AND fs.is_custom = 1
