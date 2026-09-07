@@ -360,6 +360,20 @@ function wpm_url_live_match(int $fixtureId, string $homeName, string $awayName):
 }
 
 /**
+ * Manual/"custom" live stream entries (8 Sep 2026) — for a stream the
+ * admin sets up WITHOUT picking a real fixtures row (e.g. an event not
+ * covered by the API-Football sync at all). Uses a distinct URL space
+ * /live/custom/<fixture_streams.id>/<slug> so live.php can tell "real
+ * fixture id" and "internal fixture_streams id" apart at the routing
+ * level instead of guessing — see the .htaccess rule right above the
+ * fixture one, and live.php's $_GET['custom_id'] branch.
+ */
+function wpm_url_live_custom(int $streamId, string $homeName, string $awayName): string
+{
+    return wpm_site_url(wpm_url_live() . '/custom/' . $streamId . '/' . wpm_fixture_match_slug($homeName, $awayName));
+}
+
+/**
  * Fixture IDs that currently have an ACTIVE (is_live=1) stream — used by
  * wpm_fixture_card() to decide whether to print the red "🔴 Live"
  * streaming badge/link on football.php's match list. Returns a

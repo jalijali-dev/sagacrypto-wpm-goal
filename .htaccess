@@ -111,6 +111,13 @@
     # query string — the listing-of-all-live-matches view.
     RewriteRule ^live/([0-9]+)/([^/]+)/?$ live.php?id=$1&slug=$2 [L,QSA]
 
+    # /live/custom/<fixture_streams.id>/<slug-teams> -> live.php?custom_id=<id>&slug=<slug-teams>
+    # (8 Sep 2026, manual/"random" streams not tied to any real fixtures
+    # row — see wpm_url_live_custom() in includes/site-bootstrap.php).
+    # Literal "custom" segment keeps this from ever colliding with the
+    # numeric-fixture-id rule right above.
+    RewriteRule ^live/custom/([0-9]+)/([^/]+)/?$ live.php?custom_id=$1&slug=$2 [L,QSA]
+
     # /berita/tag/<slug> -> kategori.php?tag=<slug>
     RewriteRule ^berita/tag/([^/]+)/?$ kategori.php?tag=$1 [L,QSA]
 
