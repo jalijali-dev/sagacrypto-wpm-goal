@@ -43,6 +43,10 @@ try {
 
 $leagueGroups = wpm_group_fixtures_by_league($fixtures);
 $liveCount = wpm_count_live_fixtures($pdo);
+// Per-match live streaming badges (7 Sep 2026) — see wpm_fixture_card()'s
+// docblock. Fetched once here, passed into every wpm_fixture_card() call
+// below, rather than querying per-row.
+$wpmLiveStreamFixtureIds = wpm_live_stream_fixture_ids($pdo);
 
 // Distinguishes "genuinely no matches for our tracked leagues" from "our
 // API plan can't even fetch this date yet" (free-plan /fixtures?date=
@@ -197,7 +201,7 @@ require __DIR__ . '/includes/site-header.php';
                                 <?php endif; ?>
                                 <div class="fixture-league-group__list">
                                     <?php foreach ($roundGroup['fixtures'] as $fixture) : ?>
-                                        <?= wpm_fixture_card($fixture) ?>
+                                        <?= wpm_fixture_card($fixture, $wpmLiveStreamFixtureIds) ?>
                                     <?php endforeach; ?>
                                 </div>
                             </div>

@@ -102,6 +102,15 @@
     # /artikel/<slug> -> artikel.php?slug=<slug>
     RewriteRule ^artikel/([^/]+)/?$ artikel.php?slug=$1 [L,QSA]
 
+    # /live/<fixture-id>/<slug-teams> -> live.php?id=<fixture-id>&slug=<slug-teams>
+    # (7 Sep 2026, per-match live streaming — see live.php/wpm_url_live_match()
+    # in includes/site-bootstrap.php). Must come before the generic
+    # single-segment alias further up (^([a-zA-Z0-9_-]+)/?$ -> $1.php),
+    # though that one only matches 1 path segment anyway so plain /live
+    # (no id) still falls through to it and resolves to live.php with no
+    # query string — the listing-of-all-live-matches view.
+    RewriteRule ^live/([0-9]+)/([^/]+)/?$ live.php?id=$1&slug=$2 [L,QSA]
+
     # /berita/tag/<slug> -> kategori.php?tag=<slug>
     RewriteRule ^berita/tag/([^/]+)/?$ kategori.php?tag=$1 [L,QSA]
 

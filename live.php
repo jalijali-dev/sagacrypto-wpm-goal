@@ -2,47 +2,150 @@
 declare(strict_types=1);
 
 /**
- * Sagagoal — Live Streaming (6 Sep 2026, brief "Live Streaming"). Public
- * page at /live (a flat root script like index.php/artikel.php — matched
- * by .htaccess's generic extension-less alias rule, no dedicated rewrite
- * needed since the filename already matches wpm_url_live()'s 'live' slug).
+ * Sagagoal — Live Streaming (7 Sep 2026, "next level, per pertandingan").
+ * REPLACES the earlier single-global-stream version of this file (3-6
+ * Sep 2026) with a per-match model — this page now has two modes:
  *
- * Reads the singleton live_streaming_settings row (managed from
- * cms-admin/pages/live-streaming.php) via wpm_live_streaming_settings() —
- * see that function's docblock in includes/site-bootstrap.php for the
- * full read-side story, and wpm_nav_menu() for how is_live drives the
- * "🔴 Live" nav badge shown across every other page on the site.
+ *   /live                          -> listing of every currently-live match
+ *   /live/<fixture_id>/<slug>      -> one specific match's player
  *
- * Provider-agnostic embed (revised same day as first draft — operator:
- * "biar bisa dinamis copy paste embed apapun... stream pake apa aja"):
- * whatever the operator pasted into embed_code (a full <iframe> snippet
- * from YouTube/Cloudflare Stream/Facebook Live/Twitch/anything, or a bare
- * URL) gets turned into a player via wpm_render_live_embed() — see that
- * function for exactly how. This page has zero provider-specific logic
- * of its own on purpose.
+ * (.htaccess routes the second form here with ?id=&slug=; the plain
+ * /live form falls through to the generic single-segment alias rule and
+ * arrives with no query string at all.)
+ *
+ * Data comes from the new `fixture_streams` table (fixture_id => is_live
+ * + embed_code + optional title/description), joined to the existing
+ * API-Football-synced `fixtures`/`teams`/`leagues` tables for match
+ * context (team names/logos, kickoff, live match-status). Managed from
+ * cms-admin/pages/live-streaming.php (now a searchable fixture picker +
+ * CRUD list, not a singleton settings form). See
+ * includes/site-bootstrap.php's wpm_live_stream_fixture_ids() /
+ * wpm_url_live_match() / wpm_fixture_match_slug() for the shared helpers.
+ *
+ * `slug` in the URL is COSMETIC ONLY (like artikel.php's category slug
+ * isn't validated against the article) — the numeric fixture id is what
+ * actually resolves the page; a stale/wrong slug still loads correctly,
+ * it's just not what wpm_url_live_match() would currently generate.
  */
 
 require_once __DIR__ . '/includes/site-bootstrap.php';
 
-$wpmLive = wpm_live_streaming_settings($pdo);
-$wpmIsLive = (int) ($wpmLive['is_live'] ?? 0) === 1;
-$wpmStreamTitle = trim((string) ($wpmLive['stream_title'] ?? ''));
-$wpmStreamDescription = trim((string) ($wpmLive['stream_description'] ?? ''));
-$wpmEmbedHtml = $wpmIsLive ? wpm_render_live_embed((string) ($wpmLive['embed_code'] ?? '')) : null;
+$fixtureId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 
-// Only actually show the player if BOTH is_live is on AND embed_code
-// resolved to something renderable — same guard rail as the admin form
-// (which blocks saving is_live on with an empty embed_code), kept here
-// too in case the DB row is ever edited directly or the pasted value
-// doesn't match either recognized shape (see wpm_render_live_embed()).
-$wpmShowPlayer = $wpmEmbedHtml !== null;
+if ($fixtureId > 0) {
+    // ── Single-match mode ──────────────────────────────────────────
+    $stmt = $pdo->prepare(
+        "SELECT fs.*, f.status_short, f.elapsed, f.kickoff_at,
+                l.name AS league_name, ht.name AS home_name, at.name AS away_name,
+                ht.logo AS home_logo, at.logo AS away_logo
+         FROM fixtures f
+         JOIN leagues l ON l.id = f.league_id
+         JOIN teams ht ON ht.id = f.home_team_id
+         JOIN teams at ON at.id = f.away_team_id
+         LEFT JOIN fixture_streams fs ON fs.fixture_id = f.id
+         WHERE f.id = :id
+         LIMIT 1"
+    );
+    $stmt->execute(['id' => $fixtureId]);
+    $match = $stmt->fetch();
 
-$pageTitle = $wpmIsLive
-    ? ('🔴 Live: ' . ($wpmStreamTitle !== '' ? $wpmStreamTitle : 'Siaran Langsung') . ' — Sagagoal')
-    : 'Live Streaming — Sagagoal';
-$pageDescription = $wpmStreamDescription !== ''
-    ? $wpmStreamDescription
-    : ($wpmIsLive ? 'Nonton siaran langsung sepak bola di Sagagoal, gratis langsung dari browser.' : 'Belum ada siaran langsung saat ini — pantau terus, siaran berikutnya akan tampil otomatis di sini.');
+    if ($match === false) {
+        http_response_code(404);
+        $pageTitle = 'Pertandingan Tidak Ditemukan — Sagagoal';
+        $pageDescription = 'Pertandingan yang kamu cari tidak ditemukan.';
+        require __DIR__ . '/includes/site-header.php';
+        ?>
+        <section class="crypto-section">
+            <div class="crypto-container">
+                <div class="empty-state">
+                    <?= wpm_icon('info') ?>
+                    <p>Pertandingan tidak ditemukan.</p>
+                    <a class="crypto-btn crypto-btn--primary" href="<?= wpm_esc(wpm_site_url(wpm_url_live())) ?>" style="margin-top:16px;display:inline-flex;">Lihat Semua Live</a>
+                </div>
+            </div>
+        </section>
+        </main>
+        <?php require __DIR__ . '/includes/site-footer.php'; ?>
+        <?php
+        exit;
+    }
+
+    $homeName = (string) $match['home_name'];
+    $awayName = (string) $match['away_name'];
+    $isLive = (int) ($match['is_live'] ?? 0) === 1;
+    $embedHtml = $isLive ? wpm_render_live_embed((string) ($match['embed_code'] ?? '')) : null;
+    $showPlayer = $embedHtml !== null;
+    $streamTitle = trim((string) ($match['stream_title'] ?? ''));
+    $streamDescription = trim((string) ($match['stream_description'] ?? ''));
+    $matchTitle = $homeName . ' vs ' . $awayName;
+
+    $pageTitle = ($isLive ? '🔴 Live: ' : '') . ($streamTitle !== '' ? $streamTitle : $matchTitle) . ' — Sagagoal';
+    $pageDescription = $streamDescription !== ''
+        ? $streamDescription
+        : ($isLive ? "Nonton siaran langsung $matchTitle di Sagagoal, gratis langsung dari browser." : "Info live streaming untuk pertandingan $matchTitle.");
+    $activeNav = 'live';
+    $canonicalUrl = wpm_url_live_match($fixtureId, $homeName, $awayName);
+
+    require __DIR__ . '/includes/site-header.php';
+    ?>
+
+    <section class="page-hero">
+        <div class="crypto-container">
+            <nav class="breadcrumb" aria-label="Breadcrumb"><a href="<?= wpm_esc(wpm_site_url('')) ?>">Beranda</a> <span>/</span> <a href="<?= wpm_esc(wpm_site_url(wpm_url_live())) ?>">Live Streaming</a> <span>/</span> <?= wpm_esc($matchTitle) ?></nav>
+            <span class="section-kicker"><?= $isLive ? '🔴 SEDANG LIVE' : 'LIVE STREAMING' ?></span>
+            <h1><?= wpm_esc($streamTitle !== '' ? $streamTitle : $matchTitle) ?></h1>
+            <p><?= wpm_esc((string) $match['league_name']) ?></p>
+            <?php if ($streamDescription !== '') : ?>
+                <div class="page-hero-lead"><?= wpm_esc($streamDescription) ?></div>
+            <?php endif; ?>
+        </div>
+    </section>
+
+    <section class="crypto-section--tight">
+        <div class="crypto-container">
+            <?php if ($showPlayer) : ?>
+                <div class="glass-card wpm-live-player-card">
+                    <div class="wpm-live-player-card__frame">
+                        <?= $embedHtml ?>
+                    </div>
+                </div>
+            <?php else : ?>
+                <div class="glass-card empty-state" style="padding:48px 24px;">
+                    <?= wpm_icon('info') ?>
+                    <p>Pertandingan <strong><?= wpm_esc($matchTitle) ?></strong> belum/tidak sedang live streaming.</p>
+                    <a class="crypto-btn crypto-btn--primary" href="<?= wpm_esc(wpm_site_url(wpm_url_live())) ?>" style="margin-top:16px;display:inline-flex;">Lihat Pertandingan Live Lainnya</a>
+                </div>
+            <?php endif; ?>
+        </div>
+    </section>
+
+    </main>
+    <?php require __DIR__ . '/includes/site-footer.php'; ?>
+    <?php
+    exit;
+}
+
+// ── Listing mode (/live, no id) ─────────────────────────────────────
+$liveMatches = [];
+try {
+    $liveMatches = $pdo->query(
+        "SELECT fs.*, f.status_short, f.elapsed, f.kickoff_at,
+                l.name AS league_name, ht.name AS home_name, at.name AS away_name,
+                ht.logo AS home_logo, at.logo AS away_logo
+         FROM fixture_streams fs
+         JOIN fixtures f ON f.id = fs.fixture_id
+         JOIN leagues l ON l.id = f.league_id
+         JOIN teams ht ON ht.id = f.home_team_id
+         JOIN teams at ON at.id = f.away_team_id
+         WHERE fs.is_live = 1
+         ORDER BY f.kickoff_at DESC"
+    )->fetchAll();
+} catch (Throwable $e) {
+    $liveMatches = [];
+}
+
+$pageTitle = $liveMatches !== [] ? '🔴 Live Streaming — Sagagoal' : 'Live Streaming — Sagagoal';
+$pageDescription = 'Nonton siaran langsung pertandingan sepak bola di Sagagoal, gratis langsung dari browser.';
 $activeNav = 'live';
 $canonicalUrl = wpm_site_url(wpm_url_live());
 
@@ -52,21 +155,34 @@ require __DIR__ . '/includes/site-header.php';
 <section class="page-hero">
     <div class="crypto-container">
         <nav class="breadcrumb" aria-label="Breadcrumb"><a href="<?= wpm_esc(wpm_site_url('')) ?>">Beranda</a> <span>/</span> Live Streaming</nav>
-        <span class="section-kicker"><?= $wpmIsLive ? '🔴 SEDANG LIVE' : 'LIVE STREAMING' ?></span>
-        <h1><?= wpm_esc($wpmIsLive && $wpmStreamTitle !== '' ? $wpmStreamTitle : 'Live Streaming') ?></h1>
-        <?php if ($wpmStreamDescription !== '') : ?>
-            <div class="page-hero-lead"><?= wpm_esc($wpmStreamDescription) ?></div>
-        <?php endif; ?>
+        <span class="section-kicker"><?= $liveMatches !== [] ? '🔴 SEDANG LIVE' : 'LIVE STREAMING' ?></span>
+        <h1>Live Streaming</h1>
+        <p><?= count($liveMatches) ?> pertandingan sedang live saat ini.</p>
     </div>
 </section>
 
 <section class="crypto-section--tight">
     <div class="crypto-container">
-        <?php if ($wpmShowPlayer) : ?>
-            <div class="glass-card wpm-live-player-card">
-                <div class="wpm-live-player-card__frame">
-                    <?= $wpmEmbedHtml ?>
-                </div>
+        <?php if ($liveMatches !== []) : ?>
+            <div class="crypto-grid crypto-grid--3">
+                <?php foreach ($liveMatches as $match) :
+                    $homeName = (string) $match['home_name'];
+                    $awayName = (string) $match['away_name'];
+                    $homeLogo = wpm_image($match['home_logo'] ?? null);
+                    $awayLogo = wpm_image($match['away_logo'] ?? null);
+                    $matchUrl = wpm_url_live_match((int) $match['fixture_id'], $homeName, $awayName);
+                    $matchTitle = trim((string) ($match['stream_title'] ?? '')) !== '' ? (string) $match['stream_title'] : ($homeName . ' vs ' . $awayName);
+                    ?>
+                    <a class="glass-card wpm-live-match-card" href="<?= wpm_esc($matchUrl) ?>">
+                        <span class="wpm-live-match-card__badge"><span class="fixture-card__live-stream-dot" aria-hidden="true"></span>Live</span>
+                        <div class="wpm-live-match-card__teams">
+                            <span class="wpm-live-match-card__team"><?= $homeLogo !== null ? '<img src="' . wpm_esc($homeLogo) . '" alt="" loading="lazy">' : wpm_icon('trophy') ?><?= wpm_esc($homeName) ?></span>
+                            <span class="wpm-live-match-card__vs">vs</span>
+                            <span class="wpm-live-match-card__team"><?= $awayLogo !== null ? '<img src="' . wpm_esc($awayLogo) . '" alt="" loading="lazy">' : wpm_icon('trophy') ?><?= wpm_esc($awayName) ?></span>
+                        </div>
+                        <p class="wpm-live-match-card__league"><?= wpm_esc((string) $match['league_name']) ?></p>
+                    </a>
+                <?php endforeach; ?>
             </div>
         <?php else : ?>
             <div class="glass-card empty-state" style="padding:48px 24px;">

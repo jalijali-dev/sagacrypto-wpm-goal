@@ -316,6 +316,83 @@ function wpm_url_live(): string
 }
 
 /**
+ * Public-side slugify (7 Sep 2026) — same algorithm as cms-admin's
+ * cms_slugify() (cms-admin/includes/functions.php), reimplemented here
+ * because that one lives in the admin-only include tree and this needs
+ * to run from public pages (live.php, wpm_fixture_card()). Lowercase,
+ * non-alphanumeric runs collapsed to a single "-", trimmed.
+ */
+function wpm_slugify(string $text): string
+{
+    $text = strtolower(trim($text));
+    $text = preg_replace('/[^a-z0-9]+/', '-', $text) ?? '';
+    return trim($text, '-');
+}
+
+/** "real-madrid-vs-barcelona" style slug for a fixture's live-stream URL — cosmetic only, the numeric fixture id is what actually resolves the page. */
+function wpm_fixture_match_slug(string $homeName, string $awayName): string
+{
+    $slug = wpm_slugify($homeName . ' vs ' . $awayName);
+    return $slug !== '' ? $slug : 'pertandingan';
+}
+
+/**
+ * Per-match live streaming (7 Sep 2026, brief "Live Streaming — next
+ * level, per pertandingan") — REPLACES the earlier single global
+ * live_streaming_settings toggle (3-6 Sep 2026 iterations) with a
+ * one-row-per-fixture model: any number of matches can be "live" at
+ * once, each with its own URL /live/<fixture_id>/<slug-teams>, managed
+ * from cms-admin/pages/live-streaming.php (now a searchable list/CRUD
+ * over fixtures, not a singleton form). Table `fixture_streams`,
+ * fixture_id is NOT a foreign key (fixtures is API-Football-synced and
+ * overwritten wholesale by LivescoreSync.php — no FK to avoid any
+ * chance of that sync tripping over a constraint), just a logical link
+ * validated at read-time by joining to `fixtures`.
+ *
+ * wpm_live_streaming_settings()/wpm_render_live_embed() above are left
+ * in place (unused by anything new) rather than deleted, in case some
+ * other in-flight branch still references them — nothing here depends
+ * on that old table anymore.
+ */
+function wpm_url_live_match(int $fixtureId, string $homeName, string $awayName): string
+{
+    return wpm_site_url(wpm_url_live() . '/' . $fixtureId . '/' . wpm_fixture_match_slug($homeName, $awayName));
+}
+
+/**
+ * Fixture IDs that currently have an ACTIVE (is_live=1) stream — used by
+ * wpm_fixture_card() to decide whether to print the red "🔴 Live"
+ * streaming badge/link on football.php's match list. Returns a
+ * fixture_id => true map (not a plain list) so callers can do an O(1)
+ * `isset()` check per card instead of an in_array() scan. Cached per
+ * request (same page can render many fixture cards). Never throws —
+ * empty map if the table doesn't exist yet or on any DB error.
+ */
+function wpm_live_stream_fixture_ids(PDO $pdo): array
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $cached = [];
+    try {
+        $rows = $pdo->query('SELECT fixture_id FROM fixture_streams WHERE is_live = 1')->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($rows as $fixtureId) {
+            $cached[(int) $fixtureId] = true;
+        }
+    } catch (Throwable $e) {
+        $cached = [];
+    }
+    return $cached;
+}
+
+/** True if at least one fixture currently has an active live stream configured — drives the nav "🔴 Live" badge (see wpm_nav_menu()). */
+function wpm_has_active_live_streams(PDO $pdo): bool
+{
+    return wpm_live_stream_fixture_ids($pdo) !== [];
+}
+
+/**
  * Live Streaming settings (6 Sep 2026, brief "Live Streaming") — managed
  * from the admin panel's Live Streaming page (cms-admin/pages/
  * live-streaming.php), stored in the singleton `live_streaming_settings`
@@ -449,14 +526,14 @@ function wpm_nav_menu(PDO $pdo): array
     // deliberately placed here (right after Berita, before the
     // special-pages loop below) so it sits with the other "core content"
     // items rather than trailing after Tentang Kami/Kontak. Label
-    // switches to a red "🔴 Live" badge when the operator flips
-    // is_live on in cms-admin/pages/live-streaming.php — see
-    // wpm_live_streaming_settings()'s docblock. `is_live` is carried on
-    // the item itself (not just baked into the label string) so
-    // site-header.php/site-footer.php can add a distinct pulsing/red CSS
-    // class, not just different text.
-    $liveSettings = wpm_live_streaming_settings($pdo);
-    $isLive = (int) ($liveSettings['is_live'] ?? 0) === 1;
+    // switches to a red "🔴 Live" badge when AT LEAST ONE fixture has an
+    // active stream configured (7 Sep 2026 — per-match model, see
+    // wpm_has_active_live_streams()'s docblock; this replaced the earlier
+    // single global is_live toggle). `is_live` is carried on the item
+    // itself (not just baked into the label string) so site-header.php/
+    // site-footer.php can add a distinct pulsing/red CSS class, not just
+    // different text.
+    $isLive = wpm_has_active_live_streams($pdo);
     $items[] = [
         'id' => 'live',
         'label' => $isLive ? '🔴 Live' : 'Live Streaming',
@@ -1406,8 +1483,20 @@ function wpm_fixture_status_badge(array $fixture): string
     return '<span class="fixture-status fixture-status--muted">' . wpm_esc($status) . '</span>';
 }
 
-/** One fixture row — home/away team logo+name, score or "vs", status badge. Used on football.php and league detail's Jadwal tab. */
-function wpm_fixture_card(array $fixture): string
+/**
+ * One fixture row — home/away team logo+name, score or "vs", status
+ * badge. Used on football.php and league detail's Jadwal tab.
+ *
+ * $liveStreamFixtureIds (7 Sep 2026, optional, default []) — a
+ * fixture_id => true map from wpm_live_stream_fixture_ids(); when this
+ * fixture's id is present, prints an extra red "🔴 Live" STREAMING badge
+ * (distinct from $isLive below, which is about the MATCH being in-play
+ * per the API, not about a stream being configured) linking to
+ * /live/<id>/<slug>. Callers that don't pass this (existing call sites
+ * before this feature) simply never show the streaming badge — fully
+ * backward compatible, no call site is required to change.
+ */
+function wpm_fixture_card(array $fixture, array $liveStreamFixtureIds = []): string
 {
     $homeLogo = wpm_image($fixture['home_logo'] ?? null);
     $awayLogo = wpm_image($fixture['away_logo'] ?? null);
@@ -1416,12 +1505,18 @@ function wpm_fixture_card(array $fixture): string
     $leagueName = (string) ($fixture['league_name'] ?? '');
     $hasScore = $fixture['home_score'] !== null && $fixture['away_score'] !== null;
     $isLive = wpm_fixture_is_live((string) ($fixture['status_short'] ?? ''));
+    $fixtureId = (int) $fixture['id'];
+    $hasLiveStream = isset($liveStreamFixtureIds[$fixtureId]);
 
     // data-search backs the client-side "Cari pertandingan" filter on
     // football.php — no server round-trip per keystroke.
     $searchText = mb_strtolower($homeName . ' ' . $awayName . ' ' . $leagueName);
 
-    $html = '<div class="fixture-card' . ($isLive ? ' is-live' : '') . '" data-fixture-id="' . (int) $fixture['id'] . '" data-status="' . wpm_esc((string) ($fixture['status_short'] ?? '')) . '" data-search="' . wpm_esc($searchText) . '">';
+    $html = '<div class="fixture-card' . ($isLive ? ' is-live' : '') . '" data-fixture-id="' . $fixtureId . '" data-status="' . wpm_esc((string) ($fixture['status_short'] ?? '')) . '" data-search="' . wpm_esc($searchText) . '">';
+
+    if ($hasLiveStream) {
+        $html .= '<a class="fixture-card__live-stream-badge" href="' . wpm_esc(wpm_url_live_match($fixtureId, $homeName, $awayName)) . '"><span class="fixture-card__live-stream-dot" aria-hidden="true"></span>Live</a>';
+    }
 
     $html .= '<div class="fixture-card__team fixture-card__team--home">';
     $html .= $homeLogo !== null ? '<img src="' . wpm_esc($homeLogo) . '" alt="" loading="lazy">' : wpm_icon('trophy');
