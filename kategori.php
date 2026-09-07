@@ -171,7 +171,7 @@ require __DIR__ . '/includes/site-header.php';
                     $betweenCardsAdHtml = wpm_render_ad_slot($pdo, 'between-article-cards', 'category', $category['id'] ?? null);
                     $adInsertAfter = min(5, count($articles) - 1);
                     ?>
-                    <div class="crypto-grid crypto-grid--3">
+                    <div class="crypto-grid crypto-grid--3" id="wpm-berita-grid">
                         <?php foreach ($articles as $i => $article) : ?>
                             <?= wpm_article_card($article) ?>
                             <?php if ($betweenCardsAdHtml !== '' && $i === $adInsertAfter) : ?>
@@ -181,13 +181,24 @@ require __DIR__ . '/includes/site-header.php';
                     </div>
 
                     <?php if ($totalPages > 1) : ?>
-                    <nav class="pagination" aria-label="Pagination">
-                        <a class="<?= $page <= 1 ? 'is-disabled' : '' ?>" href="<?= wpm_esc($paginateUrl(max(1, $page - 1))) ?>">&larr;</a>
-                        <?php for ($p = 1; $p <= $totalPages; $p++) : ?>
-                            <a class="<?= $p === $page ? 'is-current' : '' ?>" href="<?= wpm_esc($paginateUrl($p)) ?>"><?= $p ?></a>
-                        <?php endfor; ?>
-                        <a class="<?= $page >= $totalPages ? 'is-disabled' : '' ?>" href="<?= wpm_esc($paginateUrl(min($totalPages, $page + 1))) ?>">&rarr;</a>
-                    </nav>
+                    <!-- "Muat Lebih Banyak" (7 Sep 2026) — replaces the old
+                         numbered <nav class="pagination"> (operator: "pages
+                         halaman ga perlu ada lagi... gunakan model muat
+                         lebih banyak... yg pernah dibikin"), same pattern
+                         as index.php's homepage version (28 Agu 2026) — see
+                         assets/js/site.js's berita load-more handler and
+                         api/load-more-berita.php. data-* here carries
+                         kategori.php's 3 possible filter modes (slug/tag/
+                         league) since — unlike the homepage's tab/sport —
+                         this page's filtering comes from the URL, not tabs. -->
+                    <div class="load-more" id="wpm-berita-load-more"
+                         data-slug="<?= wpm_esc($categorySlug) ?>"
+                         data-tag="<?= wpm_esc($tagSlug) ?>"
+                         data-league="<?= $leagueId ?>"
+                         data-next-page="<?= $page + 1 ?>"
+                         data-base="<?= wpm_esc(wpm_base_path()) ?>">
+                        <button type="button" class="load-more__btn" id="wpm-berita-load-more-btn">Muat Lebih Banyak</button>
+                    </div>
                     <?php endif; ?>
                 <?php else : ?>
                     <div class="empty-state"><?= wpm_icon('news') ?><p>Belum ada artikel untuk ditampilkan.</p></div>

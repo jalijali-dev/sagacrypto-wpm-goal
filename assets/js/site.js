@@ -98,6 +98,62 @@
     });
   }
 
+  /* kategori.php "Muat Lebih Banyak" (7 Sep 2026) — same pattern as the
+     homepage block just above, but for /berita (kategori.php's 4 modes:
+     all/kategori/tag/league) via api/load-more-berita.php, appending into
+     #wpm-berita-grid instead of #wpm-news-list. Uses an ABSOLUTE url
+     (data-base + "/api/...") rather than the homepage's plain relative
+     "api/..." — index.php only ever lives at the site root so a relative
+     path always resolves correctly there, but kategori.php is also
+     reachable through nested pretty URLs like /berita/kategori/<slug> or
+     /berita/tag/<slug> (see .htaccess), where a relative "api/..." would
+     wrongly resolve under /berita/... instead of the real site root.
+     data-base carries wpm_base_path() from kategori.php (empty string at
+     the domain root in production, e.g. "/wpm" for a local subfolder
+     install) so this keeps working in both. */
+  var beritaLoadMoreWrap = document.getElementById("wpm-berita-load-more");
+  var beritaLoadMoreBtn = document.getElementById("wpm-berita-load-more-btn");
+  var beritaGrid = document.getElementById("wpm-berita-grid");
+  if (beritaLoadMoreWrap && beritaLoadMoreBtn && beritaGrid) {
+    beritaLoadMoreBtn.addEventListener("click", function () {
+      var base = beritaLoadMoreWrap.getAttribute("data-base") || "";
+      var slug = beritaLoadMoreWrap.getAttribute("data-slug") || "";
+      var tag = beritaLoadMoreWrap.getAttribute("data-tag") || "";
+      var league = beritaLoadMoreWrap.getAttribute("data-league") || "0";
+      var nextPage = parseInt(beritaLoadMoreWrap.getAttribute("data-next-page") || "2", 10) || 2;
+
+      var url = base + "/api/load-more-berita.php?page=" + nextPage;
+      if (slug !== "") { url += "&slug=" + encodeURIComponent(slug); }
+      if (tag !== "") { url += "&tag=" + encodeURIComponent(tag); }
+      if (league !== "0" && league !== "") { url += "&league=" + encodeURIComponent(league); }
+
+      beritaLoadMoreBtn.disabled = true;
+      beritaLoadMoreBtn.textContent = "Memuat...";
+
+      fetch(url)
+        .then(function (res) {
+          var hasMore = res.headers.get("X-Has-More") === "1";
+          return res.text().then(function (html) { return { html: html, hasMore: hasMore }; });
+        })
+        .then(function (result) {
+          if (result.html.trim() !== "") {
+            beritaGrid.insertAdjacentHTML("beforeend", result.html);
+          }
+          if (result.hasMore) {
+            beritaLoadMoreWrap.setAttribute("data-next-page", String(nextPage + 1));
+            beritaLoadMoreBtn.disabled = false;
+            beritaLoadMoreBtn.textContent = "Muat Lebih Banyak";
+          } else {
+            beritaLoadMoreWrap.remove();
+          }
+        })
+        .catch(function () {
+          beritaLoadMoreBtn.disabled = false;
+          beritaLoadMoreBtn.textContent = "Coba Lagi";
+        });
+    });
+  }
+
   /* Popup / sticky-bottom ad dismiss buttons */
   var popupAd = document.getElementById("wpm-popup-ad");
   var popupClose = document.getElementById("wpm-popup-ad-close");
