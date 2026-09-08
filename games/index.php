@@ -118,6 +118,23 @@ $wpmGames = [
         'status' => 'Main Sekarang',
         'accent' => 'gold',
     ],
+    [
+        'slug' => 'prediksi-trivia',
+        'title' => 'Prediksi & Trivia',
+        'tagline' => 'Tebak skor pertandingan hari ini + kuis cepat. Kumpulkan poin, naik leaderboard!',
+        'icon' => 'chart',
+        // Custom PNG artwork landed 8 Sep 2026 (operator-supplied) —
+        // same pattern as slot-bola's own artwork arriving after launch,
+        // see that entry's comment above. Original upload was 1312x1199
+        // @ 570KB; resized to 336x336 + palette-quantized down to ~192KB
+        // to match the other 4 games' logo file-size ballpark
+        // (~30-38KB is the norm, this one's chunkier but not egregious —
+        // fine to optimize further later if it matters).
+        'logo' => 'assets/games/img/prediksi-trivia.png',
+        'href' => 'games/prediksi-trivia/',
+        'status' => 'Main Sekarang',
+        'accent' => 'red',
+    ],
 ];
 ?>
 <!DOCTYPE html>
