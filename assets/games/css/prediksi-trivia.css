@@ -377,6 +377,30 @@
   color: #fff;
 }
 
+/* ---- Cara Main (8 Sep 2026) — static explainer box, no JS behind it. ---- */
+.wpm-pt-howto {
+  margin-top: 24px;
+  padding: 16px 18px;
+  border-radius: var(--ah-radius, 12px);
+  border: 1px solid var(--ah-border, rgba(255,255,255,0.1));
+  background: rgba(255,255,255,0.03);
+}
+.wpm-pt-howto__title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+.wpm-pt-howto__list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--ah-text-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.wpm-pt-howto__list li { margin-bottom: 6px; }
+.wpm-pt-howto__list li:last-child { margin-bottom: 0; }
+
 /* ---- Leaderboard ---- */
 .wpm-pt-leaderboard-toggle {
   appearance: none;

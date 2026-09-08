@@ -196,6 +196,25 @@ try {
                 </div>
             </section>
 
+            <!-- ---- Cara main (8 Sep 2026, operator request) — nempel di
+                 bawah kedua tab (bukan cuma di tab Prediksi), sengaja
+                 pakai <ol> singkat karena user sempet nanya di chat "cara
+                 maennya besok cek lagi hasilnya gitu?" — jawabannya iya,
+                 jadi ini nulisin urutan itu eksplisit biar user lain gak
+                 perlu nanya lagi. Murni teks statis, gak nyambung ke
+                 logic apapun. ---- -->
+            <div class="wpm-pt-howto">
+                <h3 class="wpm-pt-howto__title">Cara Main</h3>
+                <ol class="wpm-pt-howto__list">
+                    <li>Isi tebakan skor buat pertandingan yang belum kickoff, klik "Kunci Tebakan".</li>
+                    <li>Mau ganti tebakan? Boleh, klik "Ubah Tebakan" — asal belum lewat waktu kickoff.</li>
+                    <li>Begitu kickoff lewat, tebakan otomatis terkunci, gak bisa diubah lagi.</li>
+                    <li>Setelah pertandingan selesai, poin otomatis dihitung — gak perlu ngapa-ngapain, cukup balik lagi ke halaman ini buat cek hasilnya (biasanya beberapa jam/besoknya, tergantung jadwal pertandingan).</li>
+                    <li>Skor persis = 5 poin. Tebak menang/kalah/seri-nya doang bener (skor beda) = 2 poin. Salah total = 0 poin.</li>
+                    <li>Main Trivia Cepat kapan aja buat nambah poin — hasilnya otomatis gabung ke total poin & leaderboard yang sama.</li>
+                </ol>
+            </div>
+
             <!-- ---- Leaderboard (shared, visible under both tabs) ---- -->
             <button type="button" class="wpm-pt-leaderboard-toggle" id="pt-leaderboard-toggle" aria-expanded="false">🏆 Lihat Leaderboard</button>
             <div class="wpm-pt-leaderboard" id="pt-leaderboard" hidden>
