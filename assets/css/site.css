@@ -1243,18 +1243,27 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   align-items: flex-start;
   gap: 6px;
   padding: 20px;
-  background: linear-gradient(0deg, rgba(5, 3, 16, 0.88) 0%, rgba(5, 3, 16, 0.35) 60%, transparent 100%);
+  /* Overlay ini SELALU gelap (bukan ngikut tema terang/gelap situs) karena
+     duduk di atas foto banner yang variasinya nggak bisa diprediksi —
+     makanya teks di dalamnya di bawah ini dipaksa putih/abu terang
+     (bukan var(--text)/var(--text-muted), yang gelap di tema terang dan
+     bikin teks jadi gelap-di-atas-gelap alias nggak kebaca — bug 8 Sep
+     2026, dilaporkan user "tulisannya ga kliatan bro"). Gradient dinaikin
+     opacity + jarak sebarnya juga biar kartu manapun tetap kontras. */
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.6) 55%, rgba(0, 0, 0, 0.05) 100%);
 }
 .banner-card__title {
   font-size: 19px;
   font-weight: 800;
-  color: var(--text);
+  color: #fff;
   line-height: 1.25;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 .banner-card__subtitle {
   font-size: 13.5px;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.82);
   max-width: 46ch;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 .banner-card__cta {
   display: inline-block;
