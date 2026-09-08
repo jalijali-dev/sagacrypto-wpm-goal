@@ -201,9 +201,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 $searchQuery = trim((string) ($_GET['q'] ?? ''));
 $searchResults = [];
 if ($searchQuery !== '') {
+    // f.kickoff_at is stored in UTC (same as everywhere else in this
+    // codebase — see football.php's CONVERT_TZ usage); wrap it here too
+    // so the admin sees WIB like every public-facing page, instead of
+    // the raw UTC value 7 hours behind (8 Sep 2026 bug, reported as
+    // "jam tandingnya ngaco").
     $stmt = $pdo->prepare(
-        "SELECT f.id, f.kickoff_at, f.status_short, l.name AS league_name,
-                ht.name AS home_name, at.name AS away_name
+        "SELECT f.id, CONVERT_TZ(f.kickoff_at, '+00:00', '+07:00') AS kickoff_at, f.status_short,
+                l.name AS league_name, ht.name AS home_name, at.name AS away_name
          FROM fixtures f
          JOIN leagues l ON l.id = f.league_id
          JOIN teams ht ON ht.id = f.home_team_id
@@ -231,8 +236,8 @@ $editFixture = null;
 $editStream = null;
 if ($editFixtureId > 0) {
     $stmt = $pdo->prepare(
-        "SELECT f.id, f.kickoff_at, f.status_short, l.name AS league_name,
-                ht.name AS home_name, at.name AS away_name
+        "SELECT f.id, CONVERT_TZ(f.kickoff_at, '+00:00', '+07:00') AS kickoff_at, f.status_short,
+                l.name AS league_name, ht.name AS home_name, at.name AS away_name
          FROM fixtures f
          JOIN leagues l ON l.id = f.league_id
          JOIN teams ht ON ht.id = f.home_team_id
@@ -271,7 +276,7 @@ if ($editCustomId > 0) {
 // straight off fixture_streams' own custom_* columns on the other side,
 // and the two don't necessarily share a collation (8 Sep 2026 bug).
 $configuredStreams = $pdo->query(
-    "SELECT fs.*, f.kickoff_at, f.status_short,
+    "SELECT fs.*, CONVERT_TZ(f.kickoff_at, '+00:00', '+07:00') AS kickoff_at, f.status_short,
             CONVERT(l.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS league_name,
             CONVERT(ht.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_name,
             CONVERT(at.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_name
@@ -328,7 +333,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                             <tr>
                                 <td><?= cms_esc((string) $row['league_name']) ?></td>
                                 <td><?= cms_esc((string) $row['home_name']) ?> vs <?= cms_esc((string) $row['away_name']) ?></td>
-                                <td class="muted"><?= cms_esc((string) $row['kickoff_at']) ?></td>
+                                <td class="muted"><?= cms_esc((string) $row['kickoff_at']) ?> WIB</td>
                                 <td><a class="admin-btn admin-btn--secondary" href="<?= cms_esc($selfUrl) ?>?edit=<?= (int) $row['id'] ?>">Pilih</a></td>
                             </tr>
                         <?php endforeach; ?>
@@ -349,7 +354,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
         <?php if ($editFixture === null) : ?>
             <p class="muted" style="padding:0 20px 20px;">Pertandingan dengan ID <?= (int) $editFixtureId ?> tidak ditemukan.</p>
         <?php else : ?>
-            <p style="padding:0 20px;margin:0 0 12px;"><strong><?= cms_esc((string) $editFixture['home_name']) ?> vs <?= cms_esc((string) $editFixture['away_name']) ?></strong> — <?= cms_esc((string) $editFixture['league_name']) ?>, <?= cms_esc((string) $editFixture['kickoff_at']) ?></p>
+            <p style="padding:0 20px;margin:0 0 12px;"><strong><?= cms_esc((string) $editFixture['home_name']) ?> vs <?= cms_esc((string) $editFixture['away_name']) ?></strong> — <?= cms_esc((string) $editFixture['league_name']) ?>, <?= cms_esc((string) $editFixture['kickoff_at']) ?> WIB</p>
             <form class="form-stack" method="post" action="<?= cms_esc($selfUrl) ?>" style="padding: 0 20px 20px;">
                 <?= cms_csrf_field() ?>
                 <input type="hidden" name="fixture_id" value="<?= (int) $editFixtureId ?>">
