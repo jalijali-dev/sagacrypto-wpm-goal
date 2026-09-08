@@ -11,12 +11,15 @@
  * that duplication was the pragmatic call here over extracting a shared
  * helper file for just 2 games).
  *
- * Gameplay: player takes 5 penalty kicks by clicking/tapping one of 5
- * zones in the goal (top-left/top-right/center/bottom-left/bottom-right).
- * The AI keeper commits to a zone at the moment of the kick (same as a
- * real goalkeeper reading the run-up, not the flight) with a
- * difficulty-dependent chance of guessing the SAME zone the player
- * picked — if it matches, that's a save; otherwise it's a goal. No
+ * Gameplay (8 Sep 2026, "mode gantian penuh" revision — see
+ * resetShootout()'s own docblock below for the full writeup): a real
+ * 1-vs-1 shootout, 5 rounds, each round has the player kick (CPU keeps
+ * goal) THEN the CPU kicks (player keeps goal) — turns swap after every
+ * single kick, not just at the start. Whoever is kicking picks a zone by
+ * clicking/tapping one of 5 spots in the goal (top-left/top-right/
+ * center/bottom-left/bottom-right); whoever is keeping either has the AI
+ * commit to a zone (pickKeeperZone(), when CPU keeps) or clicks their
+ * own dive zone (when the player keeps, defending a CPU shot). No
  * physics beyond "does zone A equal zone B" — deliberately simple, per
  * the brief's own "hindari physics rumit" guidance.
  *
@@ -39,7 +42,6 @@
   var BALL_START_X = W / 2;
   var BALL_START_Y = 268;
   var BALL_R = 10;
-  var TOTAL_SHOTS = 5;
 
   /** The 5 aimable zones — id, target point, and a small hit-test radius used to map a click to "nearest zone". */
   var ZONES = [
@@ -63,6 +65,7 @@
   var difficultyBadge = document.getElementById('pk-difficulty-badge');
   var shotCountEl = document.getElementById('pk-shot-count');
   var goalCountEl = document.getElementById('pk-goal-count');
+  var turnBannerEl = document.getElementById('pk-turn-banner');
   var endTitleEl = document.getElementById('pk-end-title');
   var endScoreEl = document.getElementById('pk-end-score');
   var muteBtn = document.getElementById('pk-mute-btn');
@@ -83,52 +86,64 @@
   // plain Unicode emoji (zero image assets, zero payload cost) — same
   // "no external asset" reasoning as the synthesized audio elsewhere in
   // this file, see docs/DECISIONS.md. ----
+  // `color` (8 Sep 2026, operator request "bikin warna orangnya sesuai
+  // bendara yg diplih") — approximate each nation's iconic kit/flag
+  // color, used to recolor whichever stick figure represents the PLAYER
+  // (kicker when the player is taking a shot, keeper when the player is
+  // defending a CPU shot — see PLAYER_COLOR/CPU_COLOR below). Purely
+  // cosmetic, same as `flag` — never read by gameplay/scoring/AI code.
   var TEAMS = [
-    { code: 'BR', name: 'Brasil', flag: '🇧🇷' },
-    { code: 'AR', name: 'Argentina', flag: '🇦🇷' },
-    { code: 'DE', name: 'Jerman', flag: '🇩🇪' },
-    { code: 'FR', name: 'Prancis', flag: '🇫🇷' },
-    { code: 'IT', name: 'Italia', flag: '🇮🇹' },
-    { code: 'ES', name: 'Spanyol', flag: '🇪🇸' },
-    { code: 'GB', name: 'Inggris', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
-    { code: 'NL', name: 'Belanda', flag: '🇳🇱' },
-    { code: 'PT', name: 'Portugal', flag: '🇵🇹' },
-    { code: 'BE', name: 'Belgia', flag: '🇧🇪' },
-    { code: 'HR', name: 'Kroasia', flag: '🇭🇷' },
-    { code: 'UY', name: 'Uruguay', flag: '🇺🇾' },
-    { code: 'MX', name: 'Meksiko', flag: '🇲🇽' },
-    { code: 'US', name: 'Amerika Serikat', flag: '🇺🇸' },
-    { code: 'JP', name: 'Jepang', flag: '🇯🇵' },
-    { code: 'KR', name: 'Korea Selatan', flag: '🇰🇷' },
-    { code: 'MA', name: 'Maroko', flag: '🇲🇦' },
-    { code: 'SN', name: 'Senegal', flag: '🇸🇳' },
-    { code: 'GH', name: 'Ghana', flag: '🇬🇭' },
-    { code: 'NG', name: 'Nigeria', flag: '🇳🇬' },
-    { code: 'CM', name: 'Kamerun', flag: '🇨🇲' },
-    { code: 'TN', name: 'Tunisia', flag: '🇹🇳' },
-    { code: 'EG', name: 'Mesir', flag: '🇪🇬' },
-    { code: 'SA', name: 'Arab Saudi', flag: '🇸🇦' },
-    { code: 'QA', name: 'Qatar', flag: '🇶🇦' },
-    { code: 'IR', name: 'Iran', flag: '🇮🇷' },
-    { code: 'AU', name: 'Australia', flag: '🇦🇺' },
-    { code: 'CA', name: 'Kanada', flag: '🇨🇦' },
-    { code: 'CH', name: 'Swiss', flag: '🇨🇭' },
-    { code: 'PL', name: 'Polandia', flag: '🇵🇱' },
-    { code: 'DK', name: 'Denmark', flag: '🇩🇰' },
-    { code: 'SE', name: 'Swedia', flag: '🇸🇪' },
-    { code: 'RS', name: 'Serbia', flag: '🇷🇸' },
-    { code: 'EC', name: 'Ekuador', flag: '🇪🇨' },
-    { code: 'CR', name: 'Kosta Rika', flag: '🇨🇷' },
-    { code: 'CI', name: 'Pantai Gading', flag: '🇨🇮' },
-    { code: 'CO', name: 'Kolombia', flag: '🇨🇴' },
-    { code: 'CL', name: 'Chili', flag: '🇨🇱' },
-    { code: 'PE', name: 'Peru', flag: '🇵🇪' },
-    { code: 'PY', name: 'Paraguay', flag: '🇵🇾' },
-    { code: 'DZ', name: 'Aljazair', flag: '🇩🇿' },
-    { code: 'ZA', name: 'Afrika Selatan', flag: '🇿🇦' },
+    { code: 'BR', name: 'Brasil', flag: '🇧🇷', color: '#ffdf00' },
+    { code: 'AR', name: 'Argentina', flag: '🇦🇷', color: '#75aadb' },
+    { code: 'DE', name: 'Jerman', flag: '🇩🇪', color: '#e30613' },
+    { code: 'FR', name: 'Prancis', flag: '🇫🇷', color: '#0055a4' },
+    { code: 'IT', name: 'Italia', flag: '🇮🇹', color: '#0066cc' },
+    { code: 'ES', name: 'Spanyol', flag: '🇪🇸', color: '#c60b1e' },
+    { code: 'GB', name: 'Inggris', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', color: '#c8102e' },
+    { code: 'NL', name: 'Belanda', flag: '🇳🇱', color: '#ff6600' },
+    { code: 'PT', name: 'Portugal', flag: '🇵🇹', color: '#b30000' },
+    { code: 'BE', name: 'Belgia', flag: '🇧🇪', color: '#ed2939' },
+    { code: 'HR', name: 'Kroasia', flag: '🇭🇷', color: '#e2001a' },
+    { code: 'UY', name: 'Uruguay', flag: '🇺🇾', color: '#5ab6e8' },
+    { code: 'MX', name: 'Meksiko', flag: '🇲🇽', color: '#006341' },
+    { code: 'US', name: 'Amerika Serikat', flag: '🇺🇸', color: '#3c3b6e' },
+    { code: 'JP', name: 'Jepang', flag: '🇯🇵', color: '#002171' },
+    { code: 'KR', name: 'Korea Selatan', flag: '🇰🇷', color: '#c60c30' },
+    { code: 'MA', name: 'Maroko', flag: '🇲🇦', color: '#c1272d' },
+    { code: 'SN', name: 'Senegal', flag: '🇸🇳', color: '#00853f' },
+    { code: 'GH', name: 'Ghana', flag: '🇬🇭', color: '#ce1126' },
+    { code: 'NG', name: 'Nigeria', flag: '🇳🇬', color: '#008751' },
+    { code: 'CM', name: 'Kamerun', flag: '🇨🇲', color: '#ce1126' },
+    { code: 'TN', name: 'Tunisia', flag: '🇹🇳', color: '#e70013' },
+    { code: 'EG', name: 'Mesir', flag: '🇪🇬', color: '#ce1126' },
+    { code: 'SA', name: 'Arab Saudi', flag: '🇸🇦', color: '#006c35' },
+    { code: 'QA', name: 'Qatar', flag: '🇶🇦', color: '#8d1b3d' },
+    { code: 'IR', name: 'Iran', flag: '🇮🇷', color: '#da0000' },
+    { code: 'AU', name: 'Australia', flag: '🇦🇺', color: '#00843d' },
+    { code: 'CA', name: 'Kanada', flag: '🇨🇦', color: '#ff0000' },
+    { code: 'CH', name: 'Swiss', flag: '🇨🇭', color: '#ff0000' },
+    { code: 'PL', name: 'Polandia', flag: '🇵🇱', color: '#dc143c' },
+    { code: 'DK', name: 'Denmark', flag: '🇩🇰', color: '#c8102e' },
+    { code: 'SE', name: 'Swedia', flag: '🇸🇪', color: '#fecc02' },
+    { code: 'RS', name: 'Serbia', flag: '🇷🇸', color: '#c6363c' },
+    { code: 'EC', name: 'Ekuador', flag: '🇪🇨', color: '#ffce00' },
+    { code: 'CR', name: 'Kosta Rika', flag: '🇨🇷', color: '#ce1126' },
+    { code: 'CI', name: 'Pantai Gading', flag: '🇨🇮', color: '#ff8200' },
+    { code: 'CO', name: 'Kolombia', flag: '🇨🇴', color: '#fcd116' },
+    { code: 'CL', name: 'Chili', flag: '🇨🇱', color: '#d52b1e' },
+    { code: 'PE', name: 'Peru', flag: '🇵🇪', color: '#d91023' },
+    { code: 'PY', name: 'Paraguay', flag: '🇵🇾', color: '#0038a8' },
+    { code: 'DZ', name: 'Aljazair', flag: '🇩🇿', color: '#006233' },
+    { code: 'ZA', name: 'Afrika Selatan', flag: '🇿🇦', color: '#007749' },
   ];
 
   var selectedTeam = null;
+  // Fixed "away kit" color for whichever figure represents the CPU
+  // (kicker when the CPU is shooting, keeper when the CPU is defending)
+  // — always this one color regardless of the player's team pick, so the
+  // two figures on screen are always visually distinct from each other.
+  var CPU_COLOR = '#ff3d5a';
+  function playerColor() { return (selectedTeam && selectedTeam.color) || '#35e6ff'; }
 
   function renderTeamGrid() {
     if (!teamGridEl) { return; }
@@ -163,7 +178,7 @@
     if (btnEl) { btnEl.classList.add('is-selected'); }
 
     if (teamHintEl) {
-      teamHintEl.textContent = 'Main sebagai ' + team.flag + ' ' + team.name + '. Klik/tap area gawang buat nembak — 5 tendangan, cetak gol sebanyak mungkin!';
+      teamHintEl.textContent = 'Main sebagai ' + team.flag + ' ' + team.name + '. 5 ronde, gantian jadi penendang dan kiper — klik/tap gawang buat nembak ATAU nangkep, tergantung giliran!';
     }
     if (teamFlagBadgeEl) { teamFlagBadgeEl.textContent = team.flag; }
 
@@ -333,20 +348,36 @@
   var running = false;
   var rafId = null;
   var state = null;
+  var TOTAL_ROUNDS = 5;
 
+  // ---- Alternating shootout (8 Sep 2026, operator request "pinalti ini
+  // dibuat gantian antara user dengan komputer, gantian pinalti dan
+  // gantian siapa yg jadi kiper") — REPLACES the old "player always
+  // kicks, CPU always keeps" structure with a real 1-vs-1 shootout: each
+  // of TOTAL_ROUNDS rounds has the player kick first (CPU keeps goal,
+  // unchanged pickKeeperZone() logic below) then the CPU kicks (player
+  // keeps goal — player's click now picks the KEEPER zone instead of the
+  // shot zone). state.turn tracks whose kick it currently is ('player' |
+  // 'cpu'); state.stage tracks whether that round's player-kick or
+  // cpu-kick half has happened yet. Winner is decided by total goals
+  // after all rounds — no sudden-death tie-break, kept simple per the
+  // original brief's "hindari physics/logic rumit" guidance. ----
   function resetShootout(difficulty) {
     state = {
       difficulty: difficulty,
-      shotsTaken: 0,
-      goals: 0,
-      // 'aiming' = waiting for a click; 'kicking' = kicker wind-up/swing
-      // (2 Sep 2026 visual revision — added purely so there's a visible
-      // "someone is striking the ball" beat before it moves; the
-      // goal/save DECISION already happened in attemptKick() before this
-      // phase even starts, so nothing about outcome/scoring depends on
-      // it, see pickKeeperZone() call site); 'animating' = ball/keeper
-      // mid-flight (unchanged from the original gameplay brief);
-      // 'resolved' = brief pause showing the outcome before the next kick.
+      round: 1,
+      totalRounds: TOTAL_ROUNDS,
+      turn: 'player', // 'player' = player is kicking this attempt; 'cpu' = CPU is kicking, player defends
+      playerGoals: 0,
+      cpuGoals: 0,
+      shotsTaken: 0, // total attempts resolved so far (both sides combined), drives the "Ronde" progress readout
+      // 'aiming' = waiting for input (a click, meaning either "where I'm
+      // shooting" or "where I'm diving" depending on state.turn);
+      // 'kicking' = kicker wind-up/swing (purely a render-timing delay,
+      // see drawKicker()'s docblock — the goal/save decision already
+      // happened in attemptAction() before this phase starts);
+      // 'animating' = ball/keeper mid-flight; 'resolved' = brief pause
+      // showing the outcome before the next attempt.
       phase: 'aiming',
       ball: { x: BALL_START_X, y: BALL_START_Y },
       keeper: { x: W / 2, y: GOAL_TOP + GOAL_H * 0.58 },
@@ -388,6 +419,18 @@
     return others[Math.floor(Math.random() * others.length)].id;
   }
 
+  // CPU picking its OWN shot zone (used on 'cpu' turns, player defends).
+  // Higher difficulty -> CPU aims for the corners more often (harder to
+  // guess-dive correctly) instead of the easier-to-save center — mirrors
+  // pickKeeperZone()'s difficulty curve but for the opposite role.
+  var CPU_CENTER_CHANCE = { easy: 0.55, medium: 0.32, hard: 0.15 };
+  function pickCpuShotZone(difficulty) {
+    var centerChance = CPU_CENTER_CHANCE[difficulty] != null ? CPU_CENTER_CHANCE[difficulty] : 0.32;
+    if (Math.random() < centerChance) { return 'center'; }
+    var corners = ZONES.filter(function (z) { return z.id !== 'center'; });
+    return corners[Math.floor(Math.random() * corners.length)].id;
+  }
+
   function showStart() {
     running = false;
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
@@ -403,11 +446,28 @@
     panelStart.hidden = true;
     panelEnd.hidden = true;
     boardEl.hidden = false;
-    shotCountEl.textContent = '0/' + TOTAL_SHOTS;
-    goalCountEl.textContent = '0';
+    updateScoreboard();
     running = true;
     if (rafId) { cancelAnimationFrame(rafId); }
     rafId = requestAnimationFrame(loop);
+  }
+
+  // Refreshes every scoreboard readout from state — round counter, dual
+  // score (Kamu/CPU), and whose-turn/what-role banner. Called once at
+  // shootout start and again every time a round/turn changes in loop().
+  function updateScoreboard() {
+    if (!state) { return; }
+    if (shotCountEl) { shotCountEl.textContent = state.round + '/' + state.totalRounds; }
+    if (goalCountEl) { goalCountEl.textContent = state.playerGoals + ' - ' + state.cpuGoals; }
+    if (turnBannerEl) {
+      if (state.turn === 'player') {
+        turnBannerEl.textContent = (selectedTeam ? selectedTeam.flag + ' ' : '') + 'Giliranmu menendang!';
+        turnBannerEl.className = 'wpm-pk-turn-banner wpm-pk-turn-banner--kick';
+      } else {
+        turnBannerEl.textContent = 'CPU menendang — kamu jadi kiper!';
+        turnBannerEl.className = 'wpm-pk-turn-banner wpm-pk-turn-banner--keep';
+      }
+    }
   }
 
   startBtn.addEventListener('click', startShootout);
@@ -427,22 +487,29 @@
     };
   }
 
-  function attemptKick(x, y) {
+  // Renamed from attemptKick() (8 Sep 2026, alternating-turns revision)
+  // — a click now means two different things depending on state.turn:
+  //   - turn === 'player': same as the original gameplay logic, click
+  //     picks the SHOT zone; the CPU keeper's zone is decided right here
+  //     via pickKeeperZone() (unchanged AI, unchanged difficulty odds).
+  //   - turn === 'cpu': the CPU already auto-picked its shot zone the
+  //     moment this turn began (see loop()'s 'resolved' branch below,
+  //     where pickCpuShotZone() is called) — the click here instead
+  //     picks the KEEPER zone (the player defending). state.shotZone is
+  //     already set going in; this branch only fills state.keeperZone.
+  // Either way, once both zones are locked in, the exact same
+  // 'kicking' -> 'animating' -> 'resolved' pipeline plays out — the
+  // ball-flight/dive animation code never needs to know who's kicking.
+  function attemptAction(x, y) {
     if (!state || !running || state.phase !== 'aiming') { return; }
-    // Decision-making is UNCHANGED from the original gameplay logic —
-    // shotZone/keeperZone are still locked in right here, at the instant
-    // of the click (real-goalkeeper-reads-the-run-up reasoning, see
-    // pickKeeperZone()'s own comment). Only what happens AFTER this is
-    // new: instead of jumping straight into the ball-flight animation,
-    // the 'kicking' wind-up phase plays first — draw() picks up
-    // state.phase to animate the kicker figure, but the eventual
-    // goal/save outcome is computed later purely from shotZone/keeperZone,
-    // which are already final by this point. No new randomness, no
-    // different odds — see docs/DECISIONS.md, 2 Sep 2026 visual revision
-    // entry.
     var zone = nearestZone(x, y);
-    state.shotZone = zone.id;
-    state.keeperZone = pickKeeperZone(zone.id);
+    if (state.turn === 'player') {
+      state.shotZone = zone.id;
+      state.keeperZone = pickKeeperZone(zone.id);
+    } else {
+      state.keeperZone = zone.id;
+      // state.shotZone was already set when this CPU turn began.
+    }
     state.phase = 'kicking';
     state.kickFrame = 0;
     // sfx.kick() fires later, in loop()'s 'kicking' -> 'animating'
@@ -452,31 +519,33 @@
 
   canvas.addEventListener('click', function (e) {
     var p = pointerToLogical(e.clientX, e.clientY);
-    attemptKick(p.x, p.y);
+    attemptAction(p.x, p.y);
   });
 
   canvas.addEventListener('touchend', function (e) {
     if (!e.changedTouches || !e.changedTouches[0]) { return; }
     var t = e.changedTouches[0];
     var p = pointerToLogical(t.clientX, t.clientY);
-    attemptKick(p.x, p.y);
+    attemptAction(p.x, p.y);
     e.preventDefault();
   }, { passive: false });
 
   // ---- Game loop ----
+  // Winner decided by total goals across both roles after all
+  // TOTAL_ROUNDS rounds — no sudden-death tie-break (kept simple, same
+  // "avoid extra complexity" spirit as the original brief).
   function endShootout() {
     running = false;
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-    var goals = state.goals;
-    var tier;
-    if (goals >= 5) { tier = 'Sempurna! ⚽⚽⚽⚽⚽'; }
-    else if (goals >= 3) { tier = 'Bagus banget!'; }
-    else if (goals >= 1) { tier = 'Lumayan, coba lagi!'; }
-    else { tier = 'Yah, coba lagi!'; }
-    endTitleEl.textContent = tier;
-    endScoreEl.textContent = 'Gol: ' + goals + '/' + TOTAL_SHOTS;
+    var p = state.playerGoals, c = state.cpuGoals;
+    var title, won;
+    if (p > c) { title = 'Kamu Menang! 🏆'; won = true; }
+    else if (p < c) { title = 'Kamu Kalah'; won = false; }
+    else { title = 'Seri!'; won = null; }
+    endTitleEl.textContent = title;
+    endScoreEl.textContent = (selectedTeam ? selectedTeam.flag + ' ' : '') + 'Kamu ' + p + ' - ' + c + ' CPU';
     panelEnd.hidden = false;
-    if (goals >= 3) { sfx.win(); } else { sfx.lose(); }
+    if (won === false) { sfx.lose(); } else { sfx.win(); }
   }
 
   function loop() {
@@ -485,7 +554,7 @@
     if (state.phase === 'kicking') {
       // Kicker wind-up/swing (2 Sep 2026 visual revision) — purely a
       // render-timing delay. shotZone/keeperZone were already decided
-      // in attemptKick(); this branch never touches them, never touches
+      // in attemptAction(); this branch never touches them, never touches
       // score, and never runs the AI decision again. draw()'s
       // drawKicker() reads state.kickFrame/state.kickLength to animate
       // the figure; once the swing completes, hand off to the EXACT
@@ -515,10 +584,8 @@
       if (state.animFrame >= state.animLength) {
         var outcome = state.shotZone === state.keeperZone ? 'saved' : 'goal';
         state.outcome = outcome;
-        state.shotsTaken++;
         if (outcome === 'goal') {
-          state.goals++;
-          goalCountEl.textContent = String(state.goals);
+          if (state.turn === 'player') { state.playerGoals++; } else { state.cpuGoals++; }
           sfx.goal();
           spawnBurst(state.ball.x, state.ball.y, '57,255,136', 20);
           triggerFlash('57,255,136');
@@ -527,19 +594,31 @@
           spawnBurst(state.keeper.x, state.keeper.y, '255,61,154', 14);
           triggerFlash('255,61,154');
         }
-        shotCountEl.textContent = state.shotsTaken + '/' + TOTAL_SHOTS;
         state.phase = 'resolved';
         state.pauseFrames = 0;
       }
     } else if (state.phase === 'resolved') {
       state.pauseFrames++;
       if (state.pauseFrames >= 45) {
-        if (state.shotsTaken >= TOTAL_SHOTS) {
-          updateParticles();
-          draw();
-          endShootout();
-          return;
+        if (state.turn === 'player') {
+          // Player's kick this round is done -> CPU's turn to kick, player defends.
+          state.turn = 'cpu';
+          state.shotZone = pickCpuShotZone(state.difficulty); // CPU decides its shot NOW, before player dives
+          state.keeperZone = null;
+        } else {
+          // CPU's kick this round is done -> round complete.
+          state.round++;
+          if (state.round > state.totalRounds) {
+            updateParticles();
+            draw();
+            endShootout();
+            return;
+          }
+          state.turn = 'player';
+          state.shotZone = null;
+          state.keeperZone = null;
         }
+        state.shotsTaken++;
         state.ball.x = BALL_START_X;
         state.ball.y = BALL_START_Y;
         state.keeper.x = W / 2;
@@ -547,6 +626,7 @@
         state.outcome = null;
         state.kickFrame = 0;
         state.phase = 'aiming';
+        updateScoreboard();
       }
     }
 
@@ -678,10 +758,28 @@
     ctx.beginPath(); ctx.ellipse(GOAL_RIGHT, GOAL_BOTTOM + 2, 5, 2.2, 0, 0, Math.PI * 2); ctx.fill();
   }
 
+  /**
+   * Darkens (negative percent) or lightens (positive) a 6-digit hex
+   * color by roughly `percent`% per channel — used below to derive a
+   * "shorts"/"socks" shade from each figure's jersey `color` so the
+   * two body pieces read as visually distinct blocks (like a real kit)
+   * instead of one flat silhouette. Only ever fed a static hex string
+   * (TEAMS[].color or CPU_COLOR), never used for anything gameplay-
+   * related.
+   */
+  function shadeColor(hex, percent) {
+    var num = parseInt(hex.replace('#', ''), 16);
+    var amt = Math.round(2.55 * percent);
+    var r = Math.max(0, Math.min(255, (num >> 16) + amt));
+    var g = Math.max(0, Math.min(255, ((num >> 8) & 0x00ff) + amt));
+    var b = Math.max(0, Math.min(255, (num & 0x0000ff) + amt));
+    return '#' + (0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).slice(1);
+  }
+
   // drawZoneHints() (the 4 outline-ring click-target indicators) was
   // REMOVED here on 2 Sep 2026 per explicit operator feedback ("tanda
   // digawang nya itu gausah") — the 5 aimable ZONES themselves (and
-  // nearestZone()'s click-to-zone mapping in attemptKick()) are
+  // nearestZone()'s click-to-zone mapping in attemptAction()) are
   // completely UNCHANGED; only this purely-visual ring indicator is
   // gone. Deliberately not replaced with a subtler hover-only affordance
   // either — brief explicitly said "kalau ragu, hilangkan saja", so this
@@ -701,19 +799,31 @@
    * the EXISTING keeper.x/keeper.y (still driven by the same
    * diveT interpolation in loop() as before this revision — this
    * function never touches that logic, only how the point gets drawn).
+   *
+   * `color` (8 Sep 2026, "warna orangnya sesuai bendera yg dipilih" +
+   * "gantung ditengah" fixes) — now takes the figure's color as a
+   * parameter instead of a hardcoded gold, since this function draws
+   * whichever side (player or CPU) is currently in goal — see draw()'s
+   * call site for how kickerColor/keeperColor are picked per state.turn.
+   * Also scaled up ~18% (headR/torsoLen/legLen) and given a solid torso
+   * fill + stronger ground shadow so the figure reads as "grounded"/
+   * has visual weight instead of a thin skeleton floating mid-frame
+   * (operator feedback: "kelihatan gantung ditengah").
    */
-  function drawKeeper(x, y) {
-    var color = '#ffd23f';
+  function drawKeeper(x, y, color) {
+    color = color || '#ffd23f'; // fallback if ever called without one
     var homeX = W / 2;
     var tiltMax = 0.5;
     var tilt = Math.max(-tiltMax, Math.min(tiltMax, (x - homeX) / 60));
 
-    // Ground shadow (2 Sep 2026, stronger pseudo-3D pass) — drawn in
-    // world space, BEFORE the translate/rotate below, so it stays flat
-    // on the grass instead of tilting with the figure.
+    // Ground shadow (8 Sep 2026 — enlarged/darkened again from the 2 Sep
+    // pass, part of the "grounded" fix: bigger + more opaque so the
+    // keeper reads as standing ON the grass, not floating over it).
+    // Drawn in world space, BEFORE the translate/rotate below, so it
+    // stays flat on the grass instead of tilting with the figure.
     ctx.beginPath();
-    ctx.ellipse(x, y + 15, 14, 3.5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.ellipse(x, y + 18, 17, 4.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.fill();
 
     ctx.save();
@@ -722,7 +832,7 @@
 
     // Glow halo.
     ctx.beginPath();
-    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.arc(0, 0, 25, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.16;
     ctx.shadowColor = color;
@@ -731,36 +841,99 @@
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
 
-    var headR = 5;
-    var torsoLen = 12;
-    var legLen = 10;
+    // Scaled up ~18% from the original 5/12/10 (8 Sep 2026 "grounded"
+    // fix) so the figure fills more of the goal frame visually.
+    var headR = 6;
+    var torsoLen = 14;
+    var legLen = 12;
     var hipY = 4;
     var shoulderY = hipY - torsoLen;
     var headY = shoulderY - headR - 1;
+    var torsoW = 7; // half-width of the torso jersey block below
+    var shortsColor = shadeColor(color, -28); // darker shade, reads as a separate kit piece
+    var socksColor = shadeColor(color, -40);
+    var shoeColor = '#161616';
+
+    // ---- Legs: sock "capsule" (thick round-capped stroke) + a small
+    // dark shoe ellipse at each foot (8 Sep 2026, pushing the "papercraft
+    // kit" look further per operator feedback on a reference screenshot
+    // — still 100% vector/Canvas, no image assets, just more body pieces
+    // than the original single thin leg line). ----
+    var footL = { x: -7, y: hipY + legLen };
+    var footR = { x: 7, y: hipY + legLen };
+    ctx.strokeStyle = socksColor;
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(0, hipY - 2); ctx.lineTo(footL.x, footL.y);
+    ctx.moveTo(0, hipY - 2); ctx.lineTo(footR.x, footR.y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = shoeColor;
+    ctx.beginPath(); ctx.ellipse(footL.x, footL.y + 1, 4.2, 2.4, -0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(footR.x, footR.y + 1, 4.2, 2.4, 0.2, 0, Math.PI * 2); ctx.fill();
+
+    // ---- Shorts — small filled block bridging hip/upper-leg, drawn
+    // BEFORE the jersey so the jersey's bottom edge overlaps it slightly
+    // (same layering a real kit has: shirt untucked over shorts). ----
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = shortsColor;
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(-torsoW * 0.75, hipY - 4, torsoW * 1.5, 9, 3);
+    } else {
+      ctx.rect(-torsoW * 0.75, hipY - 4, torsoW * 1.5, 9);
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0;
 
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
-    ctx.lineWidth = 2.6;
+    ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.shadowColor = color;
     ctx.shadowBlur = 10;
 
-    // Legs (stable stance).
+    // Solid torso "jersey" (8 Sep 2026 "grounded" fix) — a filled
+    // rounded shape instead of a single stroked line, so the figure has
+    // actual body mass/silhouette rather than reading as a bare
+    // skeleton. Gradient (lighter center, darker edges) gives it a
+    // touch of fabric-like volume rather than a flat color block.
+    var torsoGrad = ctx.createLinearGradient(-torsoW, shoulderY, torsoW, hipY);
+    torsoGrad.addColorStop(0, color);
+    torsoGrad.addColorStop(0.5, '#ffffff');
+    torsoGrad.addColorStop(1, color);
+    ctx.globalAlpha = 0.9;
     ctx.beginPath();
-    ctx.moveTo(0, hipY); ctx.lineTo(-6, hipY + legLen);
-    ctx.moveTo(0, hipY); ctx.lineTo(6, hipY + legLen);
-    ctx.stroke();
+    if (ctx.roundRect) {
+      ctx.roundRect(-torsoW, shoulderY, torsoW * 2, torsoLen, torsoW * 0.7);
+    } else {
+      ctx.rect(-torsoW, shoulderY, torsoW * 2, torsoLen);
+    }
+    ctx.fillStyle = torsoGrad;
+    ctx.shadowBlur = 0;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
 
-    // Torso.
+    // Arms spread wide — goalkeeper "ready"/dive pose — with a small
+    // glove circle at each hand (8 Sep 2026), a cheap detail that reads
+    // clearly as "goalkeeper" at this render size.
+    var handL = { x: -20, y: shoulderY - 6 };
+    var handR = { x: 20, y: shoulderY - 6 };
     ctx.beginPath();
-    ctx.moveTo(0, hipY); ctx.lineTo(0, shoulderY);
+    ctx.moveTo(0, shoulderY + 2); ctx.lineTo(handL.x, handL.y);
+    ctx.moveTo(0, shoulderY + 2); ctx.lineTo(handR.x, handR.y);
     ctx.stroke();
-
-    // Arms spread wide — goalkeeper "ready"/dive pose.
-    ctx.beginPath();
-    ctx.moveTo(0, shoulderY); ctx.lineTo(-18, shoulderY - 6);
-    ctx.moveTo(0, shoulderY); ctx.lineTo(18, shoulderY - 6);
-    ctx.stroke();
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = '#f4f7ff';
+    ctx.beginPath(); ctx.arc(handL.x, handL.y, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(handR.x, handR.y, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
 
     // Head — radial gradient instead of flat fill (2 Sep 2026, stronger
     // pseudo-3D pass) for a touch of volume, same sphere-shading idea as
@@ -789,18 +962,21 @@
    *     shotZone/keeperZone/outcome.
    *   - 'animating'/'resolved': frozen follow-through pose (kick already
    *     happened, ball is now in flight/result is showing).
-   * Cyan glow — this game's own accent color (games-landing.css's
-   * --card-accent for penalty-kick), distinct from the keeper's gold and
-   * the ball's white/orange.
+   * `color` (8 Sep 2026, "warna orangnya sesuai bendera yg dipilih" +
+   * "gantung ditengah" fixes) — now takes the figure's color as a
+   * parameter (was hardcoded cyan) — see draw()'s call site for how
+   * kickerColor/keeperColor are picked per state.turn. Also scaled up
+   * and given a solid torso fill, same "grounded" treatment as
+   * drawKeeper() above, for visual consistency between the two figures.
    */
-  function drawKicker() {
+  function drawKicker(color) {
     if (!state) { return; }
-    var color = '#35e6ff';
+    color = color || '#35e6ff'; // fallback if ever called without one
     var hipX = BALL_START_X - 24;
     var hipY = BALL_START_Y + 6;
-    var torsoLen = 13;
-    var legLen = 13;
-    var headR = 4;
+    var torsoLen = 15;
+    var legLen = 15;
+    var headR = 5;
 
     var legSwing = -0.15; // idle stance, leg slightly back
     var torsoLean = 0;
@@ -828,18 +1004,19 @@
     var headX = shoulderX + Math.sin(torsoLean) * headR;
     var headY = shoulderY - headR - 2;
 
-    // Ground shadow (2 Sep 2026, stronger pseudo-3D pass) — the kicker
-    // stands closest to camera, so this is the biggest/darkest of the
-    // three ground shadows in the scene (ball's and keeper's are
-    // smaller), consistent with "closer = bigger shadow" depth logic.
+    // Ground shadow (8 Sep 2026, enlarged again as part of the
+    // "grounded" fix, same reasoning as drawKeeper()'s) — the kicker
+    // stands closest to camera, so this is still the biggest/darkest of
+    // the three ground shadows in the scene, consistent with
+    // "closer = bigger shadow" depth logic.
     ctx.beginPath();
-    ctx.ellipse(hipX, hipY + legLen + 2, 15, 4, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.ellipse(hipX, hipY + legLen + 2, 18, 5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.38)';
     ctx.fill();
 
     // Glow halo.
     ctx.beginPath();
-    ctx.arc(hipX, hipY - torsoLen / 2, 16, 0, Math.PI * 2);
+    ctx.arc(hipX, hipY - torsoLen / 2, 18, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.14;
     ctx.shadowColor = color;
@@ -848,32 +1025,75 @@
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
 
+    var socksColor = shadeColor(color, -40);
+    var shortsColor = shadeColor(color, -28);
+    var shoeColor = '#161616';
+
+    // ---- Legs: sock "capsule" (thick stroke, darker shade of the kit
+    // color) + a small dark shoe ellipse at each foot (8 Sep 2026,
+    // pushing the "papercraft kit" look further per operator feedback
+    // on a reference screenshot — still 100% vector/Canvas). ----
+    var supportFootX = hipX - 3;
+    var supportFootY = hipY + legLen;
+    var footX = hipX + Math.sin(legSwing) * legLen;
+    var footY = hipY + Math.cos(legSwing) * legLen;
+
+    ctx.strokeStyle = socksColor;
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(hipX, hipY); ctx.lineTo(supportFootX, supportFootY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(hipX, hipY); ctx.lineTo(footX, footY);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = shoeColor;
+    ctx.beginPath(); ctx.ellipse(supportFootX, supportFootY + 1, 4.4, 2.6, -0.15, 0, Math.PI * 2); ctx.fill();
+    // Kicking foot's shoe follows the swing angle so it reads as a real
+    // strike/follow-through, not a static blob.
+    ctx.beginPath(); ctx.ellipse(footX, footY, 4.4, 2.6, legSwing, 0, Math.PI * 2); ctx.fill();
+
+    // ---- Shorts — small filled block at the hip, drawn before the
+    // torso so the jersey overlaps its top edge slightly (same
+    // shirt-over-shorts layering as drawKeeper()'s). ----
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = shortsColor;
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(hipX - 6, hipY - 5, 12, 9, 3);
+    } else {
+      ctx.rect(hipX - 6, hipY - 5, 12, 9);
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
-    ctx.lineWidth = 2.4;
+    ctx.lineWidth = 2.6;
     ctx.lineCap = 'round';
     ctx.shadowColor = color;
     ctx.shadowBlur = 8;
 
-    // Support leg (planted, fixed).
-    ctx.beginPath();
-    ctx.moveTo(hipX, hipY);
-    ctx.lineTo(hipX - 3, hipY + legLen);
-    ctx.stroke();
-
-    // Kicking leg — angle driven by legSwing above.
-    var footX = hipX + Math.sin(legSwing) * legLen;
-    var footY = hipY + Math.cos(legSwing) * legLen;
-    ctx.beginPath();
-    ctx.moveTo(hipX, hipY);
-    ctx.lineTo(footX, footY);
-    ctx.stroke();
-
-    // Torso.
+    // Torso — thick round-capped stroke instead of the old thin line
+    // (8 Sep 2026 "grounded" fix, same intent as drawKeeper()'s solid
+    // torso fill) — a cheap way to add visual bulk/weight without
+    // needing a rotated polygon to track the torso's dynamic lean angle.
+    ctx.save();
+    ctx.lineWidth = 9;
+    ctx.shadowBlur = 6;
     ctx.beginPath();
     ctx.moveTo(hipX, hipY);
     ctx.lineTo(shoulderX, shoulderY);
     ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.6;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8;
 
     // Arms, out for balance (counter-lean against the torso).
     ctx.beginPath();
@@ -1037,8 +1257,16 @@
 
     if (!state) { drawBall(BALL_START_X, BALL_START_Y); return; }
 
-    drawKicker();
-    drawKeeper(state.keeper.x, state.keeper.y);
+    // Figure colors follow WHO is currently kicking/keeping, not a fixed
+    // role (8 Sep 2026, "warna orangnya sesuai bendera yg dipilih") — the
+    // player's figure (whichever role that is this turn) always uses
+    // their selected team's color; the CPU's figure always uses
+    // CPU_COLOR. Recomputed every frame from state.turn since the two
+    // figures swap roles/colors each time the turn flips.
+    var kickerColor = state.turn === 'player' ? playerColor() : CPU_COLOR;
+    var keeperColor = state.turn === 'player' ? CPU_COLOR : playerColor();
+    drawKicker(kickerColor);
+    drawKeeper(state.keeper.x, state.keeper.y, keeperColor);
     // Depth scale: 1 at the penalty spot (closest to camera), shrinking
     // toward ~0.55 by the goal line — purely a render-time value derived
     // from the ball's existing y position, never fed back into

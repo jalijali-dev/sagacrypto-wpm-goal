@@ -193,6 +193,32 @@
   width: 100%;
 }
 
+/* Whose-turn/what-role banner (8 Sep 2026, "mode gantian penuh"
+   revision) — text + modifier class set by penalty-kick.js's
+   updateScoreboard(). Colors reuse games-landing.css's existing
+   --ah-neon-green/--ah-neon-pink vars (not new hex values) so this
+   stays consistent with the palette already used elsewhere in this
+   file/product family, rather than introducing a third green/pink. */
+.wpm-pk-turn-banner {
+  text-align: center;
+  font-weight: 700;
+  font-size: 13.5px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+.wpm-pk-turn-banner:empty { display: none; }
+.wpm-pk-turn-banner--kick {
+  background: rgba(57, 255, 136, 0.14);
+  border-color: rgba(57, 255, 136, 0.35);
+  color: var(--ah-neon-green);
+}
+.wpm-pk-turn-banner--keep {
+  background: rgba(255, 61, 154, 0.14);
+  border-color: rgba(255, 61, 154, 0.35);
+  color: var(--ah-neon-pink);
+}
+
 /* "Gamer" scoreboard, same bevel/gradient-plate technique as
    air-hockey.css's .wpm-ah-scoreboard — cyan-toned instead of the
    air-hockey blue/cyan mix, to match this game's own accent (see

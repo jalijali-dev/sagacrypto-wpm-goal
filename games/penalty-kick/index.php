@@ -86,7 +86,7 @@ $wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
         <!-- Difficulty picker + start (shown after a team is picked) -->
         <div class="wpm-pk-panel" id="pk-panel-start" hidden>
             <h1 class="wpm-pk-panel__title">Penalty Kick</h1>
-            <p class="wpm-pk-panel__hint" id="pk-team-hint">Klik/tap area gawang buat nembak. 5 tendangan — cetak gol sebanyak mungkin, jangan ketahuan kiper!</p>
+            <p class="wpm-pk-panel__hint" id="pk-team-hint">5 ronde, gantian jadi penendang dan kiper — klik/tap gawang buat nembak ATAU nangkep, tergantung giliran!</p>
             <div class="wpm-pk-difficulty" role="group" aria-label="Pilih tingkat kesulitan kiper">
                 <button type="button" class="wpm-pk-difficulty__btn" data-difficulty="easy">Easy</button>
                 <button type="button" class="wpm-pk-difficulty__btn is-selected" data-difficulty="medium">Medium</button>
@@ -98,15 +98,20 @@ $wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
 
         <!-- Live scoreboard + canvas (shown during a shootout) -->
         <div class="wpm-pk-board" id="pk-board" hidden>
+            <!-- Whose-turn/what-role banner (8 Sep 2026, "mode gantian
+                 penuh" revision) — text + class (--kick/--keep) set by
+                 penalty-kick.js's updateScoreboard(), called once per
+                 round/turn change. -->
+            <div id="pk-turn-banner" class="wpm-pk-turn-banner"></div>
             <div class="wpm-pk-scoreboard">
                 <div class="wpm-pk-scoreboard__side">
-                    <span class="wpm-pk-scoreboard__label">Tendangan</span>
-                    <span class="wpm-pk-scoreboard__score" id="pk-shot-count">0/5</span>
+                    <span class="wpm-pk-scoreboard__label">Ronde</span>
+                    <span class="wpm-pk-scoreboard__score" id="pk-shot-count">1/5</span>
                 </div>
                 <span class="wpm-pk-scoreboard__vs" id="pk-difficulty-badge">MEDIUM</span>
                 <div class="wpm-pk-scoreboard__side">
-                    <span class="wpm-pk-scoreboard__label"><span id="pk-team-flag-badge"></span> Gol</span>
-                    <span class="wpm-pk-scoreboard__score" id="pk-goal-count">0</span>
+                    <span class="wpm-pk-scoreboard__label"><span id="pk-team-flag-badge"></span> Skor</span>
+                    <span class="wpm-pk-scoreboard__score" id="pk-goal-count">0 - 0</span>
                 </div>
             </div>
             <div class="wpm-pk-canvas-wrap">

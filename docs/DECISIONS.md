@@ -785,3 +785,382 @@ tanpa perlu tuning kurva. Variasi soal per level kesulitan (disebut
 opsional di brief) — tidak dikerjakan, brief eksplisit bilang jangan
 sampai bikin brief ini membengkak jadi 3x kerjaan; kalau operator mau
 soal per-level yang beda kontennya, itu scope brief terpisah.
+
+---
+
+## 2026-09-03 — Games Hub: game keempat, Slot Bola (TANPA sistem uang/kredit)
+
+**Keputusan:** Game keempat ditambahkan, di luar rencana 3-slot awal
+(Air Hockey/Penalty Kick/Kuis Bola) — diminta langsung operator sebagai
+brief baru. Slug `slot-bola`, mesin slot 3x3 bertema sepak bola.
+
+**Yang paling penting di entri ini — batasan hukum/kepatutan, BUKAN
+preferensi kosmetik, JANGAN di-re-litigasi:** Operator ditanya eksplisit
+apakah game ini pakai sistem uang/kredit/koin yang bisa habis+diisi
+ulang (berpotensi terbaca sebagai judi), atau murni hiburan tanpa
+reward finansial. Operator memilih **murni hiburan, TANPA APAPUN**:
+tidak ada "beli koin"/"top up"/"deposit"/"withdraw", tidak ada
+representasi uang asli maupun virtual currency yang bisa dibeli, tidak
+ada kredit yang habis lalu memblokir main lagi. Spin gratis & unlimited
+selamanya — sama level abstraksi dengan skor Air Hockey/Kuis Bola:
+counter lokal in-session, reset saat reload, tidak pernah ditukar
+apapun di luar game, tidak ada leaderboard yang menjanjikan sesuatu.
+Kalau ada sesi/devs berikutnya berpikir untuk menambahkan mekanisme
+"chip"/"lives"/"energy" yang harus di-refill — itu masuk kategori yang
+sama dan TIDAK BOLEH tanpa keputusan operator baru yang eksplisit.
+
+File baru: `games/slot-bola/index.php`, `assets/games/css/slot-bola.css`,
+`assets/games/js/slot-bola.js`. File modified: `games/index.php`
+(nambah 1 entry baru `slot-bola` di `$wpmGames`, 3 entry lain tidak
+disentuh), `assets/games/css/games-landing.css` (nambah 1 accent
+variant baru `.wpm-game-card--gold`, rule lain tidak disentuh).
+
+1. **Gameplay: slot 3x3, 3 payline horizontal (atas/tengah/bawah)** —
+   tidak ada payline diagonal di versi ini (brief eksplisit bilang itu
+   "versi 2" kalau diminta nanti). 7 simbol via emoji Unicode (0 KB
+   tambahan, pola sama dengan pendekatan zero-image-asset di Kuis
+   Bola): 🟨 Kartu Kuning, 👟 Sepatu, 🟥 Kartu Merah, 🥅 Gawang, ⚽
+   Bola, 🏆 Trofi (payout tertinggi), ⭐ Wild (cocok simbol apapun,
+   3 wild sebaris = jackpot 1500 poin, nilai terpisah dari payout
+   simbol biasa).
+2. **Weighted random, bukan uniform** — `weightedPick()` di
+   `slot-bola.js`, bobot per simbol: Kartu Kuning 30, Sepatu 24, Kartu
+   Merah 18, Gawang 13, Bola 8, Trofi 4, Wild 3 (total 100) — simbol
+   umum jauh lebih sering muncul dibanding simbol langka, sesuai
+   standar slot machine ("kadang menang kecil, jarang menang besar").
+   Playtest manual devs: dari ~20 spin, mayoritas kalah/menang kecil
+   (kartu kuning/sepatu), beberapa menang menengah (gawang/kartu
+   merah), 0 jackpot dalam sampel kecil itu — rasanya wajar, tidak
+   "hampir selalu kalah" atau "hampir selalu menang".
+3. **Animasi reel: DOM+CSS, bukan Canvas** — sama pendekatan dengan
+   Kuis Bola. Tiap reel adalah viewport `overflow:hidden` + strip
+   vertikal (`.wpm-sb-reel__strip`) berisi simbol filler (weighted
+   random, kosmetik doang, tidak pernah dievaluasi menang/kalah) +
+   3 simbol final (hasil sebenarnya, di-generate SEBELUM animasi
+   mulai — `spin()` pre-roll semua hasil dulu, animasi murni kosmetik
+   yang menampilkan hasil itu). `strip.style.transform` di-transisi
+   CSS ke offset yang pas nempatkan 3 simbol final di viewport;
+   masing-masing reel durasi beda (900ms/1250ms/1650ms) biar berhenti
+   satu-satu kayak slot asli (bukan `transition-delay`, cukup durasi
+   beda + start bareng, lebih simpel). Height sel diukur runtime lewat
+   `getBoundingClientRect()` (bukan hardcode px) biar tetap akurat di
+   breakpoint mobile/desktop CSS yang beda ukuran selnya — sempat ada
+   sliver 1-3px baris di atasnya "nyembul" dikit di viewport mobile
+   karena nilai float dari `getBoundingClientRect()`, di-fix dengan
+   `Math.ceil()` pas ngukur cellHeight.
+4. **Payline win-highlight + audio** — baris yang menang di-highlight
+   pakai border/glow hijau (`.wpm-sb-payline.is-win`, elemen overlay
+   terpisah per baris, `pointer-events:none` biar tidak nutupin klik).
+   Audio: pola sintesis nada Web Audio yang sama persis (copy ulang,
+   bukan import — tetap self-contained per file) dengan 3 game
+   sebelumnya, cue baru: `spin` (whoosh naik), `reelStop` (blip pendek
+   tiap reel berhenti), `win` (4-note naik), `jackpot` (5-note lebih
+   panjang), `noWin` (nada rendah pendek). Mute button di topbar, pola
+   sama.
+5. **Tidak ada selector Easy/Medium/Hard** — pengecualian yang
+   disengaja dari brief: konsep "kesulitan" tidak natural buat mesin
+   slot murni acak (beda dari 3 game lain yang punya lawan
+   AI/timer-tunable). Tidak dipaksa nambahin selector kosong cuma buat
+   konsisten visual.
+6. **Icon fallback, bukan logo custom** — `logo: null` di entry
+   `slot-bola` (belum ada artwork PNG custom), pakai `icon: 'football'`
+   (dicek dulu di `wpm_icon()` — `includes/site-bootstrap.php` — bukan
+   nama yang ditebak, memang tersedia). Operator bisa minta logo custom
+   sebagai revisi terpisah nanti, sama pola yang dipakai `quiz-bola`
+   sebelum logo PNG-nya jadi.
+7. **Accent baru: gold** (`#ffd23f` / `255,210,63`) — ditambahkan ke
+   `games-landing.css` sebagai `.wpm-game-card--gold`, sengaja dibuat
+   lebih kuning-jenuh dibanding `--orange` yang sudah dipakai Air
+   Hockey (`#ffc247`, condong ke amber) biar 4 card di landing tetap
+   gampang dibedakan sekilas. Warna yang sama (didefinisikan lokal,
+   bukan baca custom property card) dipakai juga buat nuansa UI di
+   dalam halaman game (`slot-bola.css`'s `--sb-gold`).
+
+**Alasan:** Semua keputusan gameplay (no-money constraint, weighted
+random, 3 payline horizontal saja, tanpa level selector) sudah
+diputuskan eksplisit oleh operator sebelum brief ditulis — dicatat di
+sini terutama poin no-money karena ini yang paling penting untuk tidak
+salah dibaca sesi/devs berikutnya.
+
+**Verifikasi:** Diuji langsung di browser (desktop & mobile 375px) —
+`grep` di seluruh file baru buat memastikan tidak ada istilah
+kredit/koin/deposit/withdraw/saldo yang mengarah ke implementasi
+sistem uang (hasil grep cuma nemu comment/teks yang secara eksplisit
+MENOLAK sistem itu, bukan mengimplementasikannya). Alur spin diuji
+lewat DOM/JS langsung (bukan cuma baca screenshot — emoji tertentu
+seperti 🥅/👟 render beda di browser testing environment ini, jadi
+verifikasi weighted-pick & win-evaluation dilakukan dengan membaca
+`textContent` sel asli lewat JS, bukan menebak dari piksel screenshot)
+— dikonfirmasi: kombinasi 3 simbol sama sebaris = menang + payline
+highlight + skor nambah sesuai poin simbol; kombinasi campur wild +
+1 simbol lain = tetap menang (wild-substitution jalan benar); 3 simbol
+beda = tidak menang, skor tidak berubah. Skor akumulasi across multiple
+spins dikonfirmasi lewat loop otomatis 6x spin sampai dapat kombinasi
+menang. `php -l` bersih di `games/slot-bola/index.php` dan
+`games/index.php`; brace/paren JS & CSS balanced (termasuk
+`games-landing.css` setelah nambah accent gold). Landing page dicek
+ulang — 4 card sekarang tampil, `slot-bola` dengan accent gold yang
+jelas beda dari orange-nya Air Hockey.
+
+**Alternatif yang dipertimbangkan:** Payline diagonal — tidak
+dikerjakan, brief eksplisit bilang itu "versi 2". Bank simbol beda per
+level kesulitan — tidak relevan, game ini sengaja tanpa level selector
+(lihat poin 5). Auto-spin/spin berulang otomatis — tidak diminta brief
+dan berisiko terbaca mendekati pola mekanisme "gambling-like"
+(spin cepat berulang tanpa interaksi eksplisit user tiap kali), jadi
+sengaja tidak ditambahkan meski secara teknis gampang — tetap 1 klik =
+1 spin, konsisten dengan batasan "murni hiburan" di atas.
+
+---
+
+## 2026-09-05 — Slot Bola v2: payline diagonal, streak, rank, bonus round
+
+**Keputusan:** Lanjutan langsung dari entri "Slot Bola" (3 Sep 2026)
+di atas — belum di-deploy ke production, operator minta gameplay-nya
+diperdalam sebelum naik ("belum jadi juga, masih terlalu simple").
+Semua 6 fitur di brief "Slot Bola v2 — Perdalam Gameplay" (5 Sep 2026)
+dikerjakan dalam 1 pass (bukan fase bertahap v2a/v2b) karena semuanya
+di file yang sama dan salinan file relevan (index.php/css/js) semua
+sudah ada tinggal di-extend, bukan ditulis ulang dari nol.
+
+**Batasan "TANPA UANG/KREDIT/KOIN" dari entri 3 Sep 2026 di atas TETAP
+BERLAKU PENUH untuk semua fitur baru ini** — diverifikasi eksplisit per
+fitur sebelum dikerjakan:
+- Multiplier streak, rank, dan bonus round semuanya murni turunan dari
+  `score` (counter lokal in-session yang SAMA, bukan counter baru) —
+  tidak ada balance/credit/coin terpisah yang bisa "habis".
+- Bonus round CUMA nambah 3 auto-spin GRATIS ekstra, bukan mekanisme
+  baru yang membatasi/mensyaratkan apa pun sebelum spin — spin di luar
+  bonus round juga tetap gratis tanpa syarat seperti sebelumnya.
+- Tidak ada localStorage/persistence baru ditambahkan — semua state v2
+  (`winStreak`, `currentRankIndex`, achievement flags) reset ke 0/false
+  saat reload, sama seperti `score` v1.
+- `grep` ulang di seluruh file yang disentuh untuk kata kunci
+  kredit/koin/deposit/withdraw/saldo — hasil cuma comment/teks
+  disclaimer yang MENOLAK sistem itu, sama seperti verifikasi v1,
+  tidak ada implementasi baru yang melanggar.
+
+1. **Payline diagonal (prioritas tinggi)** — `PAYLINES` array baru di
+   `slot-bola.js`, 5 line total (3 horizontal + 2 diagonal: kiri-atas→
+   kanan-bawah, kiri-bawah→kanan-atas), semuanya dievaluasi lewat
+   `evaluateLine()` yang sama (rename dari `evaluateRow()` — logic win/
+   wild/jackpot tidak berubah, cuma generalized dari "baris" ke "line
+   sembarang bentuk"). 2 elemen overlay baru di `index.php`
+   (`#sb-payline-3`/`#sb-payline-4`, class `.wpm-sb-payline--diag`) —
+   lebar & rotasinya DIHITUNG RUNTIME di `layoutDiagonalPaylines()`
+   (trigonometri dari `getBoundingClientRect()` grid reel, bukan sudut
+   CSS hardcode) karena grid 3x3-nya tidak persegi sempurna di semua
+   breakpoint. `resultEl` menyebut jenis line yang menang (horizontal/
+   diagonal/gabungan) — diverifikasi lewat spin diagonal nyata di
+   mobile 375px, garis overlay pas persis melewati 3 sel yang menang.
+2. **Multiplier streak** — `winStreak` naik tiap spin menang
+   (`totalPoints>0`), reset ke 0 tiap kalah. `streakMultiplier()`:
+   streak1=x1, streak2=x1.2, streak3=x1.5, streak4+=x2 (cap). Dikali ke
+   `totalPoints` SEBELUM ditambah ke `score` (`finalPoints =
+   Math.round(totalPoints*multiplier)`), sesuai urutan yang diminta
+   brief. Badge `#sb-streak-badge` di scoreboard, hidden kalau
+   streak=0. Diverifikasi lewat spin ter-kontrol (RNG di-mock lewat
+   `Math.random` override saat testing, BUKAN kode production) yang
+   memastikan urutan streak 1→2 menghasilkan skor +240 dari raw 200
+   poin (x1.2) persis sesuai formula.
+3. **Rank progresif** — `RANKS` array persis seperti contoh brief (5
+   tingkat, ambang 0/2000/6000/15000/35000). Badge permanen
+   `#sb-rank-badge` di scoreboard, update tiap `resolveSpin()`.
+   Rank-up (skor lewat ambang baru) memicu pulse/glow CSS
+   (`.is-leveling-up`, `@keyframes wpmSbRankPulse`) + 1 tone
+   (`sfx.rankUp()`) + toast "🎖️ Naik rank: {nama}!" — bukan full
+   confetti (brief eksplisit minta versi lebih kalem dibanding flourish
+   Kuis Bola). Diverifikasi lewat spin yang di-mock buat 100% Wild (7500
+   poin, langsung lompat dari "Pemain Amatir" ke "Semi Pro" dalam 1
+   spin) — badge, pulse, DAN toast semuanya kekonfirmasi jalan
+   bersamaan lewat `MutationObserver` di browser test, bukan cuma baca
+   screenshot.
+4. **Mini free-spin bonus round** — simbol baru `🎫 Tiket Bonus`
+   (weight 2, points 0) ditambah ke `SYMBOLS`. `checkBonusTrigger()`
+   cek 3 tiket di baris (row) yang sama — SENGAJA cuma cek 3 baris lurus
+   (bukan diagonal), literal sesuai brief ("muncul di ketiga reel
+   sekaligus di baris yang sama"). Trigger → `startBonusRound()`:
+   banner "🎉 BONUS ROUND! 3 Spin Gratis" muncul, `inBonusRound=true`,
+   auto-chain TEPAT 3 spin tambahan (`bonusSpinsRemaining`, di-drive
+   lewat `setTimeout` dari akhir `resolveSpin()` masing-masing, bukan
+   loop `for` — supaya reel animation tiap spin bonus tetap muncul
+   utuh, bukan langsung lompat ke hasil akhir), tombol Spin disabled
+   selama sequence biar user tidak nge-klik di tengah auto-spin. Selama
+   bonus round, `weightedPick()` baca dari `BONUS_TABLE` (weight Bola/
+   Trofi/Wild di-2x-kan, disiapkan sebagai tabel weighted TERPISAH biar
+   `NORMAL_TABLE` tidak pernah dimutasi) — bukan symbol/reward baru,
+   cuma odds sementara yang lebih murah hoki, sesuai brief. Retrigger
+   selama bonus round sedang aktif SENGAJA diabaikan (guard
+   `!inBonusRound` di titik trigger) — dipertimbangkan sebagai
+   penyederhanaan MVP, bukan reject permanen; kalau operator mau nested
+   bonus round itu perlu keputusan/brief terpisah. Diverifikasi lewat
+   spin yang di-mock 3 tiket sebaris — banner muncul & hilang dengan
+   timing yang sesuai 3 spin berturut (~7.9 detik total, cocok dengan
+   3× durasi reel + jeda antar-spin), tombol Spin ke-disable sepanjang
+   sequence lalu ke-enable lagi setelah selesai.
+5. **Near-miss feedback** — `evaluateLine()` sekarang juga return
+   `nearMiss: true` kalau bukan win TAPI ada tepat 2 dari 3 simbol
+   mentah yang sama (implementasi: hitung kemunculan tiap nama simbol
+   di line, near-miss kalau ada tepat 1 nama yang muncul 2x dari 2 nama
+   berbeda total — kasus yang melibatkan wild otomatis sudah ke-cover
+   sebagai WIN duluan di cabang di atas, jadi tidak pernah nyampe ke
+   near-miss check, sesuai maksud brief). Reel yang "meleset" (posisi
+   simbol ganjil) di-shake 0.4s (`@keyframes wpmSbNearMissShake`) +
+   1 tone beda (`sfx.nearMiss()`) dari `sfx.noWin()` biasa — murni
+   kosmetik, skor tidak berubah. Diverifikasi lewat `MutationObserver`
+   yang mengonfirmasi class `.is-near-miss` benar-benar sempat muncul
+   (class-nya di-auto-remove ~450ms sesudahnya, jadi screenshot biasa
+   sering ketinggalan momennya — testing pertama sempat false-negative
+   karena ini sebelum ganti ke `MutationObserver`).
+6. **Achievement toast session-only** — 2 flag in-memory
+   (`achievedStreak3`, `achievedFirstJackpot`), masing-masing cuma bisa
+   trigger toast SEKALI per sesi (reset ke false saat reload, tidak
+   pernah disimpan). "🔥 Menang 3x Beruntun!" dites lewat 3 spin
+   menang berturut (mock RNG), "🎰 Jackpot Pertama!" dites bareng
+   rank-up test di poin 3 — dua-duanya kekonfirmasi muncul di
+   `#sb-toast-wrap` lewat observer yang sama.
+
+**Alasan:** Semua 6 fitur diminta eksplisit di brief dengan spesifikasi
+yang cukup detail (termasuk contoh angka RANKS/multiplier/weight) untuk
+dikerjakan langsung dalam 1 pass tanpa perlu klarifikasi tambahan;
+tidak ada titik yang "goyah" antara fitur vs representasi uang (bagian
+"ATURAN KERAS" brief secara eksplisit minta STOP-and-ask kalau ada yang
+begitu — tidak ditemukan, semua fitur murni skor/label lokal).
+
+**Verifikasi:** `node -c` TIDAK BISA dijalankan — tidak ada `node` di
+host maupun di semua container Docker project ini (`php8_apache`,
+`php8x_apache`, `php5_apache`, `mysql_db`, `phpmyadmin`, sudah dicek
+satu-satu). Sebagai gantinya: brace/paren/bracket balance check via
+Python (146/146 brace, 368/368 paren, 66/66 bracket — balanced),
+`php -l` bersih di `games/slot-bola/index.php`, DAN yang paling
+penting — testing end-to-end nyata di browser dengan `Math.random`
+di-override sementara (testing-only, TIDAK ada di kode production,
+pola sama seperti monkey-patch rAF di entri-entri Penalty Kick
+sebelumnya) buat memaksa kombinasi spesifik (win horizontal/diagonal/
+near-miss/jackpot/bonus-trigger) yang kalau ditunggu RNG asli bisa
+butuh ratusan spin karena beberapa simbolnya sengaja langka. Semua 6
+fitur dikonfirmasi jalan lewat browser test nyata (bukan cuma review
+kode), termasuk kombinasi majemuk (jackpot + rank-up + achievement
+toast bersamaan dalam 1 spin). `grep` money-term di semua file yang
+disentuh (`games/slot-bola/index.php`, `assets/games/css/slot-bola.css`,
+`assets/games/js/slot-bola.js`) — hasil cuma comment/disclaimer,
+konsisten dengan verifikasi v1.
+
+**Alternatif yang dipertimbangkan:** Bonus round pakai `for` loop
+sinkron buat 3 spin — ditolak, itu akan skip animasi reel tiap spin
+bonus (langsung lompat ke hasil), pengalaman kurang berasa "spin".
+Dipilih chaining lewat `setTimeout` dari akhir tiap `resolveSpin()`,
+sama sekali tidak mengubah `spin()`/`spinReel()` yang sudah ada. Cek
+bonus-trigger di 5 payline (termasuk diagonal) — ditolak, brief bilang
+literal "baris" (row), diagonal sengaja dikecualikan biar tidak ambigu.
+Belum di-deploy — nunggu review/approve operator dulu setelah cek diff,
+sesuai instruksi.
+
+---
+
+## 2026-09-08 — Penalty Kick: mode gantian penuh + fix visual keeper
+
+**Keputusan:** Brief teknis operator lewat sesi ini, 2 perubahan ke
+Penalty Kick: (1) mode shootout beneran — user & CPU gantian jadi
+penendang/kiper tiap kick (dulu: user selalu nendang 5x, CPU selalu
+jaga gawang), (2) fix visual — keeper yang tadinya "gantung ditengah"
+(stick figure tipis) + warnanya harus ngikut tim yang dipilih user,
+bukan selalu gold.
+
+Sesi ini melanjutkan progress PARSIAL yang sudah ada di kode sebelum
+brief ini ditulis (TEAMS.color, CPU_COLOR/playerColor(), resetShootout()
+dengan state.round/turn/playerGoals/cpuGoals, pickCpuShotZone(),
+attemptAction() rename, updateScoreboard()) — pekerjaan yang BELUM
+kelar (logic pindah giliran di loop(), parameter warna dinamis di
+drawKeeper()/drawKicker(), HTML scoreboard label + elemen turn-banner,
+CSS-nya) diselesaikan di sesi ini persis sesuai spesifikasi tertulis di
+brief.
+
+1. **`loop()`'s `'resolved'` phase ditulis ulang total** — logic lama
+   (`if (state.shotsTaken >= TOTAL_SHOTS) { endShootout(); }` single-
+   sided) diganti alur gantian: kalau `state.turn === 'player'` baru
+   selesai nendang → giliran pindah ke `'cpu'`, `pickCpuShotZone()`
+   dipanggil SEKARANG (sebelum player mulai jaga gawang) buat nentuin
+   arah tembakan CPU; kalau CPU baru selesai nendang → `state.round++`,
+   cek `> totalRounds` buat `endShootout()`, giliran balik ke
+   `'player'`. Tally skor gol di phase `'animating'` juga diubah dari
+   `state.goals++` (counter lama, single-side) jadi
+   `state.playerGoals++`/`state.cpuGoals++` tergantung `state.turn`.
+   `TOTAL_SHOTS` (var lama, sudah tidak dipakai sama sekali setelah
+   perubahan ini) dihapus.
+2. **`drawKeeper(x,y)` dan `drawKicker()` sekarang terima parameter
+   `color`** (fallback ke warna lama kalau dipanggil tanpa argumen) —
+   `draw()` sekarang hitung `kickerColor`/`keeperColor` tiap frame dari
+   `state.turn`: figure PLAYER (baik pas nendang maupun pas jaga
+   gawang) selalu `playerColor()` (warna tim yang dipilih di layar
+   pilih timnas), figure CPU selalu `CPU_COLOR` (`#ff3d5a`, fixed).
+   Diverifikasi lewat spin/kick nyata: keeper merah (CPU) pas giliran
+   player nendang, keeper biru-muda Argentina (warna tim yang dipilih)
+   pas giliran CPU nendang — warna ke-swap dengan benar tiap kali
+   giliran ganti.
+3. **Fix visual "gantung ditengah"** — awalnya cuma dinaikin skala
+   (~18%, headR/torsoLen/legLen) + torso solid fill + ground shadow
+   lebih besar/gelap, sesuai draft awal brief. **Operator kasih
+   feedback tambahan mid-sesi** (screenshot referensi game "Penalty
+   Shooters 2" yang pakai sprite/ilustrasi 2D asli, minta visual lebih
+   "leih/lebih") — ditanya balik apakah mau pindah ke sprite gambar
+   asli atau tetap Canvas/vector didorong lebih jauh; operator pilih
+   **tetap Canvas, didorong lebih jauh** (bukan sprite gambar) — sesuai
+   pola project ini yang konsisten zero-image-asset dari awal (lihat
+   entri-entri Games Hub sebelumnya). Hasil: `drawKeeper()`/
+   `drawKicker()` sekarang punya "kit" berlapis — kaos/jersey (blok
+   solid, sudah ada), celana pendek (blok baru, warna diturunkan dari
+   `color` via `shadeColor()` fungsi baru — helper darken/lighten hex
+   sederhana), kaos kaki (stroke tebal, warna diturunkan lagi lebih
+   gelap dari celana), sepatu (elips kecil gelap di ujung kaki), dan
+   khusus keeper: sarung tangan (lingkaran kecil putih di ujung
+   tangan). Semua tetap 100% Canvas API native, 0 aset gambar baru,
+   payload nggak nambah sama sekali.
+4. **HTML (`games/penalty-kick/index.php`)** — label scoreboard
+   `#pk-shot-count` diubah dari "Tendangan" jadi "Ronde" (JS sekarang
+   isi `round/totalRounds`), label `#pk-goal-count` dari "Gol" jadi
+   "Skor" (JS sekarang isi format `playerGoals - cpuGoals`). Elemen
+   baru `#pk-turn-banner` ditambah di dalam `#pk-board`, sebelum
+   `.wpm-pk-scoreboard` — teks & class (`--kick`/`--keep`) di-drive
+   `updateScoreboard()` yang sudah ada di JS. Hint text di panel
+   start (`#pk-team-hint`, di-override lagi oleh `selectTeam()`) dan
+   default HTML-nya diupdate jelasin mode gantian, bukan lagi "5
+   tendangan cetak gol sebanyak mungkin".
+5. **CSS (`assets/games/css/penalty-kick.css`)** — style
+   `.wpm-pk-turn-banner`/`--kick`/`--keep` ditambah, PAKAI CSS var yang
+   sudah ada (`--ah-neon-green`/`--ah-neon-pink` dari games-landing.css)
+   bukan hex baru, biar konsisten sama palet yang sudah dipakai di
+   seluruh product family ini.
+
+**Alasan:** Kedua perubahan diminta eksplisit operator lewat brief
+tertulis; poin visual (kit berlapis) diperluas mid-sesi setelah
+operator kasih referensi visual tambahan — ditanya dulu lewat
+`AskUserQuestion` (sprite gambar vs Canvas didorong lebih jauh)
+sebelum dikerjakan, bukan diasumsikan sepihak, karena pindah ke sprite
+gambar akan bertentangan langsung sama keputusan zero-image-asset yang
+sudah berulang kali dikonfirmasi di project ini.
+
+**Verifikasi:** `php -l` bersih, brace/paren JS & CSS balanced. Diuji
+end-to-end nyata di browser (bukan cuma baca kode) — sempat ada
+kebingungan awal saat testing karena environment browser pane sesi
+devs ini (`document.hidden` true) bikin timing `setTimeout`-based
+loop (monkey-patch testing-only pengganti `requestAnimationFrame`,
+SAMA SEKALI tidak ada di kode production) jadi tidak konsisten kalau
+di-poll terlalu cepat/berturut-turut tanpa nunggu — begitu diuji pakai
+polling yang nunggu perubahan state (bukan `sleep` tetap), 1 klik
+terbukti konsisten cuma resolve 1 giliran (bukan double-resolve),
+dikonfirmasi lewat siklus penuh 5 ronde (10 kali kick total) sampai
+`endShootout()` — hasil akhir "Kamu 4 - 3 CPU" / "Kamu Menang! 🏆"
+match persis sama akumulasi skor per-giliran yang di-log. Dites juga di
+mobile (375px) — figure kicker & keeper tampil benar dengan kit
+berlapis yang baru, "Main Lagi" reset state (ronde/skor/giliran) dengan
+benar, tidak ada error console sepanjang testing.
+
+**Alternatif yang dipertimbangkan:** Sprite/gambar ilustrasi asli
+(referensi "Penalty Shooters 2") — ditawarkan eksplisit ke operator,
+DITOLAK (operator pilih tetap Canvas/vector) karena akan nambah
+payload + butuh sourcing aset dengan lisensi jelas + keluar dari pola
+zero-image-asset yang sudah jadi keputusan project berulang kali sejak
+MVP — kalau operator berubah pikiran nanti, itu keputusan baru yang
+perlu dicatat terpisah, bukan devs berinisiatif sendiri pindah
+pendekatan.
