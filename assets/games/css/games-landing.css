@@ -225,6 +225,14 @@ body.wpm-games a { color: inherit; text-decoration: none; }
    Switched to a neon green instead so all 4 cards are unambiguous at a
    glance (orange / cyan / purple / green). */
 .wpm-game-card--gold   { --card-accent: #39ff88; --card-accent-rgb: 57, 255, 136; }
+/* Added 8 Sep 2026 for Prediksi & Trivia (game #5) — a red/crimson the
+   4 existing accents (orange/cyan/purple/green) don't already cover, so
+   all 5 cards stay unambiguous at a glance. */
+.wpm-game-card--red    { --card-accent: #ff5470; --card-accent-rgb: 255, 84, 112; }
+/* Added 8 Sep 2026 for Keepie-Uppie (game #6) — a royal blue the 5
+   existing accents (orange/cyan/purple/green/red) don't already cover,
+   so all 6 cards stay unambiguous at a glance. */
+.wpm-game-card--blue   { --card-accent: #4d7cff; --card-accent-rgb: 77, 124, 255; }
 
 .wpm-game-card {
   position: relative;

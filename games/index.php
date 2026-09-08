@@ -135,6 +135,19 @@ $wpmGames = [
         'status' => 'Main Sekarang',
         'accent' => 'red',
     ],
+    [
+        'slug' => 'keepie-uppie',
+        'title' => 'Juggling Bola',
+        'tagline' => 'Juggling bola tanpa henti — tap dengan timing pas biar nggak jatuh!',
+        'icon' => 'football',
+        // No custom PNG artwork yet (8 Sep 2026, game #6) — see `logo`
+        // comment above, same fallback-icon pattern slot-bola/prediksi-
+        // trivia started with before their own artwork landed.
+        'logo' => null,
+        'href' => 'games/keepie-uppie/',
+        'status' => 'Main Sekarang',
+        'accent' => 'blue',
+    ],
 ];
 ?>
 <!DOCTYPE html>

@@ -1,0 +1,419 @@
+/**
+ * Prediksi & Trivia — page-specific styles (8 Sep 2026, Games Hub game
+ * #5). Layers on top of games-landing.css (shared base/buttons/CSS
+ * vars) — never duplicates those rules, same pattern as the other 4
+ * games' CSS files. Class names use a `wpm-pt-*` prefix.
+ *
+ * Accent: red/crimson (#ff5470 / 255,84,112) — matches the `red` accent
+ * assigned to this card in games/index.php's $wpmGames array +
+ * games-landing.css's .wpm-game-card--red, defined locally here too
+ * (not read from the card-only custom property), same approach as
+ * every other game's CSS file.
+ */
+
+:root {
+  --pt-red: #ff5470;
+  --pt-red-rgb: 255, 84, 112;
+  --pt-correct: #39ff88;
+  --pt-wrong: #ff3d9a;
+}
+
+.wpm-pt-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 auto 8px;
+}
+.wpm-pt-topbar__title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ah-text-muted);
+}
+.wpm-pt-topbar__link { padding: 6px 4px; }
+.wpm-pt-topbar__right { display: flex; align-items: center; gap: 4px; }
+
+.wpm-pt-mute-btn {
+  appearance: none;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ah-border);
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ah-text);
+}
+.wpm-pt-mute-btn:hover { border-color: var(--pt-red); }
+.wpm-pt-mute-btn[aria-pressed="true"] { opacity: 0.5; }
+
+.wpm-pt-stage {
+  max-width: 720px;
+  margin: 12px auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.wpm-pt-panel {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  text-align: center;
+  padding: 28px 22px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--pt-red-rgb), 0.35);
+}
+.wpm-pt-panel--overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  max-width: 340px;
+  margin: auto;
+  height: fit-content;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.wpm-pt-panel--overlay:not([hidden]) { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+.wpm-pt-panel__title {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 800;
+  text-shadow: 0 0 20px rgba(var(--pt-red-rgb), 0.4);
+}
+.wpm-pt-panel__hint {
+  margin: 0 0 18px;
+  color: var(--ah-text-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.wpm-pt-panel--overlay .wpm-pt-panel__hint { margin-bottom: 4px; }
+
+.wpm-pt-panel__score {
+  margin: 0;
+  font-size: 36px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #ffc4d0 55%, var(--pt-red) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 22px rgba(var(--pt-red-rgb), 0.5);
+}
+
+/* ---- Nickname gate ---- */
+.wpm-pt-nickname-input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ah-border);
+  color: var(--ah-text);
+  font-family: var(--ah-font);
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+.wpm-pt-nickname-input:focus { outline: none; border-color: var(--pt-red); }
+.wpm-pt-nickname-error {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--pt-wrong);
+}
+
+.wpm-pt-whoami {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--ah-text-muted);
+}
+
+/* ---- Tabs ---- */
+.wpm-pt-tabs {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto 16px;
+}
+.wpm-pt-tab {
+  flex: 1;
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--ah-font);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 12px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ah-border);
+  color: var(--ah-text-muted);
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+.wpm-pt-tab.is-active {
+  color: #2b0009;
+  background: var(--pt-red);
+  border-color: var(--pt-red);
+}
+.wpm-pt-tabpanel { width: 100%; }
+
+.wpm-pt-hint {
+  margin: 0 0 14px;
+  color: var(--ah-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+.wpm-pt-empty {
+  text-align: center;
+  color: var(--ah-text-muted);
+  font-size: 13.5px;
+  padding: 20px 0;
+}
+
+/* ---- Match list (Prediksi Skor Harian) ---- */
+.wpm-pt-match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wpm-pt-match {
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--pt-red-rgb), 0.25);
+}
+.wpm-pt-match__meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ah-text-muted);
+  margin-bottom: 8px;
+}
+.wpm-pt-match__teams {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  text-align: center;
+}
+.wpm-pt-match__vs { font-size: 11px; font-weight: 600; color: var(--ah-text-muted); }
+
+.wpm-pt-match__predict-area { text-align: center; }
+.wpm-pt-match__loading { font-size: 12.5px; color: var(--ah-text-muted); }
+
+.wpm-pt-match__inputs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.wpm-pt-match__score-input {
+  width: 52px;
+  padding: 8px 0;
+  text-align: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--ah-border);
+  color: var(--ah-text);
+  font-family: var(--ah-font);
+  font-size: 16px;
+  font-weight: 700;
+}
+.wpm-pt-match__score-input:focus { outline: none; border-color: var(--pt-red); }
+.wpm-pt-match__dash { color: var(--ah-text-muted); font-weight: 700; }
+
+.wpm-pt-match__submit-btn {
+  appearance: none;
+  cursor: pointer;
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-family: var(--ah-font);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #2b0009;
+  background: linear-gradient(135deg, var(--pt-red), #ff8fa3);
+  border: none;
+}
+.wpm-pt-match__submit-btn:disabled { opacity: 0.6; cursor: default; }
+
+.wpm-pt-match__feedback { margin: 8px 0 0; font-size: 12px; }
+.wpm-pt-match__feedback.is-ok { color: var(--pt-correct); }
+.wpm-pt-match__feedback.is-error { color: var(--pt-wrong); }
+
+.wpm-pt-match__locked {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ah-text-muted);
+  padding: 8px 0;
+}
+.wpm-pt-match__result {
+  font-size: 12.5px;
+  color: var(--ah-text-muted);
+  line-height: 1.6;
+}
+.wpm-pt-match__points {
+  color: var(--pt-correct);
+  font-weight: 700;
+}
+
+/* ---- Trivia Cepat ---- */
+.wpm-pt-trivia-board:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+.wpm-pt-trivia-scoreboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #340a14 0%, #12040a 100%);
+  border: 1px solid rgba(var(--pt-red-rgb), 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.5),
+    0 6px 22px rgba(0, 0, 0, 0.35);
+}
+.wpm-pt-trivia-scoreboard__side { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px; }
+.wpm-pt-trivia-scoreboard__label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ah-text-muted); }
+.wpm-pt-trivia-scoreboard__score {
+  font-size: 24px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #ffc4d0 60%, var(--pt-red) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 18px rgba(var(--pt-red-rgb), 0.45);
+}
+.wpm-pt-streak-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #2b0009;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff8a3d, #ffce54);
+  white-space: nowrap;
+}
+
+.wpm-pt-timer-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--pt-red-rgb), 0.25);
+  overflow: hidden;
+}
+.wpm-pt-timer-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--pt-red), #ff8fa3);
+  transition: width linear 1s, background-color 0.2s ease;
+}
+.wpm-pt-timer-fill.is-urgent { background: linear-gradient(90deg, #ff3d9a, #ff8a3d); }
+
+.wpm-pt-trivia-card {
+  width: 100%;
+  padding: 22px 18px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--pt-red-rgb), 0.3);
+}
+.wpm-pt-trivia-question {
+  margin: 0 0 16px;
+  font-size: 15.5px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+.wpm-pt-trivia-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+@media (max-width: 420px) {
+  .wpm-pt-trivia-options { grid-template-columns: 1fr; }
+}
+.wpm-pt-trivia-option-btn {
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--ah-font);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ah-text);
+  padding: 12px 14px;
+  min-height: 48px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ah-border);
+}
+.wpm-pt-trivia-option-btn:hover:not(:disabled) { border-color: var(--pt-red); background: rgba(var(--pt-red-rgb), 0.08); }
+.wpm-pt-trivia-option-btn:disabled { cursor: default; }
+.wpm-pt-trivia-option-btn.is-correct {
+  border-color: var(--pt-correct);
+  background: rgba(57, 255, 136, 0.16);
+  color: #fff;
+}
+.wpm-pt-trivia-option-btn.is-wrong {
+  border-color: var(--pt-wrong);
+  background: rgba(255, 61, 154, 0.16);
+  color: #fff;
+}
+
+/* ---- Leaderboard ---- */
+.wpm-pt-leaderboard-toggle {
+  appearance: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  margin-top: 18px;
+  font-family: var(--ah-font);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ah-text-muted);
+  text-decoration: underline;
+}
+.wpm-pt-leaderboard-toggle:hover { color: var(--pt-red); }
+
+.wpm-pt-leaderboard {
+  width: 100%;
+  max-width: 420px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(var(--pt-red-rgb), 0.25);
+}
+.wpm-pt-leaderboard__loading { margin: 0; font-size: 12.5px; color: var(--ah-text-muted); text-align: center; }
+.wpm-pt-leaderboard__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.wpm-pt-leaderboard__row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 6px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.wpm-pt-leaderboard__name { color: var(--ah-text); font-weight: 600; }
+.wpm-pt-leaderboard__points { color: var(--pt-red); font-weight: 700; font-variant-numeric: tabular-nums; }
+.wpm-pt-leaderboard__empty { text-align: center; color: var(--ah-text-muted); font-size: 12.5px; list-style: none; }
+
+@media (min-width: 768px) {
+  .wpm-pt-stage { margin-top: 20px; }
+}
