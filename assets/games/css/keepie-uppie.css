@@ -1,0 +1,249 @@
+/**
+ * Keepie-Uppie — page-specific styles (8 Sep 2026, Games Hub game #6).
+ * Layers on top of games-landing.css (shared base/buttons/CSS vars) —
+ * never duplicates those rules, same pattern as the other 5 games' CSS
+ * files. Class names use a `wpm-ku-*` prefix.
+ *
+ * Accent: royal blue (#4d7cff / 77,124,255) — matches the `blue` accent
+ * assigned to this card in games/index.php's $wpmGames array +
+ * games-landing.css's .wpm-game-card--blue, defined locally here too
+ * (not read from the card-only custom property), same approach as
+ * every other game's CSS file.
+ *
+ * Canvas is PORTRAIT (aspect-ratio 3/4), unlike the landscape 4/3 wrap
+ * used by air-hockey/penalty-kick — juggling needs vertical room for
+ * the ball to fall from, a landscape frame would cramp it pointlessly.
+ */
+
+:root {
+  --ku-blue: #4d7cff;
+  --ku-blue-rgb: 77, 124, 255;
+  --ku-perfect: #ffd23f;
+  --ku-perfect-rgb: 255, 210, 63;
+}
+
+.wpm-ku-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 480px;
+  margin: 0 auto 8px;
+}
+.wpm-ku-topbar__title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ah-text-muted);
+}
+.wpm-ku-topbar__link { padding: 6px 4px; }
+.wpm-ku-topbar__right { display: flex; align-items: center; gap: 4px; }
+
+.wpm-ku-mute-btn {
+  appearance: none;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ah-border);
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ah-text);
+}
+.wpm-ku-mute-btn:hover { border-color: var(--ku-blue); }
+.wpm-ku-mute-btn[aria-pressed="true"] { opacity: 0.5; }
+
+.wpm-ku-stage {
+  max-width: 480px;
+  margin: 12px auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.wpm-ku-panel {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  text-align: center;
+  padding: 32px 22px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, var(--ah-bg-2), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--ku-blue-rgb), 0.35);
+}
+.wpm-ku-panel--overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  max-width: 340px;
+  margin: auto;
+  height: fit-content;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.wpm-ku-panel--overlay:not([hidden]) { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+.wpm-ku-panel__title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 800;
+  text-shadow: 0 0 20px rgba(var(--ku-blue-rgb), 0.4);
+}
+.wpm-ku-panel__hint {
+  margin: 0 0 20px;
+  color: var(--ah-text-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.wpm-ku-panel--overlay .wpm-ku-panel__hint { margin-bottom: 4px; }
+
+.wpm-ku-panel__highscore {
+  margin: -10px 0 18px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ku-perfect);
+}
+
+.wpm-ku-panel__score {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #c4d4ff 55%, var(--ku-blue) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 22px rgba(var(--ku-blue-rgb), 0.5);
+}
+
+/* Team select grid — identical chrome to penalty-kick.css's, just
+   recolored to this game's own accent var. */
+.wpm-ku-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 4px 2px 6px;
+  margin-bottom: 4px;
+}
+.wpm-ku-team-btn {
+  appearance: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ah-border);
+  color: var(--ah-text-muted);
+  font-family: var(--ah-font);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease, transform 0.1s ease;
+}
+.wpm-ku-team-btn__flag { font-size: 22px; line-height: 1; }
+.wpm-ku-team-btn:hover { border-color: var(--ku-blue); color: var(--ah-text); }
+.wpm-ku-team-btn:active { transform: scale(0.96); }
+.wpm-ku-team-btn.is-selected {
+  color: #06122e;
+  background: var(--ku-blue);
+  border-color: var(--ku-blue);
+}
+
+.wpm-ku-change-team-btn {
+  appearance: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  margin-top: 10px;
+  font-family: var(--ah-font);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ah-text-muted);
+  text-decoration: underline;
+}
+.wpm-ku-change-team-btn:hover { color: var(--ku-blue); }
+
+.wpm-ku-board:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+/* "Gamer" scoreboard — same bevel/gradient-plate technique as the
+   other games' scoreboards, blue-toned to match this game's accent. */
+.wpm-ku-scoreboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #142034 0%, #060a18 100%);
+  border: 1px solid rgba(var(--ku-blue-rgb), 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.5),
+    0 6px 22px rgba(0, 0, 0, 0.35);
+}
+.wpm-ku-scoreboard__side { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px; }
+.wpm-ku-scoreboard__label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ah-text-muted); }
+.wpm-ku-scoreboard__score {
+  font-size: 26px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #c4d4ff 60%, var(--ku-blue) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 18px rgba(var(--ku-blue-rgb), 0.45);
+}
+
+/* Multiplier badge — hidden until winStreak-of-Perfects kicks in
+   (see keepie-uppie.js's updateMultiplierBadge()). */
+.wpm-ku-multiplier-badge {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #2b1400;
+  padding: 5px 13px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--ku-perfect), #ff9f3d);
+  box-shadow: 0 0 14px rgba(var(--ku-perfect-rgb), 0.5);
+  white-space: nowrap;
+}
+
+/* Portrait canvas frame — juggling needs vertical fall room, unlike
+   air-hockey/penalty-kick's landscape 4/3 wrap. Arcade-bezel/glow idea
+   is the same, just blue-tinted + a taller aspect ratio. */
+.wpm-ku-canvas-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  aspect-ratio: 3 / 4;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 3px solid rgba(var(--ku-blue-rgb), 0.55);
+  box-shadow:
+    0 0 50px rgba(var(--ku-blue-rgb), 0.22),
+    inset 0 0 30px rgba(0, 0, 0, 0.6);
+  touch-action: none;
+  cursor: pointer;
+}
+#ku-canvas { display: block; width: 100%; height: 100%; }
+
+@media (min-width: 480px) {
+  .wpm-ku-canvas-wrap { max-width: 380px; }
+}
+
+@media (min-width: 768px) {
+  .wpm-ku-stage { margin-top: 20px; }
+}

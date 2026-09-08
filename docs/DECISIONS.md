@@ -1164,3 +1164,287 @@ zero-image-asset yang sudah jadi keputusan project berulang kali sejak
 MVP — kalau operator berubah pikiran nanti, itu keputusan baru yang
 perlu dicatat terpisah, bukan devs berinisiatif sendiri pindah
 pendekatan.
+
+---
+
+## 2026-09-08 — Games Hub #5, Prediksi & Trivia: game pertama dengan backend
+
+**Keputusan:** Game kelima ditambahkan — "Prediksi & Trivia", slug
+`prediksi-trivia`, 1 halaman 2 tab ("Prediksi Skor Harian" dan "Trivia
+Cepat", keputusan operator yang sudah difinalkan sebelum brief ditulis
+— bukan 2 game terpisah). **Ini game PERTAMA di Games Hub yang punya
+database backend beneran** — 4 game sebelumnya (air-hockey, penalty-
+kick, quiz-bola, slot-bola) semuanya sengaja 100% client-side, skor
+in-memory, reset kalau reload (lihat entri-entri sebelumnya). Dicatat
+di sini secara eksplisit biar sesi/devs masa depan yang lihat
+inkonsistensi pola ini tidak bingung atau nggak sengaja "menyamakan"
+game ini balik ke pola client-side-murni.
+
+**Kenapa game ini beda:** Fitur "Prediksi Skor Harian" minta user
+nebak skor pertandingan SEKARANG, tapi hasilnya (dapat poin atau
+nggak) baru bisa diketahui berjam-jam kemudian setelah pertandingan
+selesai — kadang browser/tab user sudah lama ditutup saat itu terjadi.
+Itu secara fundamental tidak mungkin di-handle murni client-side/in-
+memory seperti 4 game lain (skor gol pertandingan bukan sesuatu yang
+bisa "ditunggu" di satu tab browser yang mungkin sudah lama diclose).
+Makanya fitur ini butuh: tabel database (`game_players`,
+`game_predictions`), 4 endpoint API publik, dan proses scoring
+berkala yang jalan independen dari sesi browser manapun. Fitur "Trivia
+Cepat" sendiri TETAP murni client-side selama sesi berlangsung (sama
+seperti quiz-bola) — cuma skor akhir sesi yang dikirim SEKALI ke
+backend di akhir, supaya bisa masuk leaderboard gabungan.
+
+**Identitas: nickname + browser_id, TANPA akun/login** — keputusan
+operator yang dikonfirmasi lewat `AskUserQuestion` sebelum brief ini
+ditulis. `browser_id` di-generate client-side (`crypto.randomUUID()`,
+fallback manual generator kalau API itu tidak ada), disimpan
+localStorage bareng nickname (`pt_nickname`/`pt_browser_id` — prefix
+`pt_` biar jelas beda dari game lain, meski belum ada game lain yang
+pakai localStorage sama sekali jadi belum ada resiko collision nyata
+hari ini). Ganti device/hapus localStorage = dianggap user baru,
+histori/poin tidak nyambung — ini TRADE-OFF YANG SUDAH DITERIMA
+operator, bukan bug yang perlu "difix" nanti.
+
+**Skema tabel** (via `cms_ensure_table()`, pola self-heal yang sudah
+jadi konvensi project ini — lihat `includes/GamesShared.php`):
+`game_players` (browser_id unique, nickname, total_points akumulatif)
+dan `game_predictions` (unique per player+fixture, `points_awarded`
+NULL = belum di-score). **`game_predictions.fixture_id` SENGAJA TIDAK
+punya foreign key ke `fixtures.id`** — sama persis alasannya dengan
+`fixture_streams` (lihat komentar di
+`cms-admin/pages/live-streaming.php`): tabel `fixtures` di-overwrite
+total oleh `includes/LivescoreSync.php` tiap sync, FK di situ bisa
+bikin sync gagal. Keberadaan fixture dicek lewat JOIN/lookup read-time
+saja. `player_id` sebaliknya PAKAI FK beneran ke `game_players.id` —
+dua tabel ini sama-sama murni milik fitur ini, aman.
+
+**Sistem poin prediksi** (`includes/GamesScoring.php`,
+`wpm_calc_prediction_points()`): tebak skor PERSIS = 5 poin, tebak
+hasil bener (menang/kalah/seri) tapi angka beda = 2 poin, salah hasil
+= 0 poin. Dites lewat 3 skenario nyata (exact/result-only/wrong) di
+database lokal, hasil match persis sesuai rule.
+
+**Scoring job numpang cron yang sudah ada** — brief eksplisit minta
+cek dulu apakah `includes/LivescoreSync.php` sudah punya cron yang
+bisa ditumpangi sebelum bikin cron baru sendiri (butuh akses cPanel
+Cron Jobs, di luar kewenangan devs). Ditemukan: `cron/sync_fixtures.php`
+sudah jalan berkala buat sync fixture dari API-Football — scoring pass
+baru (`wpm_score_pending_predictions()`) ditambahkan di akhir script
+itu, dibungkus try/catch biar kegagalan scoring nggak pernah bikin
+fixture sync di atasnya kelihatan gagal juga. TIDAK ada cron baru yang
+dibuat — sesuai instruksi brief, numpang jadwal yang sudah ada.
+
+**Validasi server-side (WAJIB, brief eksplisit)** — endpoint
+`api/game-predict.php` MENOLAK submit kalau `kickoff_at` fixture
+(dibandingkan ke `time()` PHP, fixtures disimpan naive-UTC — lihat
+`includes/TimeHelpers.php`) sudah lewat, TIDAK PERNAH percaya
+state/timestamp dari client (brief eksplisit: bisa di-cheat lewat
+DevTools kalau cuma dicek di JS). Dites nyata lewat curl: submit ke
+fixture yang belum kickoff → berhasil; submit ke fixture yang sudah
+lewat kickoff → ditolak dengan pesan "Pertandingan sudah dimulai,
+tebakan ditutup." Skor tebakan divalidasi 0-20 (batas wajar). Upsert
+via `ON DUPLICATE KEY UPDATE` pada `uniq_player_fixture` — user bisa
+ganti tebakan berkali-kali sebelum kickoff tanpa bikin baris baru
+(dites: submit 2x ke fixture yang sama, tetap 1 baris di database).
+
+**Rate-limit & filter nickname** — `wpm_games_rate_limited()` cek
+`game_players.updated_at` (per brief), tolak request dalam 2 detik
+dari update terakhir. Filter kata kasar (`wpm_games_nickname_is_clean()`)
+adalah BARU — tidak ditemukan fungsi filter kata kasar apa pun di
+`includes/` atau `cms-admin/` yang sudah ada untuk di-reuse (sudah
+dicek sesuai instruksi brief), jadi ini daftar blocklist kecil
+pertama, bukan sistem moderasi konten lengkap.
+
+**Bank soal Trivia Cepat** — di-copy dari `assets/games/js/quiz-bola.js`'s
+`QUESTION_BANK` (92 soal, per 3 Sep 2026) ke dalam
+`assets/games/js/prediksi-trivia.js`'s `TRIVIA_QUESTIONS`, bukan
+di-share/di-import — konsisten sama pola "tiap file game berdiri
+sendiri" yang sudah dipakai di 4 game lain (audio synth pattern
+misalnya, di-duplicate bukan di-share). Field `difficulty` ikut
+ke-copy tapi tidak dipakai (Trivia Cepat sengaja 1 timer tetap 10
+detik/soal buat semua orang, tidak ada difficulty picker seperti
+Kuis Bola). Multiplier streak (x1/x1.2/x1.5/x2, cap di streak 4+)
+pakai tier yang SAMA PERSIS dengan Slot Bola v2 (5 Sep 2026) — sengaja
+disamakan sekarang karena itu sudah jadi pola "combo streak" yang
+established di seluruh situs, bukan bikin kurva baru lagi.
+
+**Verifikasi:** Semua endpoint dites langsung lewat `curl` ke database
+lokal (bukan cuma baca kode) — fixtures-today (list + my_prediction
+round-trip benar), predict (submit sukses, upsert tidak duplikat,
+tolak setelah kickoff, tolak nickname kotor, tolak skor di luar
+batas), leaderboard (urut DESC, exclude yang 0 poin), trivia-score
+(akumulasi 300+450=750 dikonfirmasi, tolak nickname pendek/browser_id
+invalid/poin kelewat besar). Scoring pass dites idempotent (run kedua
+kali = 0 yang di-score ulang, total_points tidak dobel). UI dites
+end-to-end di browser: nickname gate → isi nickname → tab Prediksi
+(kartu ke-hydrate dari API, submit tebakan, "Tersimpan!", refresh
+halaman tebakan masih ada) → tab Trivia (jawab benar naikin skor+
+multiplier streak sesuai formula, jawab salah reset streak, sesi
+selesai kirim skor ke backend, dikonfirmasi lewat query DB langsung)
+→ leaderboard toggle nampilin data nyata. Dites juga di mobile
+(375px) — layout rapi, tombol cukup besar. Semua data test (fixture
+palsu, player test, prediksi test) DIHAPUS dari database lokal
+setelah verifikasi selesai — tidak ada sisa data testing yang
+ketinggalan. `php -l` bersih di semua 9 file PHP baru/modified, brace/
+paren JS & CSS balanced, tidak ada error console browser.
+
+**Alternatif yang dipertimbangkan:** Cron baru terpisah buat scoring
+— tidak dikerjakan, brief eksplisit minta numpang cron yang sudah ada
+kalau ketemu (ketemu: `cron/sync_fixtures.php`), bikin cron baru butuh
+akses cPanel Cron Jobs yang di luar kewenangan devs. SSR penuh buat
+tab Prediksi (termasuk skor/lock-state/prediksi user) — tidak
+dikerjakan, PHP request tidak tahu `browser_id` user (murni
+localStorage, bukan cookie/session), jadi SSR cuma render daftar
+pertandingan (nama tim, jam kickoff), sisanya di-hydrate JS dari
+`api/game-fixtures-today.php` yang memang butuh `browser_id` buat tahu
+prediksi milik user itu sendiri.
+
+---
+
+## 2026-09-08 — Games Hub #6, "Juggling Bola" (Keepie-Uppie): kembali ke pola client-side murni
+
+**Keputusan:** Game keenam ditambahkan — slug/nama file tetap
+`keepie-uppie` (nama brief aslinya), tapi **judul yang ditampilkan ke
+user diubah operator mid-build jadi "Juggling Bola"** (bukan
+"Keepie-Uppie") — semua teks user-facing (title tag, topbar, `<h1>`
+panel) sudah disesuaikan; slug/folder/file/ID tetap `keepie-uppie`
+sengaja TIDAK di-rename (operator cuma minta ganti judul tampilan, bukan
+restrukturisasi URL). Dicatat di sini biar sesi berikutnya tidak bingung
+kenapa ada mismatch judul-vs-nama-file.
+
+Reaction/timing game (juggling bola) — **100% client-side, ZERO
+backend**, sama seperti 4 game pertama (air-hockey/penalty-kick/
+quiz-bola/slot-bola). Ini BUKAN kelanjutan pola game #5 (Prediksi &
+Trivia, satu-satunya game yang butuh database) — game ini balik ke
+pola normal Games Hub, dicatat eksplisit biar tidak dikira inkonsistensi.
+High score disimpan di `localStorage` dengan key `wpm_keepie_uppie_highscore`
+— namespaced jelas, sengaja TIDAK collide dengan key `pt_nickname`/
+`pt_browser_id` milik game #5 (game ini tidak butuh identitas apapun,
+tidak ada network request sama sekali).
+
+**`TEAMS` array — Opsi B dipilih (duplikasi, bukan ekstrak ke shared
+file).** Brief kasih 2 opsi eksplisit: ekstrak `TEAMS` (42 negara,
+penalty-kick.js) ke `assets/games/js/teams-data.js` bersama (Opsi A),
+atau copy-paste array itu apa adanya ke `keepie-uppie.js` sebagai array
+lokal sendiri (Opsi B). **Dipilih Opsi B** — alasan: `penalty-kick.js`
+sudah live/teruji di production, brief sendiri menandai ekstraksi
+sebagai opsi yang lebih berisiko ("ubah file yang sudah jalan di
+production... kalau devs menilai risikonya nggak sepadan, boleh pakai
+Opsi B"), dan ini konsisten dengan pola project yang SUDAH BERULANG
+KALI dipakai — duplikasi kecil antar file game (audio synth, particle
+burst, `shadeColor()`) dibanding shared module, persis seperti yang
+didokumentasikan di docblock atas `penalty-kick.js` sendiri. Satu lagi
+array 42-entry yang di-copy bukan pengecualian baru, itu konsisten sama
+filosofi yang sudah ada.
+
+**Gameplay — fisika sederhana, bukan posisi, murni timing:**
+- Bola HANYA bergerak vertikal (tidak ada drift horizontal) — bola
+  selalu di `x = W/2`, `y` berubah karena gravitasi. Ini penyederhanaan
+  yang disengaja dari draft awal (sempat dipertimbangkan drift
+  horizontal + pantul dinding buat variasi visual) — dibuang demi
+  mengurangi permukaan bug di brief yang sudah besar, dan brief sendiri
+  bilang "tidak perlu klik tepat di posisi bola" jadi horizontal
+  position tidak pernah relevan ke gameplay manapun.
+- "Hit window" — pita vertikal di sekitar `FOOT_Y` (tinggi kaki
+  pemain). Klik/tap HANYA berefek kalau `ball.y` sedang di dalam window
+  itu DAN bola sedang jatuh (`vy > 0`) — kombinasi ini juga otomatis
+  mencegah 1 sentuhan ke-double-count dari klik ganda cepat (klik
+  pertama langsung balikkan `vy` jadi negatif, klik kedua di frame yang
+  sama gagal cek `vy>0`).
+- **Klik yang salah timing (di luar window) SENGAJA bukan penalti** —
+  cuma no-op, diam-diam diabaikan. Satu-satunya cara kalah adalah pasif:
+  bola jatuh melewati window tanpa disentuh. Ini perluasan dari
+  semangat "jangan bikin punitif" yang brief minta khusus buat reset
+  multiplier — diterapkan juga ke klik meleset secara umum, biar game
+  santai konsisten dari ujung ke ujung.
+- **Skor vs Sentuhan — 2 angka yang beda, sengaja dipisah jelas di UI**
+  (sempat jadi bug kecil pas testing — lihat "Verifikasi" di bawah).
+  "Sentuhan" (`touches`) = hitungan mentah tap berhasil, dipakai buat
+  progressive difficulty & milestone. "Skor"/"Poin" (`score`) = total
+  poin dengan bobot multiplier — INI yang dibandingkan ke/disimpan
+  sebagai high score, bukan `touches` mentah. Kalau high score dihitung
+  dari `touches` mentah, sistem multiplier/Perfect jadi tidak berpengaruh
+  sama sekali ke pencapaian yang tercatat — jelas bukan maksud brief
+  yang eksplisit minta multiplier "menaikkan skor".
+- **Progressive difficulty** — tiap kelipatan 10 sentuhan, gravitasi
+  naik ~9% dan hit-window/perfect-window menyempit dikit (ada floor,
+  tidak pernah jadi mustahil). Kecepatan tendang-balik bola
+  (`kickVy`) dihitung ulang dari gravitasi SAAT ITU (bukan konstanta
+  tetap), jadi tinggi lambungan tetap terasa konsisten meski gravitasi
+  sudah naik beberapa tingkat.
+- **Multiplier Perfect** (x1→x2→x3, cap di 3) — pakai kurva TIER YANG
+  SAMA PERSIS dengan slot-bola.js v2 dan prediksi-trivia.js (established
+  "combo streak" pattern site-wide, bukan kurva baru lagi). Sentuhan
+  kurang presisi reset streak ke 0 (→x1) tapi TETAP dapat poin dasar
+  penuh (10 poin), sesuai brief "jangan bikin satu sentuhan
+  kurang-presisi langsung men-triple-negate skor".
+- **Bonus bintang — TIDAK di-skip** (brief kasih izin skip kalau
+  dianggap nambah scope tanpa manfaat besar, tapi versi sederhana ini
+  murah untuk diimplementasi): ~18% kemungkinan tiap sentuhan sukses,
+  bintang aktif buat turunan berikutnya, +5 poin flat kalau turunan itu
+  juga berhasil disentuh — 100% dekoratif/bonus, tidak pernah menyentuh
+  gravitasi/hit-window/game-over logic sama sekali (diverifikasi lewat
+  code review — variable `starActive` cuma dibaca di 1 tempat, murni
+  buat nambah poin).
+
+**Kontrol:** `click` (desktop) langsung panggil `attemptTouch()`, TIDAK
+ADA debounce/throttle sama sekali (brief eksplisit: delay sedikit pun
+terasa buruk buat reaction game). Mobile pakai `touchstart` (bukan
+`touchend` seperti penalty-kick.js — dipilih `touchstart` di sini
+karena responsivitas maksimal lebih penting daripada mencegah
+"klik-sambil-geser" yang tidak relevan buat game ini) dengan
+`e.preventDefault()` biar browser tidak ikut fire event `click`
+sintetis setelahnya (pola yang sama persis dengan `penalty-kick.js`'s
+`touchend` listener, cuma event name-nya beda).
+
+**Visual:** Figure pemain reuse struktur "kit berlapis" (jersey/celana
+pendek/kaos kaki/sepatu/kepala gradient) dari `drawKicker()`/
+`drawKeeper()` di `penalty-kick.js` — disederhanakan (tanpa fase
+wind-up/strike, cuma idle + flick kaki singkat pas sentuhan berhasil),
+warna ikut tim yang dipilih (murni kosmetik, sama sekali tidak
+menyentuh fisika/skor). Canvas PORTRAIT (aspect-ratio 3/4), beda dari
+air-hockey/penalty-kick yang landscape 4/3 — juggling butuh ruang jatuh
+vertikal, bukan lebar.
+
+**Verifikasi:** `php -l` bersih di kedua file PHP, brace/paren JS & CSS
+balanced. Diuji end-to-end nyata di browser (bukan cuma baca kode) —
+sempat ketemu 1 bug asli sebelum ship: `drawPlayer()` baca
+`state.kickFlickFrames` tanpa guard, throw pas render idle-preview
+SEBELUM game dimulai (`state` masih `null`) — di-fix dengan fallback
+`(state ? state.kickFlickFrames : 0)`. Environment testing sesi devs
+ini (`document.hidden` true) bikin `requestAnimationFrame`
+tersuspensi seperti biasa (limitasi environment yang sudah
+didokumentasikan berulang kali di entri-entri sebelumnya) — disiasati
+dengan monkey-patch `setTimeout` testing-only seperti biasa, TAPI kali
+ini timing `setTimeout`-nya sendiri jadi bursty/tidak konsisten
+(kadang 1 detik cuma dapat beberapa tick, lalu tiba-tiba banyak tick
+sekaligus) — solusinya testing dilakukan dengan spam-click terus-
+menerus (`setInterval` klik tiap 25ms) yang MEMANFAATKAN desain
+"klik meleset = no-op, bukan penalti" di atas, bukan coba pas-in
+1 klik presisi di tengah timing yang tidak bisa diprediksi. Hasil:
+sesi 28 sentuhan berjalan mulus sampai 305 poin (rata-rata >10
+poin/sentuhan, konfirmasi multiplier ikut kepakai), tercatat sebagai
+rekor baru ("Rekor Baru! 🏆"), persisten setelah reload halaman
+(`localStorage` dicek langsung, bukan cuma UI). Sesi berikutnya
+dengan skor 0 (bola dibiarkan jatuh tanpa disentuh sama sekali)
+dikonfirmasi TIDAK menimpa rekor 305 yang sudah tersimpan — high-score
+logic "cuma update kalau lebih tinggi" benar. Input mobile diuji
+lewat `TouchEvent` sintetis (`touchstart`) — 5 sentuhan berhasil
+tercatat tanpa error/double-fire. Selama testing ditemukan 1 bug
+KECIL di teks (bukan logic): end-screen sempat menyebut nilai `score`
+(yang sudah kena multiplier) sebagai "X sentuhan" — membingungkan
+karena scoreboard live juga punya field "Sentuhan" terpisah yang
+angkanya beda. Di-fix jadi "poin" buat skor, "sentuhan" cuma buat
+hitungan mentah, dan end-screen sekarang tampilkan KEDUANYA biar
+jelas. Card baru di `games/index.php` dan accent `blue` baru di
+`games-landing.css` dikonfirmasi ke-apply benar di landing page.
+
+**Alternatif yang dipertimbangkan:** Drift horizontal + pantul dinding
+buat bola — dipertimbangkan di draft awal, DIBUANG demi kesederhanaan
+(brief sendiri bilang posisi klik tidak relevan, cuma nambah permukaan
+bug tanpa nambah kedalaman gameplay yang diminta). Ekstrak `TEAMS` ke
+shared file (Opsi A brief) — dipertimbangkan, DITOLAK demi tidak
+menyentuh `penalty-kick.js` yang sudah production-stable (lihat
+penjelasan Opsi B di atas). Skip bonus bintang — dipertimbangkan
+(brief izinkan), DIKERJAKAN saja karena effort-nya kecil relatif ke
+manfaatnya buat variasi gameplay.
