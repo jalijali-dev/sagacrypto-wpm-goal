@@ -154,12 +154,27 @@ function wpm_games_upsert_player(PDO $pdo, string $browserId, string $nickname):
  */
 function wpm_games_rate_limited(PDO $pdo, string $browserId, int $minSeconds = 2): bool
 {
-    $stmt = $pdo->prepare('SELECT updated_at FROM game_players WHERE browser_id = :browser_id');
+    // TIMESTAMPDIFF computed IN MySQL, not PHP (8 Sep 2026 fix) — the
+    // original version pulled `updated_at` as a string and did
+    // `strtotime($updatedAt . ' UTC')` in PHP, which silently assumed
+    // the column was stored in UTC. `updated_at` auto-populates via
+    // MySQL's CURRENT_TIMESTAMP, which is written in whatever timezone
+    // the DB CONNECTION's `time_zone` session var is set to — on this
+    // server that's NOT UTC (same underlying issue as kickoff_at needing
+    // CONVERT_TZ elsewhere, e.g. cms-admin/pages/live-streaming.php's
+    // 8 Sep 2026 WIB fix). Forcing "UTC" onto an actually-WIB timestamp
+    // shifted `$last` by the server's UTC offset, which could make
+    // `time() - $last` go NEGATIVE — always less than $minSeconds, so
+    // EVERY submit reported as rate-limited regardless of how long the
+    // user actually waited (reported by operator: "udah refresh masih
+    // kena juga"). Comparing entirely inside MySQL sidesteps the
+    // PHP-vs-MySQL timezone mismatch — both sides of the diff come from
+    // the same clock/timezone context.
+    $stmt = $pdo->prepare('SELECT TIMESTAMPDIFF(SECOND, updated_at, NOW()) FROM game_players WHERE browser_id = :browser_id');
     $stmt->execute(['browser_id' => $browserId]);
-    $updatedAt = $stmt->fetchColumn();
-    if ($updatedAt === false || $updatedAt === null) {
+    $secondsSince = $stmt->fetchColumn();
+    if ($secondsSince === false || $secondsSince === null) {
         return false; // never seen this browser_id before — nothing to rate-limit against
     }
-    $last = strtotime((string) $updatedAt . ' UTC');
-    return $last !== false && (time() - $last) < $minSeconds;
+    return (int) $secondsSince < $minSeconds;
 }
