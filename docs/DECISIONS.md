@@ -1448,3 +1448,163 @@ menyentuh `penalty-kick.js` yang sudah production-stable (lihat
 penjelasan Opsi B di atas). Skip bonus bintang — dipertimbangkan
 (brief izinkan), DIKERJAKAN saja karena effort-nya kecil relatif ke
 manfaatnya buat variasi gameplay.
+
+---
+
+
+## 2026-09-09 — Live player pindah ke bolabolabola.com (`api/live-match.php`)
+
+**Keputusan:** REVISI dari draft brief sebelumnya di hari yang sama —
+lewat klarifikasi lanjutan operator, ternyata yang pindah ke domain
+terpisah `bolabolabola.com` cuma halaman PLAYER per-match, BUKAN
+listing-nya. `sagagoal.com/live` (listing — badge "SEDANG LIVE", grid
+kartu, dst) **TETAP SAMA PERSIS**, cuma `href` kartu-nya yang berubah
+dari path relatif same-domain jadi URL absolut ke
+`https://bolabolabola.com/live/<id>/<slug>`. Admin panel + database
+tetap 100% di sagagoal.com seperti sebelumnya — tidak berubah dari
+keputusan awal.
+
+**File `api/live-feed.php` dari draft SEBELUMNYA (belum sempat
+di-commit) DIHAPUS, diganti `api/live-match.php`.** Bentuk lama-nya
+salah buat brief final ini — dia return SEMUA match live sekaligus
+(cocok buat draft awal yang minta listing juga pindah), padahal yang
+sekarang dibutuhkan cuma data SATU match by `id`/`custom_id` (buat
+halaman player tunggal). Filosofi self-contained-nya (gak require
+`site-bootstrap.php`, biar gak ikut narik `session_start()` + machinery
+publik yang gak relevan buat API stateless) dan pendekatan sanitasi
+embed code tetap dipakai ulang di file baru — itu bagian yang sudah
+benar dari awal, cuma bentuk query & response-nya yang diubah dari
+"daftar" jadi "satu item by id".
+
+1. **`api/live-match.php`** — terima `?id=<fixture_id>` (mode fixture
+   asli) ATAU `?custom_id=<fixture_streams.id>` (mode custom), salah
+   satu WAJIB integer valid > 0 (400 kalau kosong/invalid dua-duanya;
+   kalau somehow dua-duanya dikirim, `custom_id` menang karena lebih
+   spesifik — bukan dianggap error). Query di-copy VERBATIM dari 2 mode
+   yang SUDAH ADA di `live.php` (`$_GET['id']`/`$_GET['custom_id']`
+   branch, baris ~33-176) — bukan refactor jadi fungsi bersama, sesuai
+   instruksi brief eksplisit + filosofi duplikasi-kecil yang sama
+   dipakai di banyak tempat lain project ini (preseden: `TEAMS` array
+   di `assets/games/js/keepie-uppie.js`). Ditambah `f.home_score`/
+   `f.away_score` yang query asli `live.php` gak select (dia cuma
+   butuh render iframe player, gak butuh skor — API ini diminta brief
+   buat expose skor juga). Match gak ketemu ATAU `is_live != 1` → 404
+   rapi (`{success:false, message:"..."}`), BUKAN nampilin player
+   kosong (sesuai instruksi eksplisit poin 1).
+2. **Reuse `wpm_games_respond()` vs helper lokal — pilih helper lokal
+   baru** (`wpm_live_match_respond()`, 4 baris, di-duplicate persis
+   pola yang sama di file ini). Alasan (wajib didokumentasikan sesuai
+   checklist "definition of done"): `wpm_games_respond()` di
+   `includes/GamesShared.php` secara teknis generik dan BISA dipakai,
+   tapi nama filenya literally "Games" — bikin dependency yang
+   membingungkan buat siapa pun yang baca `api/live-match.php` nanti
+   dan heran kenapa endpoint Live Streaming import sesuatu dari fitur
+   Games. Response helper cuma 4 baris — lebih murah di-duplicate
+   daripada dijelasin kenapa gak nyambung secara semantik.
+3. **`embed_code` di response = HTML `<iframe>` yang SUDAH disanitasi
+   dan siap di-echo langsung** (bukan raw stored value, dan bukan cuma
+   bare URL `src` kayak desain draft sebelumnya) — regex ekstraksi
+   `src` SAMA PERSIS dengan `wpm_render_live_embed()` di
+   `site-bootstrap.php` (duplicated lokal, lihat alasan filosofi
+   duplikasi di atas), tapi hasil akhirnya di-render ulang jadi tag
+   `<iframe>` baru dengan atribut yang dikontrol sepenuhnya di sisi
+   sagagoal.com. Alasan pilih bentuk ini (bukan raw HTML, bukan cuma
+   URL polos): brief secara literal minta field bernama `embed_code`
+   (bukan `embed_src`) — nama itu paling pas diartikan sebagai "kode
+   embed siap pakai", jadi bolabolabola.com cukup `echo` field itu
+   langsung ke dalam container player-nya, PERSIS pola yang sama kayak
+   `live.php` sendiri pakai `$embedHtml`. Tapi tetap TIDAK mengirim
+   `embed_code` mentah dari database — sanitasi tetap jalan sekali di
+   sisi sagagoal.com (sumber yang dipercaya) sebelum lintas domain,
+   bukan berharap codebase bolabolabola.com (lebih ringan, kemungkinan
+   gak ada audit keamanan sedetail sagagoal.com) reimplementasi regex
+   yang sama dengan benar.
+4. **`wpm_url_live_match_external()`/`wpm_url_live_custom_external()`
+   — fungsi BARU di `includes/site-bootstrap.php`, bukan ubah
+   `wpm_url_live_match()`/`wpm_url_live_custom()` yang sudah ada.**
+   Dicek dulu semua caller 2 fungsi lama itu (3 titik, semuanya di
+   `live.php`) — 2 dari 3 dipakai buat `$canonicalUrl` di mode
+   `?id=`/`?custom_id=` (poin 5 di bawah, mode itu SENGAJA dibiarkan
+   apa adanya, jadi canonical-nya WAJIB tetap nunjuk ke sagagoal.com
+   sendiri, bukan ke bolabolabola.com) — kalau fungsi lama diubah
+   langsung buat return URL eksternal, canonical tag itu bakal ikut
+   rusak. Domain `bolabolabola.com` di-hardcode literal di 2 fungsi
+   baru ini (bukan baca dari `site_settings`) — project ini belum
+   punya kolom domain konfigurable, sesuai instruksi brief eksplisit
+   "jangan invent" itu buat brief ini.
+5. **Satu-satunya perubahan di `live.php` yang sudah ada**: bagian
+   render kartu match di listing (`?>`-block sebelum `<a class="glass-
+   card wpm-live-match-card"`) sekarang panggil 2 fungsi baru di atas,
+   bukan `wpm_url_live_match()`/`wpm_url_live_custom()` yang lama —
+   plus nambah `rel="noopener"` di tag `<a>`-nya (mitigasi keamanan
+   standar buat link cross-domain, bagian dari riset resiko
+   Safe-Browleaning/reputasi di brief). TIDAK ada perubahan lain di
+   file ini — badge, grid, query listing, empty-state semuanya
+   utuh, diverifikasi lewat browser nyata (screenshot sebelum/sesudah
+   identik).
+6. **Mode `?id=`/`?custom_id=` lama di `live.php` — keputusan operator:
+   DIBIARKAN APA ADANYA, TIDAK dihapus, TIDAK ditambah redirect 301.**
+   Bookmark/link lama yang sudah ke-share atau ke-index Google tetap
+   jalan normal. Devs cuma perlu MEMASTIKAN tidak tersentuh gak sengaja
+   waktu ubah bagian href kartu (poin 5) — dikonfirmasi lewat testing
+   nyata: canonical tag di mode `?id=` masih nunjuk ke sagagoal.com
+   sendiri (bukan ke bolabolabola.com), player iframe masih render
+   normal.
+7. **CORS: TIDAK ditambah header apapun** — sama alasan seperti draft
+   sebelumnya, fetch dari bolabolabola.com direkomendasikan SERVER-SIDE
+   (PHP cURL), jadi gak ada cross-origin browser request yang perlu
+   diizinkan. Auto-refresh client-side eksplisit di luar scope.
+8. **Auth/rate-limit: tidak ada**, publik sama kayak semua
+   `api/game-*.php` lain, sesuai instruksi brief.
+
+**Mitigasi resiko reputasi/Safe-Browsing** (riset operator, 9 Sep
+2026): 2 domain beda hosting/DNS/WHOIS, Google evaluasi tiap domain
+independen buat Safe Browsing — kemungkinan besar sagagoal.com TIDAK
+ikut kena kalau bolabolabola.com di-flag, dan outbound link ke situs
+bermasalah gak nularin penalty ranking (konfirmasi John Mueller/Google).
+Resiko non-nol yang tetap dimitigasi: (a) notifikasi Search Console
+"link ke situs berbahaya" kalau bolabolabola.com kena flag — `rel=
+"noopener"` di setiap `<a>` ke domain itu sudah ditambahkan (poin 5),
+best-practice keamanan standar terlepas dari resiko ini; (b) interstitial
+warning merah browser kalau bolabolabola.com kena flag — di luar
+kendali kode, mitigasinya operator jaga hygiene hosting baru itu
+sendiri (dicatat sebagai catatan operasional, bukan sesuatu yang
+"dicoding"). Operator disarankan monitor Google Search Console
+sagagoal.com berkala setelah fitur ini live.
+
+**Verifikasi:** `php -l` bersih di `api/live-match.php`,
+`includes/site-bootstrap.php`, `live.php`. Diuji langsung lewat `curl`
+(bukan cuma baca kode) — `?id=`/`?custom_id=` kosong → 400; id gak
+ketemu → 404; `POST` → 405; data test manual (1 fixture asli + 1
+custom) → kedua mode return `embed_code` ter-render jadi `<iframe>`
+lengkap dengan atribut yang benar, semua field lain (nama tim/liga/
+skor/status) sesuai. Listing `sagagoal.com/live` dites ulang di
+browser SETELAH semua perubahan — screenshot visual identik dengan
+sebelum brief ini, href kartu dikonfirmasi lewat JS (`querySelectorAll`)
+beneran mengarah ke `https://bolabolabola.com/live/...` dengan
+`rel="noopener"` di kedua kartu (fixture asli & custom). Mode `?id=`
+lama dites ulang — canonical tag & player iframe masih berfungsi
+normal, gak keubah gak sengaja. Semua data test dihapus dari database
+lokal setelah verifikasi selesai.
+
+**Yang belum dikerjakan (Bagian 2 brief — di luar jangkauan sesi ini):**
+Project `bolabolabola.com` adalah repo/codebase terpisah yang TIDAK ada
+di working directory sesi Claude Code ini — sama seperti draft
+sebelumnya, info repo/path/akses hosting-nya belum dikasih operator.
+Brief sendiri eksplisit taruh ini di luar scope kalau infonya belum
+ada. Yang perlu didapat dari operator SEBELUM bagian 2 bisa mulai
+(sesi terpisah): lokasi repo/direktori kerja `bolabolabola.com`, detail
+hosting & akses (cPanel? SSH? git?), dan konfirmasi SSL domain itu
+sudah aktif. `api/live-match.php` di sagagoal.com SUDAH SIAP dikonsumsi
+begitu bagian 2 mulai dikerjakan.
+
+**Alternatif yang dipertimbangkan:** Ubah `wpm_url_live_match()`/
+`wpm_url_live_custom()` langsung buat return URL eksternal — DITOLAK,
+2 dari 3 caller butuh URL same-domain buat canonical tag di mode
+`?id=`/`?custom_id=` yang sengaja dipertahankan (poin 6). Kirim
+`embed_code` mentah dari database tanpa sanitasi ulang di API — DITOLAK,
+sanitasi sekali di sumber yang dipercaya lebih aman daripada berharap
+codebase satelit yang lebih ringan reimplementasi regex yang sama
+dengan benar. Redirect 301 dari mode `?id=`/`?custom_id=` lama ke
+bolabolabola.com — DITOLAK eksplisit oleh operator, demi menjaga link
+lama yang sudah ke-share/ke-index tetap jalan tanpa hop tambahan.

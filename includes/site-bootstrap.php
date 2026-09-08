@@ -374,6 +374,34 @@ function wpm_url_live_custom(int $streamId, string $homeName, string $awayName):
 }
 
 /**
+ * External player URLs on bolabolabola.com (9 Sep 2026, "live player
+ * pindah ke domain terpisah") — the LISTING at sagagoal.com/live stays
+ * exactly as-is; only the match cards' outbound href changes, from the
+ * same-domain wpm_url_live_match()/wpm_url_live_custom() above to these.
+ * Deliberately 2 NEW functions rather than changing the existing ones in
+ * place — those are still used for THIS page's own canonical <link> tags
+ * (live.php's ?id=/?custom_id= mode is being kept as a working fallback
+ * for old bookmarked/indexed links, per explicit operator decision, so
+ * it still needs a same-domain canonical pointing at itself) and are
+ * public helpers other code could reasonably call expecting a
+ * sagagoal.com URL back.
+ *
+ * Domain is hardcoded literally (not read from site_settings) — this
+ * project has no configurable "external player domain" setting, and
+ * brief explicitly said not to invent one for this. If bolabolabola.com
+ * ever changes, this is the one place to update.
+ */
+function wpm_url_live_match_external(int $fixtureId, string $homeName, string $awayName): string
+{
+    return 'https://bolabolabola.com/live/' . $fixtureId . '/' . wpm_fixture_match_slug($homeName, $awayName);
+}
+
+function wpm_url_live_custom_external(int $streamId, string $homeName, string $awayName): string
+{
+    return 'https://bolabolabola.com/live/custom/' . $streamId . '/' . wpm_fixture_match_slug($homeName, $awayName);
+}
+
+/**
  * Fixture IDs that currently have an ACTIVE (is_live=1) stream — used by
  * wpm_fixture_card() to decide whether to print the red "🔴 Live"
  * streaming badge/link on football.php's match list. Returns a

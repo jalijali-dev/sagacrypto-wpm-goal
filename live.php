@@ -280,12 +280,20 @@ require __DIR__ . '/includes/site-header.php';
                     $awayName = (string) $match['away_name'];
                     $homeLogo = wpm_image($match['home_logo'] ?? null);
                     $awayLogo = wpm_image($match['away_logo'] ?? null);
+                    // 9 Sep 2026, "live player pindah ke domain terpisah" —
+                    // the card's outbound href now points at bolabolabola.com
+                    // (the player), NOT this same-domain listing page anymore.
+                    // wpm_url_live_match()/wpm_url_live_custom() (sagagoal.com
+                    // URLs) are deliberately untouched — still used for this
+                    // page's OWN canonical <link> tags in the ?id=/?custom_id=
+                    // branches above, which stay working as a fallback for old
+                    // bookmarked/indexed links per explicit operator decision.
                     $matchUrl = $isCustomMatch
-                        ? wpm_url_live_custom((int) $match['id'], $homeName, $awayName)
-                        : wpm_url_live_match((int) $match['fixture_id'], $homeName, $awayName);
+                        ? wpm_url_live_custom_external((int) $match['id'], $homeName, $awayName)
+                        : wpm_url_live_match_external((int) $match['fixture_id'], $homeName, $awayName);
                     $matchTitle = trim((string) ($match['stream_title'] ?? '')) !== '' ? (string) $match['stream_title'] : ($homeName . ' vs ' . $awayName);
                     ?>
-                    <a class="glass-card wpm-live-match-card" href="<?= wpm_esc($matchUrl) ?>">
+                    <a class="glass-card wpm-live-match-card" href="<?= wpm_esc($matchUrl) ?>" rel="noopener">
                         <span class="wpm-live-match-card__badge"><span class="fixture-card__live-stream-dot" aria-hidden="true"></span>Live<?= $isCustomMatch ? ' · Manual' : '' ?></span>
                         <div class="wpm-live-match-card__teams">
                             <span class="wpm-live-match-card__team"><?= $homeLogo !== null ? '<img src="' . wpm_esc($homeLogo) . '" alt="" loading="lazy">' : wpm_icon('trophy') ?><?= wpm_esc($homeName) ?></span>
