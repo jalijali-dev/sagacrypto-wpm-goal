@@ -95,14 +95,19 @@ $wpmGames = [
         'accent' => 'cyan',
     ],
     [
-        'slug' => 'quiz-bola',
-        'title' => 'Kuis Bola',
-        'tagline' => 'Seberapa jago kamu soal sepak bola? Buktikan lewat kuis cepat.',
-        'icon' => 'flame',
-        'logo' => 'assets/games/img/quiz-bola.png',
-        'href' => 'games/quiz-bola/',
+        'slug' => 'keepie-uppie',
+        'title' => 'Juggling Bola',
+        'tagline' => 'Juggling bola tanpa henti — tap dengan timing pas biar nggak jatuh!',
+        'icon' => 'football',
+        // Custom PNG artwork landed 8 Sep 2026 (operator-supplied) — same
+        // background-removal + resize/quantize treatment as prediksi-
+        // trivia's logo (original upload had a solid off-white bg baked
+        // in, not real transparency; flood-fill removed it, resized to
+        // 336x336, palette-quantized to ~149KB).
+        'logo' => 'assets/games/img/keepie-uppie.png',
+        'href' => 'games/keepie-uppie/',
         'status' => 'Main Sekarang',
-        'accent' => 'purple',
+        'accent' => 'blue',
     ],
     [
         'slug' => 'slot-bola',
@@ -136,19 +141,14 @@ $wpmGames = [
         'accent' => 'red',
     ],
     [
-        'slug' => 'keepie-uppie',
-        'title' => 'Juggling Bola',
-        'tagline' => 'Juggling bola tanpa henti — tap dengan timing pas biar nggak jatuh!',
-        'icon' => 'football',
-        // Custom PNG artwork landed 8 Sep 2026 (operator-supplied) — same
-        // background-removal + resize/quantize treatment as prediksi-
-        // trivia's logo (original upload had a solid off-white bg baked
-        // in, not real transparency; flood-fill removed it, resized to
-        // 336x336, palette-quantized to ~149KB).
-        'logo' => 'assets/games/img/keepie-uppie.png',
-        'href' => 'games/keepie-uppie/',
+        'slug' => 'quiz-bola',
+        'title' => 'Kuis Bola',
+        'tagline' => 'Seberapa jago kamu soal sepak bola? Buktikan lewat kuis cepat.',
+        'icon' => 'flame',
+        'logo' => 'assets/games/img/quiz-bola.png',
+        'href' => 'games/quiz-bola/',
         'status' => 'Main Sekarang',
-        'accent' => 'blue',
+        'accent' => 'purple',
     ],
 ];
 ?>
