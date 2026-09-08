@@ -140,10 +140,12 @@ $wpmGames = [
         'title' => 'Juggling Bola',
         'tagline' => 'Juggling bola tanpa henti — tap dengan timing pas biar nggak jatuh!',
         'icon' => 'football',
-        // No custom PNG artwork yet (8 Sep 2026, game #6) — see `logo`
-        // comment above, same fallback-icon pattern slot-bola/prediksi-
-        // trivia started with before their own artwork landed.
-        'logo' => null,
+        // Custom PNG artwork landed 8 Sep 2026 (operator-supplied) — same
+        // background-removal + resize/quantize treatment as prediksi-
+        // trivia's logo (original upload had a solid off-white bg baked
+        // in, not real transparency; flood-fill removed it, resized to
+        // 336x336, palette-quantized to ~149KB).
+        'logo' => 'assets/games/img/keepie-uppie.png',
         'href' => 'games/keepie-uppie/',
         'status' => 'Main Sekarang',
         'accent' => 'blue',
