@@ -223,6 +223,22 @@ try {
                 </ol>
             </div>
 
+            <!-- ---- Tebakan Saya (9 Sep 2026, operator request) — recap
+                 box of just MY OWN saved predictions across the whole
+                 H+2 window above, so I don't have to scroll/hunt through
+                 the full fixture list to see what I've already guessed.
+                 Populated client-side from the SAME api/game-fixtures-
+                 today.php response loadFixtures() already fetches for
+                 the main list — no extra request. Editable inline here
+                 too (reuses the exact same submitPrediction() as the
+                 main list's form), as long as the fixture isn't locked
+                 yet — see prediksi-trivia.js's renderMyPredictions(). ---->
+            <button type="button" class="wpm-pt-leaderboard-toggle" id="pt-my-predictions-toggle" aria-expanded="false">📝 Tebakan Saya</button>
+            <div class="wpm-pt-leaderboard" id="pt-my-predictions" hidden>
+                <p class="wpm-pt-my-predictions__empty" id="pt-my-predictions-empty" hidden>Belum ada tebakan yang disimpan.</p>
+                <div class="wpm-pt-match-list" id="pt-my-predictions-list"></div>
+            </div>
+
             <!-- ---- Leaderboard (shared, visible under both tabs) ---- -->
             <button type="button" class="wpm-pt-leaderboard-toggle" id="pt-leaderboard-toggle" aria-expanded="false">🏆 Lihat Leaderboard</button>
             <div class="wpm-pt-leaderboard" id="pt-leaderboard" hidden>

@@ -78,6 +78,16 @@
 
   var matchListEl = document.getElementById('pt-match-list');
 
+  // 9 Sep 2026 — "Tebakan Saya" recap box (operator request): lists just
+  // MY OWN saved predictions across the whole fetched window, editable
+  // inline. See fillPredictArea()/renderMyPredictions() below.
+  var myPredictionsToggle = document.getElementById('pt-my-predictions-toggle');
+  var myPredictionsEl = document.getElementById('pt-my-predictions');
+  var myPredictionsEmptyEl = document.getElementById('pt-my-predictions-empty');
+  var myPredictionsListEl = document.getElementById('pt-my-predictions-list');
+  var myPredictionsLoaded = false;
+  var lastFixturesData = []; // populated by loadFixtures(), read by renderMyPredictions()
+
   var leaderboardToggle = document.getElementById('pt-leaderboard-toggle');
   var leaderboardEl = document.getElementById('pt-leaderboard');
   var leaderboardLoadingEl = document.getElementById('pt-leaderboard-loading');
@@ -227,8 +237,17 @@
     return '<div class="wpm-pt-match__locked">🔒 Terkunci — nunggu hasil</div>';
   }
 
-  function renderMatchCard(fixture) {
-    var container = matchListEl.querySelector('.wpm-pt-match[data-fixture-id="' + fixture.id + '"] [data-role="predict-area"]');
+  /**
+   * Fills ANY predict-area container (main list card OR the "Tebakan
+   * Saya" recap box below) with either the locked/result display or the
+   * editable input+submit form — same logic, just no longer tied to
+   * looking the container up inside matchListEl specifically. `onSaved`
+   * is an optional extra callback (besides the built-in feedback text)
+   * so callers that need to refresh a SECOND copy of the same fixture's
+   * UI elsewhere on the page (recap box vs. main list) can do so without
+   * this function needing to know both places exist.
+   */
+  function fillPredictArea(container, fixture, onSaved) {
     if (!container) { return; }
 
     if (fixture.is_locked) {
@@ -264,7 +283,9 @@
       }
       submitBtn.disabled = true;
       feedbackEl.hidden = true;
-      submitPrediction(fixture.id, parseInt(homeVal, 10), parseInt(awayVal, 10), function (ok, message) {
+      var homeNum = parseInt(homeVal, 10);
+      var awayNum = parseInt(awayVal, 10);
+      submitPrediction(fixture.id, homeNum, awayNum, function (ok, message) {
         submitBtn.disabled = false;
         if (ok) {
           submitBtn.textContent = 'Ubah Tebakan';
@@ -272,12 +293,82 @@
           feedbackEl.className = 'wpm-pt-match__feedback is-ok';
           feedbackEl.hidden = false;
           sfx.predictSaved();
+          // Keep our in-memory copy in sync so re-opening "Tebakan Saya"
+          // (or re-editing right after saving) shows the NEW value
+          // without needing a full reload/refetch.
+          fixture.my_prediction = { predicted_home: homeNum, predicted_away: awayNum, points_awarded: null };
+          if (typeof onSaved === 'function') { onSaved(fixture); }
         } else {
           feedbackEl.textContent = message || 'Gagal menyimpan.';
           feedbackEl.className = 'wpm-pt-match__feedback is-error';
           feedbackEl.hidden = false;
         }
       });
+    });
+  }
+
+  function renderMatchCard(fixture) {
+    var container = matchListEl.querySelector('.wpm-pt-match[data-fixture-id="' + fixture.id + '"] [data-role="predict-area"]');
+    fillPredictArea(container, fixture, function () {
+      // Editing from the MAIN list — if the "Tebakan Saya" box has
+      // already been opened/built at least once, refresh it too so it
+      // doesn't show a stale score after a save made from the other box.
+      if (myPredictionsLoaded) { renderMyPredictions(); }
+    });
+  }
+
+  /**
+   * "Tebakan Saya" recap box — every fixture (from the same H+2 window
+   * already fetched by loadFixtures()) where `my_prediction` isn't null,
+   * regardless of locked/open state, so the user has ONE place to see
+   * everything they've saved instead of hunting through the full list
+   * above. Each entry reuses fillPredictArea() — editable inline here
+   * too, as long as that fixture isn't locked yet.
+   */
+  function renderMyPredictions() {
+    if (!myPredictionsListEl) { return; }
+    var mine = lastFixturesData.filter(function (fx) { return !!fx.my_prediction; });
+
+    myPredictionsListEl.innerHTML = '';
+    myPredictionsEmptyEl.hidden = mine.length > 0;
+    if (mine.length === 0) { return; }
+
+    mine.forEach(function (fixture) {
+      var card = document.createElement('div');
+      card.className = 'wpm-pt-match';
+      card.setAttribute('data-fixture-id', fixture.id);
+      card.innerHTML =
+        '<div class="wpm-pt-match__meta">' +
+        '<span class="wpm-pt-match__league">' + (fixture.league_name || '') + '</span>' +
+        '<span class="wpm-pt-match__time">' + (fixture.kickoff_at_wib || '') + ' WIB</span>' +
+        '</div>' +
+        '<div class="wpm-pt-match__teams">' +
+        '<span class="wpm-pt-match__team">' + (fixture.home_name || '') + '</span>' +
+        '<span class="wpm-pt-match__vs">vs</span>' +
+        '<span class="wpm-pt-match__team">' + (fixture.away_name || '') + '</span>' +
+        '</div>' +
+        '<div class="wpm-pt-match__predict-area" data-role="predict-area"></div>';
+      myPredictionsListEl.appendChild(card);
+
+      var container = card.querySelector('[data-role="predict-area"]');
+      fillPredictArea(container, fixture, function () {
+        // Editing from the RECAP box — refresh the main list's copy of
+        // this same fixture too, so the two boxes never disagree.
+        renderMatchCard(fixture);
+      });
+    });
+  }
+
+  if (myPredictionsToggle) {
+    myPredictionsToggle.addEventListener('click', function () {
+      var willShow = myPredictionsEl.hidden;
+      myPredictionsEl.hidden = !willShow;
+      myPredictionsToggle.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+      myPredictionsToggle.textContent = willShow ? 'Sembunyikan Tebakan Saya' : '📝 Tebakan Saya';
+      if (willShow) {
+        myPredictionsLoaded = true;
+        renderMyPredictions();
+      }
     });
   }
 
@@ -304,7 +395,11 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data.success || !Array.isArray(data.fixtures)) { return; }
+        lastFixturesData = data.fixtures;
         data.fixtures.forEach(renderMatchCard);
+        // If the recap box was already open (rare — only via a fast
+        // reload race), keep it in sync with the freshly fetched data.
+        if (myPredictionsLoaded) { renderMyPredictions(); }
       })
       .catch(function () {
         // Fixture times/names from SSR stay visible; predict-areas just
