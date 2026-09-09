@@ -19,19 +19,27 @@ declare(strict_types=1);
 require_once __DIR__ . '/GamesShared.php';
 
 /**
- * Prediction scoring rule (per brief, "Sistem poin"):
- *   - Exact score match (both numbers identical)     -> 5 points
- *   - Correct result (win/lose/draw) but wrong score -> 2 points
+ * Prediction scoring rule (rebalanced 9 Sep 2026, operator request —
+ * was 5/2 at launch, see docs/DECISIONS.md for the old brief's original
+ * "Sistem poin" if that context matters later):
+ *   - Exact score match (both numbers identical)     -> 500 points
+ *   - Correct result (win/lose/draw) but wrong score -> 200 points
  *   - Wrong result                                   -> 0 points
+ *
+ * `points_awarded` widened from TINYINT to SMALLINT UNSIGNED in
+ * includes/GamesShared.php's wpm_games_ensure_schema() to fit 500 (a
+ * plain TINYINT UNSIGNED tops out at 255) — if this rule is rebalanced
+ * again later, check that column's ceiling (65,535) still fits before
+ * bumping these numbers further.
  */
 function wpm_calc_prediction_points(int $predictedHome, int $predictedAway, int $actualHome, int $actualAway): int
 {
     if ($predictedHome === $actualHome && $predictedAway === $actualAway) {
-        return 5;
+        return 500;
     }
     $predictedResult = $predictedHome <=> $predictedAway; // -1 away win, 0 draw, 1 home win
     $actualResult = $actualHome <=> $actualAway;
-    return $predictedResult === $actualResult ? 2 : 0;
+    return $predictedResult === $actualResult ? 200 : 0;
 }
 
 /**

@@ -66,6 +66,15 @@ function wpm_games_ensure_schema(PDO $pdo): void
          CONSTRAINT fk_game_predictions_player FOREIGN KEY (player_id)
            REFERENCES game_players(id) ON DELETE CASCADE"
     );
+
+    // 9 Sep 2026 — points scale changed from 5/2 to 500/200 (operator
+    // request, see includes/GamesScoring.php's wpm_calc_prediction_points()).
+    // TINYINT UNSIGNED tops out at 255, too small for 500 — widen to
+    // SMALLINT UNSIGNED (max 65535, plenty of headroom for any future
+    // rebalance too). Self-heal via cms_widen_column(), same pattern as
+    // every other column-width fix in this codebase — safe to call on
+    // every request, no-ops once already widened on a given install.
+    cms_widen_column($pdo, 'game_predictions', 'points_awarded', 'SMALLINT UNSIGNED NULL DEFAULT NULL');
 }
 
 /** Standard JSON response for every api/game-*.php endpoint — never returns. */

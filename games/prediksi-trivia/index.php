@@ -142,7 +142,7 @@ try {
 
             <!-- ---- Tab 1: Prediksi Skor Harian ---- -->
             <section class="wpm-pt-tabpanel" id="pt-tabpanel-predict" role="tabpanel">
-                <p class="wpm-pt-hint">Tebak skor akhir sebelum kickoff — bisa diisi dari 2 hari sebelum pertandingan. Tebakan persis = 5 poin, hasil bener (menang/kalah/seri) = 2 poin. Bisa diubah kapan saja sebelum pertandingan mulai.</p>
+                <p class="wpm-pt-hint">Tebak skor akhir sebelum kickoff — bisa diisi dari 2 hari sebelum pertandingan. Tebakan persis = 500 poin, hasil bener (menang/kalah/seri) = 200 poin. Bisa diubah kapan saja sebelum pertandingan mulai.</p>
                 <?php if ($todaysFixtures === []) : ?>
                     <p class="wpm-pt-empty">Belum ada jadwal pertandingan buat 2 hari ke depan.</p>
                 <?php else : ?>
@@ -218,7 +218,7 @@ try {
                     <li>Mau ganti tebakan? Boleh, klik "Ubah Tebakan" — asal belum lewat waktu kickoff.</li>
                     <li>Begitu kickoff lewat, tebakan otomatis terkunci, gak bisa diubah lagi.</li>
                     <li>Setelah pertandingan selesai, poin otomatis dihitung — gak perlu ngapa-ngapain, cukup balik lagi ke halaman ini buat cek hasilnya (biasanya beberapa jam/besoknya, tergantung jadwal pertandingan).</li>
-                    <li>Skor persis = 5 poin. Tebak menang/kalah/seri-nya doang bener (skor beda) = 2 poin. Salah total = 0 poin.</li>
+                    <li>Skor persis = 500 poin. Tebak menang/kalah/seri-nya doang bener (skor beda) = 200 poin. Salah total = 0 poin.</li>
                     <li>Main Trivia Cepat kapan aja buat nambah poin — hasilnya otomatis gabung ke total poin & leaderboard yang sama.</li>
                 </ol>
             </div>
