@@ -49,14 +49,22 @@ if ($wpmFaviconRaw === '') {
 }
 $wpmFaviconUrl = $wpmFaviconRaw !== '' ? $wpmFaviconRaw : null;
 
-// ---- SSR: today's fixtures (WIB), same day-window pattern as
-// football.php. Only team names/kickoff time are needed for this
-// initial render — scores/lock-state/my-own-prediction all come from
-// the JS fetch to api/game-fixtures-today.php afterward (this PHP
-// request has no browser_id to look predictions up with anyway, since
-// identity lives purely in localStorage, not a cookie/session). ----
+// ---- SSR: fixtures kicking off TODAY through +2 days (WIB) — widened
+// 9 Sep 2026 from "today only" per operator request, so predictions can
+// be filled in up to 2 days ahead instead of only on match day itself.
+// Still the same day-window CONVERT_TZ pattern as football.php, just a
+// BETWEEN range instead of a single-day equality check. Only team
+// names/kickoff time are needed for this initial render —
+// scores/lock-state/my-own-prediction all come from the JS fetch to
+// api/game-fixtures-today.php afterward (this PHP request has no
+// browser_id to look predictions up with anyway, since identity lives
+// purely in localStorage, not a cookie/session). Variable name kept as
+// $todaysFixtures despite the widened range — renaming ripples into the
+// template loop below for no real benefit. ----
 $todaysFixtures = [];
 try {
+    $wibToday = wpm_today_wib();
+    $wibUntil = (new DateTime($wibToday, new DateTimeZone(WPM_MATCH_TZ)))->modify('+2 days')->format('Y-m-d');
     $stmt = $pdo->prepare(
         "SELECT f.id, f.kickoff_at,
                 ht.name AS home_name, at.name AS away_name,
@@ -65,10 +73,10 @@ try {
          JOIN teams ht ON ht.id = f.home_team_id
          JOIN teams at ON at.id = f.away_team_id
          JOIN leagues l ON l.id = f.league_id
-         WHERE DATE(CONVERT_TZ(f.kickoff_at, '+00:00', '+07:00')) = :today
+         WHERE DATE(CONVERT_TZ(f.kickoff_at, '+00:00', '+07:00')) BETWEEN :today AND :until
          ORDER BY f.kickoff_at ASC"
     );
-    $stmt->execute(['today' => wpm_today_wib()]);
+    $stmt->execute(['today' => $wibToday, 'until' => $wibUntil]);
     $todaysFixtures = $stmt->fetchAll();
 } catch (Throwable $e) {
     $todaysFixtures = [];
@@ -134,16 +142,16 @@ try {
 
             <!-- ---- Tab 1: Prediksi Skor Harian ---- -->
             <section class="wpm-pt-tabpanel" id="pt-tabpanel-predict" role="tabpanel">
-                <p class="wpm-pt-hint">Tebak skor akhir sebelum kickoff. Tebakan persis = 5 poin, hasil bener (menang/kalah/seri) = 2 poin. Bisa diubah kapan saja sebelum pertandingan mulai.</p>
+                <p class="wpm-pt-hint">Tebak skor akhir sebelum kickoff — bisa diisi dari 2 hari sebelum pertandingan. Tebakan persis = 5 poin, hasil bener (menang/kalah/seri) = 2 poin. Bisa diubah kapan saja sebelum pertandingan mulai.</p>
                 <?php if ($todaysFixtures === []) : ?>
-                    <p class="wpm-pt-empty">Belum ada jadwal pertandingan buat hari ini.</p>
+                    <p class="wpm-pt-empty">Belum ada jadwal pertandingan buat 2 hari ke depan.</p>
                 <?php else : ?>
                     <div class="wpm-pt-match-list" id="pt-match-list">
                         <?php foreach ($todaysFixtures as $fx) : ?>
                             <div class="wpm-pt-match" data-fixture-id="<?= (int) $fx['id'] ?>">
                                 <div class="wpm-pt-match__meta">
                                     <span class="wpm-pt-match__league"><?= wpm_esc((string) $fx['league_name']) ?></span>
-                                    <span class="wpm-pt-match__time"><?= wpm_esc(wpm_format_match_time($fx['kickoff_at'], 'H:i')) ?> WIB</span>
+                                    <span class="wpm-pt-match__time"><?= wpm_esc(wpm_format_match_time($fx['kickoff_at'], 'd/m')) ?> &middot; <?= wpm_esc(wpm_format_match_time($fx['kickoff_at'], 'H:i')) ?> WIB</span>
                                 </div>
                                 <div class="wpm-pt-match__teams">
                                     <span class="wpm-pt-match__team"><?= wpm_esc((string) $fx['home_name']) ?></span>

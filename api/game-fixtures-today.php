@@ -2,13 +2,19 @@
 declare(strict_types=1);
 
 /**
- * Public endpoint: today's fixtures (WIB) + this browser's own
- * predictions, if any — feeds the "Prediksi Skor Harian" tab in
- * games/prediksi-trivia/index.php (assets/games/js/prediksi-trivia.js).
+ * Public endpoint: fixtures kicking off TODAY through +2 days (WIB) +
+ * this browser's own predictions, if any — feeds the "Prediksi Skor
+ * Harian" tab in games/prediksi-trivia/index.php
+ * (assets/games/js/prediksi-trivia.js). File name kept as
+ * "fixtures-today" for compat even though the window was widened past
+ * "today" — see games/prediksi-trivia/index.php's own comment (9 Sep
+ * 2026, operator request: let predictions be filled in up to 2 days
+ * ahead, not just on match day).
  *
  * Same WIB day-window query pattern as football.php (CONVERT_TZ — see
  * includes/TimeHelpers.php's docblock for why storage stays UTC and
- * only display/day-grouping converts). `is_locked` is computed HERE,
+ * only display/day-grouping converts), just a BETWEEN range now instead
+ * of a single-day equality check. `is_locked` is computed HERE,
  * server-side, from the DB's own clock — the frontend uses it purely
  * for display, never as the actual submit gate (that check happens
  * again, independently, in game-predict.php — never trust a client
@@ -36,6 +42,7 @@ $browserId = trim((string) ($_GET['browser_id'] ?? ''));
 $hasBrowserId = $browserId !== '' && wpm_games_browser_id_is_valid($browserId);
 
 $today = wpm_today_wib();
+$until = (new DateTime($today, new DateTimeZone(WPM_MATCH_TZ)))->modify('+2 days')->format('Y-m-d');
 
 try {
     $stmt = $pdo->prepare(
@@ -47,10 +54,10 @@ try {
          JOIN teams ht ON ht.id = f.home_team_id
          JOIN teams at ON at.id = f.away_team_id
          JOIN leagues l ON l.id = f.league_id
-         WHERE DATE(CONVERT_TZ(f.kickoff_at, '+00:00', '+07:00')) = :today
+         WHERE DATE(CONVERT_TZ(f.kickoff_at, '+00:00', '+07:00')) BETWEEN :today AND :until
          ORDER BY f.kickoff_at ASC"
     );
-    $stmt->execute(['today' => $today]);
+    $stmt->execute(['today' => $today, 'until' => $until]);
     $fixtures = $stmt->fetchAll();
 } catch (Throwable $e) {
     wpm_games_respond(['success' => false, 'message' => 'Could not load fixtures.'], 500);

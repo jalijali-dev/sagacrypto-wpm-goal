@@ -1277,7 +1277,23 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 }
 
 @media (max-width: 640px) {
-  .banner-card { aspect-ratio: 900 / 1200; }
+  /* Was `aspect-ratio: 900 / 1200` (portrait) — assumed every banner would
+     get a dedicated portrait-cropped `mobile_image` upload (see
+     wpm_banner_markup() in includes/site-bootstrap.php + the admin form's
+     "Recommended mobile: 900x1200 px" hint in cms-admin/pages/banners.php).
+     In practice (reported by operator, 9 Sep 2026 — "Madrid vs Inter"
+     banner card) admins commonly reuse the SAME landscape image for both
+     desktop_image and mobile_image slots instead of cropping a separate
+     portrait version. With object-fit:cover above, a landscape source
+     forced into a 900:1200 portrait box gets aggressively cropped
+     top/bottom — cutting off baked-in text near the image edges.
+     Switched to a landscape ratio close to the desktop one (16/9, vs.
+     desktop's 1920/900 ≈ 2.13/1) so a reused landscape image displays with
+     modest, even side-cropping instead of severe vertical cropping. A
+     banner that DOES have a real dedicated portrait mobile_image will now
+     get cropped on the sides instead of top/bottom — an accepted
+     trade-off given the more common real-world usage pattern above. */
+  .banner-card { aspect-ratio: 16 / 9; }
 }
 
 .wpm-popup-ad {
