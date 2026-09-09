@@ -1557,7 +1557,15 @@ function wpm_fixture_card(array $fixture, array $liveStreamFixtureIds = []): str
     $html = '<div class="fixture-card' . ($isLive ? ' is-live' : '') . '" data-fixture-id="' . $fixtureId . '" data-status="' . wpm_esc((string) ($fixture['status_short'] ?? '')) . '" data-search="' . wpm_esc($searchText) . '">';
 
     if ($hasLiveStream) {
-        $html .= '<a class="fixture-card__live-stream-badge" href="' . wpm_esc(wpm_url_live_match($fixtureId, $homeName, $awayName)) . '"><span class="fixture-card__live-stream-dot" aria-hidden="true"></span>Live</a>';
+        // 10 Sep 2026 — was wpm_url_live_match() (same-domain sagagoal.com)
+        // until reported by operator: this fixture-card badge (shown on
+        // football.php/basket.php/etc, a SEPARATE code path from live.php's
+        // own listing page) had been missed when the player page moved to
+        // bolabolabola.com on 9 Sep 2026 — that earlier fix only touched
+        // live.php's own match cards, not this shared card renderer. Now
+        // uses the same *_external() helper so every "Live" entry point
+        // sitewide consistently lands on bolabolabola.com.
+        $html .= '<a class="fixture-card__live-stream-badge" href="' . wpm_esc(wpm_url_live_match_external($fixtureId, $homeName, $awayName)) . '" rel="noopener"><span class="fixture-card__live-stream-dot" aria-hidden="true"></span>Live</a>';
     }
 
     $html .= '<div class="fixture-card__team fixture-card__team--home">';
