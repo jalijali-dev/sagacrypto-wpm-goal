@@ -711,9 +711,21 @@
         data.leaderboard.forEach(function (row) {
           var li = document.createElement('li');
           li.className = 'wpm-pt-leaderboard__row';
-          var nameEl = document.createElement('span');
+          // 12 Sep 2026 — link to that player's public history page
+          // (games/prediksi-trivia/user.php?code=...) when the API gives
+          // us a public_code. Falls back to a plain <span> (no link) for
+          // any older row that somehow lacks one — public_code is
+          // backfilled automatically for every player going forward (see
+          // wpm_games_upsert_player() in includes/GamesShared.php), so
+          // this fallback should be rare/transient in practice.
+          var nameEl = row.public_code
+            ? document.createElement('a')
+            : document.createElement('span');
           nameEl.className = 'wpm-pt-leaderboard__name';
           nameEl.textContent = row.nickname;
+          if (row.public_code) {
+            nameEl.href = 'games/prediksi-trivia/user.php?code=' + encodeURIComponent(row.public_code);
+          }
           var pointsEl = document.createElement('span');
           pointsEl.className = 'wpm-pt-leaderboard__points';
           pointsEl.textContent = row.total_points + ' poin';

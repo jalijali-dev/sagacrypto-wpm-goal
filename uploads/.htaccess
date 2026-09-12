@@ -1,0 +1,25 @@
+# Block execution of scripts inside the uploads tree (12 Sep 2026
+# security audit finding #7, defense-in-depth). The upload handlers
+# already validate file content via real MIME sniffing (finfo, not the
+# client-supplied extension), pick the final extension from that
+# detected type, randomize the stored filename, and block path
+# traversal — a disguised .php upload should never get through the
+# validation layer in the first place. This is the SECOND layer: even
+# if a future bug or a new, less-careful upload feature ever let a
+# script-like file land in here, Apache refuses to execute it — it can
+# only ever be served as a static file, never run as PHP.
+#
+# Applies to this whole subtree (uploads/banners/, uploads/media/,
+# uploads/site/, and anything added later) — Apache merges .htaccess
+# files from parent directories automatically, no per-subfolder copy
+# needed. Does NOT block reading/serving the actual uploaded images/
+# PDFs/etc. — only script-like extensions are denied.
+<FilesMatch "\.(php|php[0-9]?|phar|phtml|pl|py|cgi|sh|asp|aspx)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

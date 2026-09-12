@@ -1,0 +1,21 @@
+# Deny all direct web access to this folder (12 Sep 2026 security audit
+# finding #1, CRITICAL) — confirmed LIVE that logs/ai.log was publicly
+# readable at https://sagagoal.com/logs/ai.log (200 OK). This directory
+# only ever contains app-generated log files (AI usage logs, etc.) —
+# there is never a legitimate reason for a browser to request anything
+# in here directly; every consumer of these logs is server-side PHP
+# code reading the file from disk.
+#
+# Both syntaxes below are included on purpose: Apache 2.4+ uses
+# mod_authz_core's `Require all denied`, while some shared-hosting
+# setups (older Apache 2.2-style config, or 2.4 running in
+# access_compat mode) still need the legacy `Order`/`Deny` directives.
+# Whichever module is actually loaded on the live server picks up its
+# matching block; the other is simply ignored.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

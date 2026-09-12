@@ -42,6 +42,29 @@ function wpm_games_ensure_schema(PDO $pdo): void
          UNIQUE KEY uniq_browser_id (browser_id)"
     );
 
+    // 12 Sep 2026 — public per-player history page ("lihat history tebakan
+    // user X", operator request). Deliberately a SEPARATE random code, not
+    // the raw auto-increment `id` — using the raw id directly in a public
+    // URL would make every player's history trivially enumerable (?id=1,
+    // 2, 3...); a random code doesn't prevent someone from crawling ALL
+    // codes if they really wanted to (the page is public by design, per
+    // operator decision), but it does stop *casual* sequential enumeration
+    // and keeps a player's numeric DB id from being handed out. NOT the
+    // same value as `browser_id` either — that one is client-generated and
+    // already treated as semi-public elsewhere (sent as a query param to
+    // api/game-fixtures-today.php etc.), but keeping a distinct
+    // server-generated code here means browser_id never needs to appear
+    // in a URL a player might paste/share publicly.
+    // Inline UNIQUE here (rather than a separate ADD INDEX call — no
+    // cms_ensure_index() helper exists in schema-guard.php, only
+    // cms_ensure_column()/cms_widen_column()/cms_ensure_table()) works
+    // because this column has never existed before this entry; MySQL
+    // allows a UNIQUE constraint directly in an ADD COLUMN clause. Nulls
+    // are exempt from the uniqueness check (standard MySQL behavior), so
+    // rows created before this backfill runs (public_code still NULL)
+    // don't collide with each other.
+    cms_ensure_column($pdo, 'game_players', 'public_code', 'VARCHAR(10) NULL DEFAULT NULL UNIQUE');
+
     // `fixture_id` deliberately has NO foreign key to fixtures.id — same
     // reasoning as fixture_streams (see cms-admin/pages/live-streaming.php's
     // comment on that table): includes/LivescoreSync.php overwrites
@@ -148,7 +171,66 @@ function wpm_games_upsert_player(PDO $pdo, string $browserId, string $nickname):
          ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), nickname = VALUES(nickname), updated_at = NOW()'
     );
     $stmt->execute(['browser_id' => $browserId, 'nickname' => $nickname]);
-    return (int) $pdo->lastInsertId();
+    $playerId = (int) $pdo->lastInsertId();
+
+    // Every player needs a `public_code` for the public history page
+    // (12 Sep 2026) — backfilled here rather than at read-time so it's
+    // ready the moment a player is looked up, and so EVERY caller of this
+    // function (game-predict.php, game-trivia-score.php) gets it for free
+    // without each needing to remember to call a second function.
+    wpm_games_ensure_public_code($pdo, $playerId);
+
+    return $playerId;
+}
+
+/**
+ * Backfills `game_players.public_code` for one player if it's still NULL
+ * — a short random code used in the public per-player history URL
+ * (games/prediksi-trivia/user.php?code=...) instead of the raw
+ * auto-increment id (see schema comment above for why). Safe/idempotent:
+ * no-ops instantly once a player already has a code. Retries a few times
+ * on the astronomically rare chance two players generate the same code
+ * in the same instant (UNIQUE constraint on the column catches it).
+ */
+function wpm_games_ensure_public_code(PDO $pdo, int $playerId): string
+{
+    $existing = $pdo->prepare('SELECT public_code FROM game_players WHERE id = :id');
+    $existing->execute(['id' => $playerId]);
+    $current = $existing->fetchColumn();
+    if (is_string($current) && $current !== '') {
+        return $current;
+    }
+
+    $update = $pdo->prepare('UPDATE game_players SET public_code = :code WHERE id = :id AND public_code IS NULL');
+    for ($attempt = 0; $attempt < 5; $attempt++) {
+        // 8 lowercase hex chars (4 random bytes) — short enough for a
+        // shareable URL, plenty of keyspace (4+ billion) for this
+        // feature's realistic scale.
+        $code = bin2hex(random_bytes(4));
+        try {
+            $update->execute(['code' => $code, 'id' => $playerId]);
+            if ($update->rowCount() > 0) {
+                return $code;
+            }
+            // rowCount() 0 means either the column got filled by a
+            // concurrent request between our SELECT and this UPDATE (in
+            // which case just re-read it) or (extremely unlikely) the
+            // WHERE matched nothing at all.
+            $existing->execute(['id' => $playerId]);
+            $recheck = $existing->fetchColumn();
+            if (is_string($recheck) && $recheck !== '') {
+                return $recheck;
+            }
+        } catch (Throwable $e) {
+            // Unique-constraint collision on `code` itself — retry with a
+            // fresh random value.
+            continue;
+        }
+    }
+    // All retries exhausted (should never realistically happen) — leave
+    // public_code NULL for now rather than throwing; the next call to
+    // this function (next time this player does anything) tries again.
+    return '';
 }
 
 /**
