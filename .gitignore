@@ -1,6 +1,12 @@
 # Sensitive config (contains real credentials)
 cms-admin/config/database.php
 cms-admin/config/app.php
+# Command Center export API token — same sensitivity tier as
+# database.php/app.php above. Explicitly listed (12 Sep 2026 security
+# audit finding #8) rather than relying on "just never staged it so
+# far" — a stray `git add .` before this line existed could have
+# committed the real token to history permanently.
+cms-admin/config/cc-export-token.php
 .env
 .env.local
 .env.production
@@ -22,6 +28,16 @@ sagacrypto-*.zip
 # Scratch folder for deployment packages / migration files handed to the
 # user (SQL migrations, deploy zips, etc.) — not part of the codebase.
 migration/
+
+# Internal notes/briefs/roadmap (deploy logs, trial notes, technical briefs
+# handed to devs) — operator decision 23 Aug 2026: these are working notes
+# for this repo's own history, not something that needs to ship/be public.
+# NOTE: docs/ was already tracked before this line was added — adding it
+# here only stops NEW changes from being staged automatically. Existing
+# tracked files must be untracked once with `git rm -r --cached docs/`
+# (keeps the files on disk, just stops git from tracking them going
+# forward) before this actually takes effect.
+docs/
 
 # OS/editor junk
 .DS_Store

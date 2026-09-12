@@ -1608,3 +1608,87 @@ codebase satelit yang lebih ringan reimplementasi regex yang sama
 dengan benar. Redirect 301 dari mode `?id=`/`?custom_id=` lama ke
 bolabolabola.com — DITOLAK eksplisit oleh operator, demi menjaga link
 lama yang sudah ke-share/ke-index tetap jalan tanpa hop tambahan.
+
+---
+
+## 2026-09-12 — Security audit: quick-win fixes (#1, #3, #7, #8)
+
+**Keputusan:** Security audit lengkap (12 Sep 2026, cakupan SQLi/XSS/
+CSRF/rate-limit/upload/SSRF/headers/session/dll) nemuin 11 temuan
+(2 Critical, 1 High, 6 Medium, 2 Low). Operator pilih kerjain 4 "quick
+win" dulu — perubahan config/infra murni, gak nyentuh logic aplikasi
+sama sekali, resiko regresi paling rendah. Temuan Critical/Medium
+lainnya (rate-limit login, security-header CSP, session timeout, XSS
+di box "Tebakan Saya", `git rm --cached docs/`) BELUM dikerjakan —
+nunggu giliran/keputusan terpisah, dicatat biar gak lupa, bukan
+dianggap selesai.
+
+1. **`logs/.htaccess` (BARU) — fix Critical #1.** Dikonfirmasi LIVE
+   sebelum fix: `https://sagagoal.com/logs/ai.log` return 200 OK,
+   556 baris log AI (metadata doang — model/latency/status, TIDAK ada
+   API key/token/password bocor di isinya, tapi tetap Critical karena
+   ngonfirmasi folder `logs/` nol proteksi akses). `Require all denied`
+   (+ fallback `Order/Deny` buat Apache lama) — deny akses web ke
+   SELURUH isi folder, bukan cuma `ai.log`, biar log file lain yang
+   mungkin ditambah nanti otomatis ikut terproteksi tanpa perlu edit
+   ulang.
+2. **`uploads/.htaccess` (BARU) — fix Medium #7 (defense-in-depth).**
+   Validasi upload yang SUDAH ADA sebenernya udah solid (MIME sniffing
+   asli via `finfo`, ekstensi final dari deteksi bukan input user, nama
+   file di-randomize, path traversal di-block) — file ini LAPISAN
+   KEDUA: `<FilesMatch>` blokir eksekusi ekstensi script (`.php`,
+   `.phtml`, `.cgi`, dst) di seluruh subtree `uploads/`, jaga-jaga
+   kalau di masa depan ada bug validasi atau fitur upload baru yang
+   kurang ketat. Gambar/PDF/file normal TETAP bisa diakses — cuma
+   ekstensi executable yang di-deny.
+3. **Security headers di root `.htaccess` — fix High #3.** Dikonfirmasi
+   LIVE sebelum fix: response header homepage nol satupun dari
+   `X-Frame-Options`/`X-Content-Type-Options`/`Referrer-Policy`/
+   `Strict-Transport-Security`/`Permissions-Policy`. Ditambahin
+   ke-5-nya, site-wide (gak di-scope ke path tertentu, jadi admin
+   panel ikut ke-cover). **`Content-Security-Policy` SENGAJA BELUM
+   ditambahin** — audit sendiri bilang CSP butuh whitelist dirancang
+   dulu (situs ini load banyak asset eksternal + iframe embed live
+   streaming yang domainnya bebas), ditambah asal tanpa riset bisa
+   break production. Dicatat sebagai follow-up eksplisit, bukan
+   kelupaan.
+4. **`.gitignore` — fix Medium #8.** `cms-admin/config/cc-export-
+   token.php` sekarang eksplisit di-list (sejajar `database.php`/
+   `app.php`) — sebelumnya "aman" cuma karena kebetulan belum pernah
+   di-`git add`, bukan karena sistemnya mencegah. Dikonfirmasi:
+   sebelum fix file itu muncul sebagai `??` (untracked) di `git
+   status`; setelah fix, hilang dari daftar sama sekali (ke-ignore
+   beneran).
+
+**Catatan teknis penting — `logs/` dan `uploads/` itu sendiri
+di-gitignore SEBAGAI FOLDER PENUH** (`logs/` buat log runtime,
+`uploads/` buat user-uploaded content, keduanya emang gak seharusnya
+ikut version control). Ini berarti `logs/.htaccess` dan
+`uploads/.htaccess` yang baru dibuat SILENT KE-IGNORE juga kalau
+`git add` biasa — gak ke-stage, gak akan pernah ke-commit, PADAHAL 2
+file itu config protektif yang seharusnya ikut ke-deploy, bukan
+"user content" yang pantas di-exclude. Di-fix pakai `git add -f`
+(force-add 2 file spesifik ini doang, BUKAN unignore seluruh folder)
+— pola standar git buat "exception file di dalam folder yang
+di-ignore". **Devs/operator WAJIB inget ini pas deploy manual**: file
+`.htaccess` di 2 folder itu HARUS ikut ke-`cp` ke server meskipun
+`logs/`/`uploads/` sendiri biasanya di-skip pas deploy (karena isinya
+runtime data/user content yang gak mau ketiban file lokal) — cuma
+`.htaccess`-nya doang yang perlu nyusul, bukan seluruh folder.
+
+**Verifikasi:** Semua 4 fix dites langsung di Docker lokal (bukan cuma
+baca kode) — `curl logs/ai.log` sebelum fix 200, setelah fix 403.
+Upload normal (`uploads/site/favicon/*.png`) tetap 200 setelah fix
+(gak ke-block gak sengaja). File test `.php` sengaja ditaruh di
+`uploads/media/` buat verifikasi block-nya beneran jalan → 403,
+lalu file test dihapus lagi (gak ninggalin sampah). Regresi check:
+homepage, Games Hub, live listing, halaman login admin — semua tetap
+200 setelah semua perubahan. `cc-export-token.php` dikonfirmasi hilang
+dari `git status` setelah ditambah ke `.gitignore`. **Header
+`mod_headers` TIDAK bisa diverifikasi live di environment Docker lokal
+ini** (module itu gak ke-enable di container `php8_apache` — dicek
+`apachectl -M`) — kodenya dibungkus `<IfModule mod_headers.c>` jadi
+aman/gak error di mana pun modul itu gak ada, tapi verifikasi header
+BENERAN muncul di response cuma bisa dipastikan setelah deploy ke
+production (mod_headers standar cPanel, hampir pasti udah aktif, tapi
+tetap perlu dicek manual pas operator konfirmasi go-live).

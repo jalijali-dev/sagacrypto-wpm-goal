@@ -154,6 +154,45 @@
     RewriteRule ^([a-z0-9-]+)/?$ page.php?slug=$1 [L,QSA]
 </IfModule>
 
+# Security headers (12 Sep 2026 security audit finding #3, HIGH) — site
+# had ZERO security headers before this (confirmed live: response to
+# https://sagagoal.com/ carried none of these). Applied site-wide, not
+# scoped to any path, so admin pages get the same protection as public
+# ones.
+#
+# Content-Security-Policy is DELIBERATELY NOT included here yet — this
+# site loads a meaningful number of external assets (fonts, ad/embed
+# scripts, live-streaming <iframe> embeds with arbitrary third-party
+# src domains) and a CSP written without first cataloguing all of those
+# would break things in production. Needs its own pass, ideally shipped
+# first as `Content-Security-Policy-Report-Only` to see what it would
+# have blocked before actually enforcing it — tracked as a follow-up,
+# not skipped by oversight.
+<IfModule mod_headers.c>
+    # Clickjacking — refuse to be framed by any other origin (this site
+    # never legitimately needs to be embedded in someone else's iframe).
+    Header always set X-Frame-Options "SAMEORIGIN"
+    # Stops the browser from MIME-sniffing a response into an
+    # unintended content type (e.g. treating an upload as executable
+    # script content based on sniffed bytes rather than the real
+    # Content-Type header).
+    Header always set X-Content-Type-Options "nosniff"
+    # Don't leak the full referring URL (which can contain slugs/query
+    # strings) to third-party destinations — only send origin-level
+    # referrer info cross-origin, full URL for same-origin requests.
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    # Force HTTPS for a year, including subdomains, once a browser has
+    # seen this once over a real HTTPS connection — mitigates protocol
+    # downgrade attacks on the user's very first request before any
+    # HTTP->HTTPS redirect has had a chance to run.
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    # This site's pages never need any of these browser capabilities —
+    # explicitly disabling them removes an entire class of "a
+    # compromised third-party script tries to use the camera/mic/geo"
+    # risk, at zero cost to any real feature here.
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+</IfModule>
+
 # PWA caching headers (added 20 Aug 2026) — sw.js MUST be no-cache so the
 # browser always re-checks it against the server on every registration
 # call; a cached stale copy of the service worker script itself is the
