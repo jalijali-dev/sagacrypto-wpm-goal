@@ -222,6 +222,28 @@
   // ==================================================================
   // Prediksi Skor Harian
   // ==================================================================
+
+  /**
+   * Escapes a value before it's concatenated into an innerHTML string
+   * (12 Sep 2026 security audit finding #9) — same implementation as
+   * cms-admin/assets/js/admin.js's own escapeHtml(), duplicated here
+   * rather than shared (this file has no dependency on any admin-only
+   * asset, and a 3-line helper isn't worth introducing one just for
+   * this). Used in renderMyPredictions() below for league_name/
+   * home_name/away_name/kickoff_at_wib — those come from the API
+   * response (api/game-fixtures-today.php, ultimately teams/leagues
+   * synced from API-Football) rather than direct user input, so the
+   * practical risk today is low, but nothing here actually guarantees
+   * that data is HTML-safe, and the numeric fields elsewhere in this
+   * file (scores, points) don't need this at all since they're always
+   * (int)-cast server-side before reaching this JS.
+   */
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
   function fmtLocked(fixture) {
     if (fixture.status_short === 'FT' || fixture.status_short === 'AET' || fixture.status_short === 'PEN') {
       if (fixture.my_prediction && fixture.my_prediction.points_awarded !== null) {
@@ -339,13 +361,13 @@
       card.setAttribute('data-fixture-id', fixture.id);
       card.innerHTML =
         '<div class="wpm-pt-match__meta">' +
-        '<span class="wpm-pt-match__league">' + (fixture.league_name || '') + '</span>' +
-        '<span class="wpm-pt-match__time">' + (fixture.kickoff_at_wib || '') + ' WIB</span>' +
+        '<span class="wpm-pt-match__league">' + escapeHtml(fixture.league_name || '') + '</span>' +
+        '<span class="wpm-pt-match__time">' + escapeHtml(fixture.kickoff_at_wib || '') + ' WIB</span>' +
         '</div>' +
         '<div class="wpm-pt-match__teams">' +
-        '<span class="wpm-pt-match__team">' + (fixture.home_name || '') + '</span>' +
+        '<span class="wpm-pt-match__team">' + escapeHtml(fixture.home_name || '') + '</span>' +
         '<span class="wpm-pt-match__vs">vs</span>' +
-        '<span class="wpm-pt-match__team">' + (fixture.away_name || '') + '</span>' +
+        '<span class="wpm-pt-match__team">' + escapeHtml(fixture.away_name || '') + '</span>' +
         '</div>' +
         '<div class="wpm-pt-match__predict-area" data-role="predict-area"></div>';
       myPredictionsListEl.appendChild(card);

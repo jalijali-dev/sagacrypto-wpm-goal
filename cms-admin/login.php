@@ -21,32 +21,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $loginError = 'Email dan password wajib diisi.';
     } else {
         require_once __DIR__ . '/config/database.php';
+        require_once __DIR__ . '/includes/LoginThrottle.php';
 
-        $stmt = $pdo->prepare(
-            'SELECT admin_id, name, email, password_hash, role, is_active
-             FROM admins
-             WHERE email = :email
-             LIMIT 1'
-        );
-        $stmt->execute(['email' => $email]);
-        $admin = $stmt->fetch();
+        cms_login_throttle_ensure_schema($pdo);
+        $clientIp = cms_client_ip();
+        $lockout = cms_login_check_lockout($pdo, $email, $clientIp);
 
-        $valid = $admin
-            && (int) ($admin['is_active'] ?? 0) === 1
-            && password_verify($password, (string) ($admin['password_hash'] ?? ''));
+        if ($lockout['locked']) {
+            // Same generic wording regardless of whether it's the email or
+            // IP counter that tripped — no need to tell an attacker which
+            // one, and a legitimate user doesn't need to know either, just
+            // that they should wait.
+            $loginError = 'Terlalu banyak percobaan login gagal. Coba lagi dalam beberapa menit.';
+        } else {
+            $stmt = $pdo->prepare(
+                'SELECT admin_id, name, email, password_hash, role, is_active
+                 FROM admins
+                 WHERE email = :email
+                 LIMIT 1'
+            );
+            $stmt->execute(['email' => $email]);
+            $admin = $stmt->fetch();
 
-        if ($valid) {
-            session_regenerate_id(true);
-            $_SESSION['cms_admin_id']    = (int)    $admin['admin_id'];
-            $_SESSION['cms_admin_name']  = (string) $admin['name'];
-            $_SESSION['cms_admin_email'] = (string) $admin['email'];
-            $_SESSION['cms_admin_role']  = (string) $admin['role'];
+            $valid = $admin
+                && (int) ($admin['is_active'] ?? 0) === 1
+                && password_verify($password, (string) ($admin['password_hash'] ?? ''));
 
-            header('Location: dashboard.php', true, 302);
-            exit;
+            // Logged BEFORE branching on $valid — a failed attempt must be
+            // recorded even though the code returns early on success, and
+            // recording it unconditionally right here (rather than once in
+            // each branch) makes it impossible to add a future early-return
+            // that accidentally skips the count.
+            cms_login_record_attempt($pdo, $email, $clientIp, (bool) $valid);
+
+            if ($valid) {
+                session_regenerate_id(true);
+                $_SESSION['cms_admin_id']    = (int)    $admin['admin_id'];
+                $_SESSION['cms_admin_name']  = (string) $admin['name'];
+                $_SESSION['cms_admin_email'] = (string) $admin['email'];
+                $_SESSION['cms_admin_role']  = (string) $admin['role'];
+
+                header('Location: dashboard.php', true, 302);
+                exit;
+            }
+
+            $loginError = 'Email atau password tidak valid.';
         }
-
-        $loginError = 'Email atau password tidak valid.';
     }
 }
 

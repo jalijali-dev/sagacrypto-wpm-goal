@@ -1692,3 +1692,133 @@ aman/gak error di mana pun modul itu gak ada, tapi verifikasi header
 BENERAN muncul di response cuma bisa dipastikan setelah deploy ke
 production (mod_headers standar cPanel, hampir pasti udah aktif, tapi
 tetap perlu dicek manual pas operator konfirmasi go-live).
+
+---
+
+## 2026-09-12 — Security audit fix #2: rate limiting / anti brute-force di login admin
+
+**Keputusan:** Lanjutan dari entri "quick-win" 12 Sep 2026 di atas —
+temuan Critical #2 (`cms-admin/login.php` nol proteksi brute-force)
+dikerjakan terpisah karena nyentuh alur autentikasi (lebih sensitif
+dari 4 fix config/infra sebelumnya, sesuai kategorisasi operator).
+
+**`cms-admin/includes/LoginThrottle.php` (BARU)** — sliding time-window
+failed-attempt counter, dicek terhadap DUA hal sekaligus per percobaan
+login: email yang di-submit DAN IP requester (`cms_login_check_lockout()`
+return locked=true kalau SALAH SATU dari 2 counter itu >= 5 dalam 15
+menit terakhir). Alasan cek dua-duanya (bukan cuma salah satu): email-
+based counter nahan brute-force klasik (banyak password buat 1 akun),
+IP-based counter nahan pola credential-stuffing/distributed (1 IP nyoba
+banyak email, atau 1 email dicoba dari banyak IP tapi kena juga kalau
+salah satu IP-nya udah kepakai buat nyoba akun lain). Sliding window
+(`COUNT(*) WHERE created_at > NOW() - INTERVAL 15 MINUTE`) — bukan
+kolom `locked_until` terpisah — jadi otomatis "lupa" attempt lama begitu
+keluar window, gak butuh proses unlock manual/terpisah.
+
+Tabel baru `login_attempts` (email, ip_address, success, created_at,
+index di `(email, created_at)` dan `(ip_address, created_at)` buat
+query count di atas tetap cepat) — dibuat via `cms_ensure_table()`,
+pola self-heal yang sama kayak semua tabel lain di project ini.
+
+**`cms_client_ip()`** — sengaja BUKAN langsung `$_SERVER['REMOTE_ADDR']`.
+Situs ini di belakang Cloudflare (dikonfirmasi lewat header
+`cf-ray`/`cf-cache-status` di audit sebelumnya) — `REMOTE_ADDR` doang
+bakal selalu kebaca sebagai IP edge Cloudflare, BUKAN IP visitor asli,
+yang bikin counter per-IP jadi gak berguna sama sekali (semua request
+keliatan datang dari segelintir IP Cloudflare yang sama). Baca
+`CF-Connecting-IP` dulu (header asli Cloudflare buat ini), fallback ke
+`X-Forwarded-For` (hop pertama), baru `REMOTE_ADDR` sebagai last
+resort (misal dev lokal yang gak lewat Cloudflare).
+
+**`cms-admin/login.php`** — satu-satunya perubahan: lockout check
+dipanggil SEBELUM query password (`password_verify()` gak dijalanin
+sama sekali kalau lagi locked-out — hemat kerjaan sia-sia, bukan cuma
+soal UX). `cms_login_record_attempt()` dipanggil TEPAT SEKALI, di satu
+titik, SEBELUM percabangan sukses/gagal — bukan diduplikasi di 2
+tempat (cabang sukses & cabang gagal terpisah) — biar kalau nanti ada
+yang nambah early-return baru di cabang sukses, itu gak bisa
+"kelewatan" nyatet attempt-nya secara gak sengaja. Attempt sukses
+DIJEBI JUGA dicatat (bukan cuma yang gagal) — bukan buat lockout
+(cuma `success=0` yang dihitung ke counter), tapi jadi audit-trail
+ringan (siapa login kapan dari IP mana) — sesuai saran audit soal
+monitoring, sekalian dapet gratis dari struktur yang sama.
+
+**Yang SENGAJA TIDAK dikerjakan (di luar scope fix ini):** CAPTCHA
+(misal Cloudflare Turnstile, situs ini udah di belakang Cloudflare) —
+audit sendiri cuma "pertimbangkan", bukan wajib; itu keputusan
+integrasi terpisah, bukan sesuatu yang mau disisipin diam-diam ke fix
+rate-limiting ini. Cleanup/purge baris `login_attempts` yang udah lama
+(tabel bakal terus tumbuh seiring waktu, walau lambat — attempt gagal
+doang yang biasanya sering) — dicatat sebagai trade-off yang diterima
+buat sekarang, bisa jadi brief terpisah (cron cleanup) kalau ternyata
+jadi masalah nyata di production.
+
+**Verifikasi:** `php -l` bersih di kedua file. Dites end-to-end nyata
+(curl, bukan baca kode doang) — 5x POST password salah ke email admin
+asli → attempt ke-6 nampilin pesan lockout (`password_verify()` gak
+sempet jalan lagi). Dites cross-contamination: email LAIN yang belum
+pernah dicoba sama sekali, dari IP yang SAMA, JUGA ke-block —
+dikonfirmasi lewat query DB langsung (0 baris attempt buat email itu
+sendiri) bahwa itu murni IP-based counter yang jalan, bukan bug/typo.
+Dibikin akun admin test sementara buat verifikasi jalur SUKSES:
+login bener → redirect 302 ke `dashboard.php`, `Set-Cookie` session ID
+ke-regenerate (2 baris Set-Cookie, konfirmasi `session_regenerate_id()`
+masih jalan), attempt tercatat `success=1`, session cookie beneran
+bisa dipakai akses `dashboard.php` (200). Semua data test (baris
+`login_attempts`, akun admin test) DIHAPUS dari database lokal setelah
+verifikasi. Regresi: halaman login (GET) tetap 200, akses dashboard
+tanpa session tetap ke-redirect 302 ke login — gak ada yang keubah di
+luar scope fix ini.
+
+---
+
+## 2026-09-12 — Security audit fix #9: XSS di box "Tebakan Saya" (Prediksi & Trivia)
+
+**Keputusan:** Lanjutan dari 2 entri "security audit" 12 Sep 2026 di
+atas. Temuan Medium #9 — `renderMyPredictions()` di
+`assets/games/js/prediksi-trivia.js` (box "Tebakan Saya" yang
+ditambahin operator 9 Sep 2026) build `card.innerHTML` dengan
+`league_name`/`home_name`/`away_name`/`kickoff_at_wib` di-concat
+langsung tanpa escape — beda dari pola aman yang dipakai di leaderboard
+box sebelah (`textContent`, bukan `innerHTML`) dan beda dari render
+kartu utama yang SAMA (server-side, `games/prediksi-trivia/index.php`,
+udah pakai `wpm_esc()` dengan benar).
+
+Field-field itu asalnya dari `api/game-fixtures-today.php` (ujungnya
+`teams`/`leagues` yang di-sync API-Football) — bukan input user
+langsung, jadi resiko PRAKTIS hari ini rendah. Tapi gak ada apapun di
+kode yang BENERAN menjamin data itu selalu bebas HTML, dan box ini
+JS-rendered (beda dari kartu utama yang PHP-rendered dan otomatis
+ke-escape) — jadi tetap celah stored-XSS yang nyata kalau suatu saat
+nama tim/liga (termasuk yang custom, diinput manual admin di fitur
+live-streaming yang mirip) kebetulan ngandung karakter HTML.
+
+**Fix:** Tambah `escapeHtml()` — implementasi PERSIS SAMA kayak yang
+udah ada di `cms-admin/assets/js/admin.js` (regex replace `&<>"'`),
+di-duplicate lokal (bukan di-share/import) — konsisten sama pola
+"duplikasi kecil" yang udah berulang kali dipakai di seluruh project
+ini (bukan karena butuh alasan baru, cuma manggil pola yang udah ada).
+Diterapkan ke 4 field yang tadinya gak di-escape di
+`renderMyPredictions()`; field NUMERIC di file yang sama
+(`home_score`/`away_score`/`predicted_home`/`predicted_away`/
+`points_awarded` di `fmtLocked()`) SENGAJA TIDAK disentuh — semua itu
+selalu `(int)`-cast server-side di `api/game-fixtures-today.php`
+sebelum sampai ke JS, jadi gak ada celah beneran di situ, nambahin
+escape ke angka cuma nambah kode tanpa manfaat.
+
+**Verifikasi:** Dites XSS beneran, bukan cuma baca kode — nama liga
+di database lokal diganti sementara jadi payload
+`<img src=x onerror=alert(1)>XSS-Test`, `window.alert` di-override
+buat ketauan kalau ke-trigger. Kartu utama (PHP-rendered) SEBELUM fix
+ini udah kekonfirmasi aman (nampilin teks payload apa adanya, gak ada
+gambar rusak/alert — `wpm_esc()` emang udah bener dari awal). Box
+"Tebakan Saya" (JS-rendered, yang jadi target fix) dites lewat alur
+asli: isi nickname → submit tebakan ke fixture yang league-nya
+ngandung payload → buka box "Tebakan Saya" → dikonfirmasi lewat
+`outerHTML` langsung bahwa payload-nya ke-render sebagai
+`&lt;img src=x onerror=alert(1)&gt;XSS-Test` (entity ter-escape, bukan
+tag HTML beneran), `window.alert` TIDAK pernah ke-trigger. Data test
+(nama liga, prediksi, player test, fixture test) semua DIHAPUS dari
+database lokal setelah verifikasi. `php -l`/brace-paren balance
+bersih. Regresi: halaman `Prediksi & Trivia` tetap 200, gak ada
+perubahan visual/fungsional di luar box yang di-fix.
