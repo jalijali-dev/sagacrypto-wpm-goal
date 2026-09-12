@@ -17,18 +17,46 @@ if (!function_exists('cms_slugify')) {
     }
 }
 
+/**
+ * Deteksi HTTPS asli di belakang Cloudflare (12 Sep 2026 security audit
+ * finding #6, Medium). Koneksi visitor→Cloudflare selalu HTTPS, tapi
+ * Cloudflare→origin bisa lewat HTTP di baliknya — jadi $_SERVER['HTTPS']/
+ * SERVER_PORT bawaan PHP bisa salah baca protokol ASLI yang dipakai
+ * visitor, dan gagal nyalain flag `Secure` di cookie session dengan
+ * benar. Cloudflare selalu ngirim salah satu dari X-Forwarded-Proto atau
+ * CF-Visitor ({"scheme":"https"}) kalau proxy-nya aktif — dicek sebelum
+ * fallback ke deteksi HTTPS langsung (buat non-Cloudflare/local dev).
+ */
+function cms_request_is_https(): bool
+{
+    $forwardedProto = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+    if ($forwardedProto !== '') {
+        return explode(',', $forwardedProto)[0] === 'https';
+    }
+
+    $cfVisitor = (string) ($_SERVER['HTTP_CF_VISITOR'] ?? '');
+    if ($cfVisitor !== '') {
+        $decoded = json_decode($cfVisitor, true);
+        if (is_array($decoded) && isset($decoded['scheme'])) {
+            return strtolower((string) $decoded['scheme']) === 'https';
+        }
+    }
+
+    return (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+        || (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443;
+}
+
 function cms_session_start(): void
 {
     if (session_status() !== PHP_SESSION_ACTIVE) {
         // Harden session cookie: HttpOnly + SameSite=Lax always,
-        // Secure when the request is served over HTTPS.
-        $secure = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
-            || (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443;
+        // Secure when the request is served over HTTPS (real protocol,
+        // Cloudflare-aware — see cms_request_is_https()).
         session_set_cookie_params([
             'lifetime' => 0,
             'path'     => '/',
             'domain'   => '',
-            'secure'   => $secure,
+            'secure'   => cms_request_is_https(),
             'httponly' => true,
             'samesite' => 'Lax',
         ]);
