@@ -15,6 +15,8 @@ declare(strict_types=1);
  * Cancelled, Postponed — not football's short-code style.
  */
 
+require_once __DIR__ . '/UrlSafety.php';
+
 final class ApiFormula1Client
 {
     private string $baseUrl;
@@ -96,6 +98,10 @@ final class ApiFormula1Client
         $url = $this->baseUrl . $path;
         if ($query !== []) {
             $url .= '?' . http_build_query($query);
+        }
+
+        if (!cms_is_safe_outbound_url($url)) {
+            return ['ok' => false, 'http_status' => 0, 'data' => [], 'error' => 'Base URL tidak valid atau mengarah ke jaringan internal.'];
         }
 
         $ch = curl_init($url);

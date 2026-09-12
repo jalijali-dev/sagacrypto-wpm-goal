@@ -84,10 +84,10 @@ function cms_verify_csrf(): void
  * Three roles, stored verbatim in `admins.role` (DB enum: 'superadmin',
  * 'admin', 'editor' — lowercase, no spaces; the admin-facing form in
  * admins.php shows friendlier labels but always submits one of these three
- * raw values). Session value is set once at login (login.php) and never
- * re-checked against the DB per-request, so a role change only takes effect
- * the next time that admin logs in — same tradeoff the rest of the session
- * already makes for name/email.
+ * raw values). Session value is set at login (login.php) and re-synced
+ * from the DB on every request by auth.php (12 Sep 2026 security audit
+ * finding #10) — so a role change (or deactivation) takes effect on the
+ * admin's very next page load, not just their next login.
  *
  * Access tiers (15 Jul 2026, per explicit user request — previously every
  * logged-in admin had identical access regardless of role):

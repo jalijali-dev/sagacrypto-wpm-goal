@@ -14,6 +14,8 @@ declare(strict_types=1);
  * 4=Postponed, 5=Delayed, 6=Canceled.
  */
 
+require_once __DIR__ . '/UrlSafety.php';
+
 final class ApiBasketballClient
 {
     private string $baseUrl;
@@ -82,6 +84,10 @@ final class ApiBasketballClient
         $url = $this->baseUrl . $path;
         if ($query !== []) {
             $url .= '?' . http_build_query($query);
+        }
+
+        if (!cms_is_safe_outbound_url($url)) {
+            return ['ok' => false, 'http_status' => 0, 'data' => [], 'error' => 'Base URL tidak valid atau mengarah ke jaringan internal.'];
         }
 
         $ch = curl_init($url);
