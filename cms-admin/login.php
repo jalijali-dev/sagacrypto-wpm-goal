@@ -13,6 +13,12 @@ if (!empty($_SESSION['cms_admin_id'])) {
 $loginError = '';
 $email = '';
 
+// Idle-timeout redirect dari auth.php (?timeout=1) — bukan error login,
+// cuma kasih tau kenapa admin balik ke sini.
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' && ($_GET['timeout'] ?? '') === '1') {
+    $loginError = 'Sesi kamu berakhir karena tidak ada aktivitas selama 1 jam. Silakan login lagi.';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim((string) ($_POST['email'] ?? ''));
     $password = (string) ($_POST['password'] ?? '');

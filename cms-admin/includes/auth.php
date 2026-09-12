@@ -12,6 +12,30 @@ if (empty($_SESSION['cms_admin_id'])) {
 }
 
 /**
+ * Idle timeout: 1 jam (12 Sep 2026 security audit finding #5, Medium).
+ * Session cookie sebelumnya lifetime=0 (sampai browser ditutup) tanpa
+ * batas idle sama sekali — laptop admin ke-lock/ditinggal di tempat umum
+ * berarti session tetep aktif tanpa batas waktu. `cms_last_activity`
+ * di-refresh tiap request halaman admin; kalau selisihnya lebih dari
+ * CMS_IDLE_TIMEOUT_SECONDS, session di-destroy dan admin diarahkan balik
+ * ke login (bukan session lifetime yang diubah — itu tetap "sampai
+ * browser ditutup" untuk yang aktif kepake terus).
+ */
+const CMS_IDLE_TIMEOUT_SECONDS = 3600;
+
+if (
+    isset($_SESSION['cms_last_activity'])
+    && (time() - (int) $_SESSION['cms_last_activity']) > CMS_IDLE_TIMEOUT_SECONDS
+) {
+    $_SESSION = [];
+    session_destroy();
+    header('Location: ' . cms_login_href() . '?timeout=1');
+    exit;
+}
+
+$_SESSION['cms_last_activity'] = time();
+
+/**
  * Re-check role + active status against the DB on every request (12 Sep
  * 2026 security audit finding #10, Medium). Before this, cms_admin_role()
  * only ever read $_SESSION['cms_admin_role'], set once at login and never
